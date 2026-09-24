@@ -1,0 +1,4 @@
+ui/
+scripts/
+*.md
+!README.md

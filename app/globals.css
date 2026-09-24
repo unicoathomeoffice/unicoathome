@@ -1,0 +1,84 @@
+@import 'tailwindcss';
+
+/* Design tokens from ui/design (Claude Design · Unico HomeCare). Neutrals = Tailwind slate (identical hexes). */
+@theme {
+  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
+  --font-mono: ui-monospace, Menlo, monospace;
+
+  --color-primary: #0090ca;
+  --color-primary-700: #0072a3;
+  --color-primary-50: #e8f5fb;
+  --color-primary-100: #bee3f2;
+  --color-teal: #3ab5a7;
+  --color-navy: #1f3864;
+  --color-page: #f1f5f9;
+
+  --radius-card: 12px;
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08);
+  --shadow-sheet: 0 -8px 24px rgba(15, 23, 42, 0.12);
+  --shadow-drawer: -8px 0 24px rgba(15, 23, 42, 0.12);
+
+  --animate-hcpulse: hcpulse 1.4s ease-in-out infinite;
+  @keyframes hcpulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.35;
+      transform: scale(0.7);
+    }
+  }
+}
+
+@layer base {
+  html,
+  body {
+    background: var(--color-page);
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
+    -webkit-tap-highlight-color: transparent;
+  }
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+  button {
+    cursor: pointer;
+  }
+}
+
+/* hide scrollbars on horizontal chip rails */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* form controls share one look */
+@layer components {
+.hc-input {
+  @apply h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-slate-50 disabled:text-slate-500;
+}
+textarea.hc-input {
+  @apply h-auto py-2 leading-6;
+}
+.hc-input-lg {
+  @apply h-12 rounded-lg border-[1.5px] px-3.5 text-[15px];
+}
+.hc-label {
+  @apply mb-1.5 block text-[12.5px] font-semibold text-slate-700;
+}
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #fff;
+  }
+}
