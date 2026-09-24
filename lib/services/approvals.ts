@@ -20,6 +20,9 @@ export const APPROVAL_LABEL: Record<(typeof APPROVAL_TYPES)[number], string> = {
   SERVICE_PROPOSAL: 'New service proposed',
 }
 
+/** Approval types only a user manager (SUPER_ADMIN) may decide */
+export const USER_TYPES: string[] = ['NEW_USER', 'ROLE_CHANGE']
+
 export const DecideInput = z.object({
   approve: z.boolean(),
   note: z.string().max(500).optional(),
@@ -35,7 +38,7 @@ export async function listApprovals(filter: { status?: string; type?: string; re
   if (filter.status && filter.status !== 'ALL') f.status = filter.status
   if (filter.type && (APPROVAL_TYPES as readonly string[]).includes(filter.type)) f.type = filter.type
   if (filter.requestedBy && isOid(filter.requestedBy)) f.requestedBy = filter.requestedBy
-  const rows = await Approval.find(f).sort({ status: -1, createdAt: -1 }).limit(300).lean<any[]>()
+  const rows = await Approval.find(f).sort({ createdAt: -1 }).limit(300).lean<any[]>()
   const userIds = new Set<string>()
   for (const a of rows) for (const id of [a.requestedBy, a.userId, a.decidedBy]) if (id) userIds.add(String(id))
   const [users, requests] = await Promise.all([
@@ -74,11 +77,13 @@ async function loadLinkedRequest(a: any) {
  * Every decision is audited and the requester is notified.
  */
 export async function decideApproval(id: string, input: DecideInput, user: SessionUser, meta: Meta) {
-  if (!can(user.role, 'approvals.decide')) throw forbidden()
+  if (!can(user, 'approvals.decide')) throw forbidden()
   if (!isOid(id)) throw notFound('Approval')
   const a = await Approval.findById(id)
   if (!a) throw notFound('Approval')
   if (a.status !== 'PENDING') throw conflict('ALREADY_DECIDED', `Already ${String(a.status).toLowerCase()}`)
+  // Coordinators may submit users but not approve them (only SUPER_ADMIN creates active users).
+  if (USER_TYPES.includes(a.type) && !can(user, 'users.manage')) throw forbidden('Only a super admin can decide new users and role changes')
   const approve = input.approve
   const label = APPROVAL_LABEL[a.type as keyof typeof APPROVAL_LABEL] ?? a.type
   let followUp: string | undefined

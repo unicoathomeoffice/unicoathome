@@ -45,7 +45,7 @@ export async function AdminPage({
         <Link href="/search" className="flex size-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 xl:hidden" aria-label="Search">
           <Search size={18} />
         </Link>
-        {can(user.role, 'requests.create') && (
+        {can(user, 'requests.create') && (
           <Link href="/requests/new" className={btnClass('p', 'md', 'hidden sm:inline-flex')}>
             <Plus size={16} /> New request
           </Link>

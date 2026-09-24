@@ -19,7 +19,7 @@ export const GET = route<{ kind: string }>(async ({ params }) => {
 export const POST = route<{ kind: string }>(async ({ req, user, params }) => {
   const m = MASTER[params.kind]
   if (!m) throw notFound('List')
-  if (!can(user.role, m.perm)) throw forbidden()
+  if (!can(user, m.perm)) throw forbidden()
   const input = await body(req, m.schema)
   const doc = await m.model.create(input)
   await audit(user, `${m.entity}.create`, m.entity, doc._id, { after: input, label: (input as any).name ?? (input as any).title ?? (input as any).plate }, clientMeta(req, user))

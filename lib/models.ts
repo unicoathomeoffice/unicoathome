@@ -67,6 +67,7 @@ const UserSchema = new Schema<any>(
     email: { type: String, lowercase: true, trim: true },
     passwordHash: { type: String, select: false },
     role: { type: String, enum: ROLES, required: true },
+    customRoleId: { type: ObjectId, ref: 'CustomRole' }, // optional A2 custom role: overrides the base role's permissions
     departmentId: { type: ObjectId, ref: 'Department' },
     designationId: { type: ObjectId, ref: 'Designation' },
     skills: [String],
@@ -311,7 +312,9 @@ const AttachmentSchema = new Schema<any>(
     filename: String,
     mime: String,
     size: Number,
-    data: { type: Buffer, select: false }, // stored inline (≤ 3 MB). Swap for Vercel Blob / R2 when volume grows.
+    storage: { type: String, enum: ['mongo', 'blob'], default: 'mongo' },
+    blobUrl: { type: String, select: false }, // private Vercel Blob URL (never sent to clients)
+    data: { type: Buffer, select: false }, // inline fallback when Blob is not configured
     caption: String,
     uploadedBy: { type: ObjectId, ref: 'User' },
     at: { type: Date, default: Date.now },

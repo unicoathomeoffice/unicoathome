@@ -58,9 +58,24 @@ export const PERMISSIONS = {
 } as const satisfies Record<string, readonly Role[]>
 export type Permission = keyof typeof PERMISSIONS
 
-export function can(role: Role | string | undefined, perm: Permission): boolean {
-  return !!role && (PERMISSIONS[perm] as readonly string[]).includes(role)
+/** Something that holds permissions: a role code, or a signed-in user (whose custom role, if any, overrides the base role). */
+export type Actor = Role | string | undefined | null | { role: string; permissions?: string[] | null }
+
+/**
+ * Permission check. Pass the signed-in user (preferred) so a custom role (A2) is honoured;
+ * passing a bare role code checks the fixed role matrix only.
+ */
+export function can(who: Actor, perm: Permission): boolean {
+  if (!who) return false
+  if (typeof who === 'object') {
+    if (Array.isArray(who.permissions)) return who.permissions.includes(perm)
+    who = who.role
+  }
+  return (PERMISSIONS[perm] as readonly string[]).includes(who)
 }
+
+/** Default permission list of a fixed role (used to seed custom roles). */
+export const permissionsOf = (role: Role | string) => (Object.keys(PERMISSIONS) as Permission[]).filter((p) => (PERMISSIONS[p] as readonly string[]).includes(role))
 
 // ---- Lifecycle (plan §4) ----
 export const STATUSES = [

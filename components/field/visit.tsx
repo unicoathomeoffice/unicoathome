@@ -23,13 +23,15 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
-import { api, useAction, stamp, Sheet, Countdown, WhatsAppButton } from '@/components/client'
+import { api, useAction, stamp, Sheet, WhatsAppButton } from '@/components/client'
 import { btnClass, Tag, telUrl } from '@/components/ui'
 import { DECLINE_REASONS, PETTY_CASH_PURPOSES } from '@/lib/constants'
 import { cx, time, relDay, mmss, taka, dur } from '@/lib/format'
-import { sendOrQueue } from './live'
+import { bigBtn } from './bar'
+import { sendOrQueue, LiveCountdown as Countdown, BodyPortal } from './live'
 
 const svcName = (r: any) => (r.services ?? []).map((s: any) => s.name).join(' + ')
+const dedupe = (a?: string) => (a ? [...new Set(a.split(/,\s*/))].join(', ') : '')
 const ageG = (p: any) => [p?.ageYears, p?.gender].filter((x) => x != null && x !== '').join(' ')
 
 // ---------------------------------------------------------------- radio row
@@ -75,7 +77,7 @@ export function AcceptSheet({ r, open, onClose, primary, assignedBy }: { r: any;
         <Sum k="Service" v={`${svcName(r)} · ${r.expectedDurationMin ?? 45} min`} />
         <Sum k="Time" v={r.scheduledAt ? `${relDay(r.scheduledAt)} ${time(r.scheduledAt)}` : 'Not set'} />
         <Sum k="Transport" v={transport} />
-        <Sum k="Address" v={r.patientSnapshot?.address || r.patientSnapshot?.area || '—'} className="col-span-2" />
+        <Sum k="Address" v={dedupe(r.patientSnapshot?.address) || r.patientSnapshot?.area || '—'} className="col-span-2" />
         {r.assignment?.instructions && <Sum k="Instructions" v={r.assignment.instructions} className="col-span-2" />}
       </div>
       {primary ? (
@@ -96,7 +98,7 @@ export function AcceptSheet({ r, open, onClose, primary, assignedBy }: { r: any;
           <button
             type="button"
             disabled={busy}
-            className={btnClass('r', 'xl', 'flex-1')}
+            className={bigBtn('r')}
             onClick={async () => {
               if (!reason) return setErr(true)
               const ok = await run(() => api(`/requests/${r._id}/decline`, { body: { reason, note: note || undefined } }), 'Declined · the coordinator will reassign', { refresh: false })
@@ -109,7 +111,7 @@ export function AcceptSheet({ r, open, onClose, primary, assignedBy }: { r: any;
         <button
           type="button"
           disabled={busy}
-          className={btnClass('p', 'xl', 'flex-[1.6]')}
+          className={bigBtn('p', 'flex-[1.6]')}
           onClick={async () => {
             const ok = await run(() => api(`/requests/${r._id}/accept`, { body: { deviceAt: stamp().deviceAt } }), `Accepted · ${time(new Date())}`)
             if (ok) onClose()
@@ -276,7 +278,7 @@ export function VisitActionBar({
           <WhatsAppButton requestId={id} templateKey="patient_en_route" kind="g" size="xl" className="w-full">
             Send “on the way” on WhatsApp
           </WhatsAppButton>
-          <button type="button" onClick={() => setJourney(null)} className={btnClass('o', 'xl', 'w-full')}>
+          <button type="button" onClick={() => setJourney(null)} className={bigBtn('o', 'w-full')}>
             Skip
           </button>
         </div>
@@ -307,6 +309,7 @@ export function OverflowMenu({ r, team, canFollowUp, coordinatorPhone }: { r: an
       <button type="button" onClick={() => setOpen(true)} className="flex size-10 flex-none items-center justify-center text-slate-700" aria-label="More actions">
         <MoreVertical size={22} />
       </button>
+      <BodyPortal>
       <Sheet open={open} onClose={() => setOpen(false)} title="Visit actions" sub={`${r.requestNo} · ${r.patientSnapshot?.name}`}>
         <div className="pb-2">
           <Row href={`/m/visits/${id}/chat`} icon={MessageSquareText} label="Chat with coordinator" sub="Thread for this visit" />
@@ -326,11 +329,11 @@ export function OverflowMenu({ r, team, canFollowUp, coordinatorPhone }: { r: an
           {team && active && (
             <div className="mt-2 border-t border-slate-100 pt-3">
               <div className="mb-2 text-[12px] font-semibold uppercase tracking-[.06em] text-slate-500">Send WhatsApp to patient</div>
-              <div className="flex gap-2">
-                <WhatsAppButton requestId={id} templateKey="patient_en_route" kind="o" size="lg" className="flex-1 !px-2 text-[14px]">
+              <div className="grid grid-cols-2 gap-2">
+                <WhatsAppButton requestId={id} templateKey="patient_en_route" kind="o" size="lg" className="w-full !px-2 text-[14px]">
                   On the way
                 </WhatsAppButton>
-                <WhatsAppButton requestId={id} templateKey="patient_arrived" kind="o" size="lg" className="flex-1 !px-2 text-[14px]">
+                <WhatsAppButton requestId={id} templateKey="patient_arrived" kind="o" size="lg" className="w-full !px-2 text-[14px]">
                   Arrived
                 </WhatsAppButton>
               </div>
@@ -338,22 +341,24 @@ export function OverflowMenu({ r, team, canFollowUp, coordinatorPhone }: { r: an
           )}
         </div>
       </Sheet>
+      </BodyPortal>
     </>
   )
 }
 
 // ---------------------------------------------------------------- live timer (M05-c header)
-function useNow(ms = 1000) {
-  const [now, setNow] = useState(() => Date.now())
+function useNow(ms = 1000, initial?: number) {
+  const [now, setNow] = useState(() => initial ?? Date.now())
   useEffect(() => {
+    setNow(Date.now())
     const t = setInterval(() => setNow(Date.now()), ms)
     return () => clearInterval(t)
   }, [ms])
   return now
 }
 
-export function TimerWidget({ checkInAt, scheduledAt, plannedMin, lateMin, overtimePct = 25, lateAfter = 10 }: { checkInAt: string; scheduledAt?: string; plannedMin: number; lateMin?: number | null; overtimePct?: number; lateAfter?: number }) {
-  const now = useNow()
+export function TimerWidget({ checkInAt, scheduledAt, plannedMin, lateMin, overtimePct = 25, lateAfter = 10, serverNow }: { checkInAt: string; scheduledAt?: string; plannedMin: number; lateMin?: number | null; overtimePct?: number; lateAfter?: number; serverNow?: number }) {
+  const now = useNow(1000, serverNow)
   const sec = Math.max(0, (now - new Date(checkInAt).getTime()) / 1000)
   const min = sec / 60
   const h = Math.floor(sec / 3600)
@@ -366,7 +371,7 @@ export function TimerWidget({ checkInAt, scheduledAt, plannedMin, lateMin, overt
       <div className="flex items-end justify-between gap-3">
         <div>
           <div className="text-[12px] font-semibold uppercase tracking-[.06em] opacity-80">Elapsed</div>
-          <div className="text-[40px] font-bold leading-[44px] tracking-[-.01em]">{h ? `${h}:${mmss(sec % 3600)}` : mmss(sec)}</div>
+          <div className="text-[40px] font-bold leading-[44px] tracking-[-.01em]" suppressHydrationWarning>{h ? `${h}:${mmss(sec % 3600)}` : mmss(sec)}</div>
         </div>
         <div className="pb-1 text-right text-[13px] leading-5">
           <div className="opacity-90">
@@ -446,13 +451,13 @@ export function PettyCash({ r, team }: { r: any; team: boolean }) {
         sub={`Goes to the coordinator for approval · ${r.requestNo}`}
         footer={
           <>
-            <button type="button" className={btnClass('o', 'xl', 'flex-1')} onClick={() => setOpen(false)}>
+            <button type="button" className={bigBtn('o')} onClick={() => setOpen(false)}>
               Cancel
             </button>
             <button
               type="button"
               disabled={busy || !Number(amount)}
-              className={btnClass('p', 'xl', 'flex-[1.4]')}
+              className={bigBtn('p', 'flex-[1.4]')}
               onClick={async () => {
                 const ok = await run(() => api(`/requests/${r._id}/petty-cash`, { body: { amount: Number(amount), purpose, note: note || undefined } }), 'Petty cash request sent')
                 if (ok) {

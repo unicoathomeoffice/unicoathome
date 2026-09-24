@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { Phone, FileText, FilePlus2, Download } from 'lucide-react'
+import { Phone, FileText, FilePlus, Download } from 'lucide-react'
 import { WhatsAppButton } from '@/components/client'
 import { btnClass, telUrl } from '@/components/ui'
 import { useSearchParams } from 'next/navigation'
@@ -26,7 +26,7 @@ export function PatientRowActions({ id, name, phone, text, canMessage, canCreate
       </Link>
       {canCreate && (
         <Link href={`/requests/new?patientId=${id}`} className={icon} title="New request for this patient" aria-label={`New request for ${name}`}>
-          <FilePlus2 size={15} />
+          <FilePlus size={15} />
         </Link>
       )}
     </div>

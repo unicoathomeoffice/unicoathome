@@ -1,11 +1,12 @@
-import { route, qp } from '@/lib/api'
+import { route, qp, clientMeta } from '@/lib/api'
+import { audit } from '@/lib/audit'
 import { AuditLog } from '@/lib/models'
 import { plain } from '@/lib/db'
 import { dayRange } from '@/lib/format'
 
 /** GET /api/v1/audit?entity=request&entityId=&actor=&action=&from=YYYY-MM-DD&to=&format=csv — append-only, read only */
 export const GET = route(
-  async ({ req }) => {
+  async ({ req, user }) => {
     const p = qp(req)
     const f: Record<string, any> = {}
     if (p.get('entity')) f.entity = p.get('entity')
@@ -22,6 +23,8 @@ export const GET = route(
       const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
       const lines = ['serverAt,actor,role,action,entity,entityId,label,client,ip,before,after']
       for (const a of items) lines.push([a.serverAt?.toISOString(), a.actorName, a.actorRole, a.action, a.entity, a.entityId, a.entityLabel, a.client, a.ip, JSON.stringify(a.before ?? ''), JSON.stringify(a.after ?? '')].map(esc).join(','))
+      // exports are themselves audited (plan §5.10)
+      await audit(user, 'audit.export', 'audit', null, { after: { filters: Object.fromEntries(p.entries()), rows: items.length } }, clientMeta(req, user))
       return new Response(lines.join('\n'), { headers: { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename="audit-log.csv"' } })
     }
     return { items: plain(items) }

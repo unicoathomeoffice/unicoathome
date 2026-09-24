@@ -36,7 +36,7 @@ export const PATCH = route<{ id: string }>(async ({ req, user, params }) => {
   const r = await loadRequest(params.id, user)
   const input = await body(req, Patch)
   const isTeam = [r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])].map(String).includes(user.id)
-  if (!can(user.role, 'patients.edit') && !(isTeam && Object.keys(input).every((k) => ['tests', 'version'].includes(k)))) throw forbidden()
+  if (!can(user, 'patients.edit') && !(isTeam && Object.keys(input).every((k) => ['tests', 'version'].includes(k)))) throw forbidden()
   if (input.version != null && input.version !== r.version) throw conflict('VERSION_CONFLICT', 'Someone else changed this request. Reload to see the latest version.')
   const before = { priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
   if (input.priority) r.priority = input.priority

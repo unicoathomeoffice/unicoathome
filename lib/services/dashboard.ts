@@ -1,8 +1,9 @@
 import 'server-only'
-import { HomecareRequest } from '../models'
+import { HomecareRequest, isOid } from '../models'
 import { getSettings } from '../settings'
-import { dayRange, isoDay, minutesBetween, time as fmtTime } from '../format'
+import { ageGender, dayRange, dhakaDate, isoDay, minutesBetween, relDay, time as fmtTime } from '../format'
 import { rankCandidates, slaInfo, withPeople } from './requests'
+import type { BoardRow } from '@/components/board/types'
 
 /** "Sabina Akter" → "Sabina A." ; "Dr. Farida Rahman" → "Dr. Farida R." */
 export function shortName(name?: string | null) {
@@ -74,26 +75,26 @@ export async function dashboardData() {
   // ---------------------------------------------------------------- 14-day trend + SLA metrics
   const days = Array.from({ length: 14 }, (_, i) => isoDay(now - (13 - i) * 86400_000))
   const from = dayRange(days[0]).start
-  const window = await HomecareRequest.find({ deletedAt: null, $or: [{ 'timeline.requestedAt': { $gte: from } }, { 'timeline.checkInAt': { $gte: from } }, { 'timeline.completedAt': { $gte: from } }] })
+  const recent = await HomecareRequest.find({ deletedAt: null, $or: [{ 'timeline.requestedAt': { $gte: from } }, { 'timeline.checkInAt': { $gte: from } }, { 'timeline.completedAt': { $gte: from } }] })
     .select('timeline visit.lateMin visit.durationMin expectedDurationMin scheduledAt')
     .lean<any[]>()
-  const perDay = days.map((d) => window.filter((r) => r.timeline?.requestedAt && isoDay(r.timeline.requestedAt) === d).length)
+  const perDay = days.map((d) => recent.filter((r) => r.timeline?.requestedAt && isoDay(r.timeline.requestedAt) === d).length)
   const total = perDay.reduce((a, b) => a + b, 0)
 
   const response = avg(
-    window.filter((r) => r.timeline?.requestedAt >= from && r.timeline?.confirmedAt).map((r) => minutesBetween(r.timeline.requestedAt, r.timeline.confirmedAt)!).filter((m) => m >= 0),
+    recent.filter((r) => r.timeline?.requestedAt >= from && r.timeline?.confirmedAt).map((r) => minutesBetween(r.timeline.requestedAt, r.timeline.confirmedAt)!).filter((m) => m >= 0),
   )
   const assignment = avg(
-    window
+    recent
       .filter((r) => r.timeline?.confirmedAt >= from && r.timeline?.assignedAt)
       // Visits booked for a later day are assigned later on purpose; the assignment SLA only applies within 24 h
       .filter((r) => !r.scheduledAt || new Date(r.scheduledAt).getTime() - new Date(r.timeline.confirmedAt).getTime() <= 24 * 3600_000)
       .map((r) => minutesBetween(r.timeline.confirmedAt, r.timeline.assignedAt)!)
       .filter((m) => m >= 0),
   )
-  const arrived = window.filter((r) => r.timeline?.checkInAt >= from)
+  const arrived = recent.filter((r) => r.timeline?.checkInAt >= from)
   const onTime = arrived.length ? Math.round((arrived.filter((r) => (r.visit?.lateMin ?? 0) <= s.sla.lateAfterMin).length / arrived.length) * 100) : null
-  const visits = window.filter((r) => r.timeline?.completedAt >= from && r.visit?.durationMin != null)
+  const visits = recent.filter((r) => r.timeline?.completedAt >= from && r.visit?.durationMin != null)
   const visitAvg = avg(visits.map((r) => r.visit.durationMin))
   const planned = avg(visits.map((r) => r.expectedDurationMin ?? 45)) ?? 45
 
@@ -144,13 +145,15 @@ export async function dashboardData() {
   }
   for (const r of fresh.filter((x) => x.priority !== 'ROUTINE')) {
     const sla = slaInfo(r, s)
+    const due = sla?.dueAt ? new Date(sla.dueAt) : null
+    const lateBy = due && due.getTime() < now ? Math.round((now - due.getTime()) / 60000) : null
     esc.push({
       id: String(r._id),
       requestNo: r.requestNo,
       kind: 'urgent',
       title: `${r.requestNo} ${r.priority.toLowerCase()}, unconfirmed`,
-      sub: `${r.patientSnapshot?.name ?? ''} · confirm in `,
-      dueAt: sla?.dueAt ? new Date(sla.dueAt).toISOString() : null,
+      sub: `${r.patientSnapshot?.name ?? ''} · ${lateBy != null ? `confirmation ${lateBy} min overdue` : 'confirm in '}`,
+      dueAt: due && lateBy == null ? due.toISOString() : null,
       action: 'open',
     })
   }
@@ -166,6 +169,109 @@ export async function dashboardData() {
   ])
 
   return { kpis, trend: { days, perDay, total, avg: Math.round((total / 14) * 10) / 10 }, metrics, live, escalations: esc, svcWeek, svcToday, zonesWeek, zonesToday }
+}
+
+// ================================================================ requests board (W03)
+export type BoardFilters = { status?: string; priority?: string; service?: string; zone?: string; staff?: string; date?: string; q?: string }
+
+const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/** Mongo filter for the board. CLOSED / CANCELLED are limited to the last 3 days unless explicitly filtered. */
+export function boardQuery(p: BoardFilters) {
+  const f: Record<string, any> = { deletedAt: null }
+  const and: any[] = []
+  const statuses = p.status?.split(',').filter(Boolean)
+  if (statuses?.length) f.status = { $in: statuses }
+  if (!statuses?.some((s) => s === 'CLOSED' || s === 'CANCELLED')) {
+    const cut = new Date(Date.now() - 3 * 86400_000)
+    and.push({ $or: [{ status: { $nin: ['CLOSED', 'CANCELLED'] } }, { 'timeline.closedAt': { $gte: cut } }, { 'timeline.cancelledAt': { $gte: cut } }] })
+  }
+  if (p.priority) f.priority = { $in: p.priority.split(',') }
+  if (p.service) f['services.code'] = { $in: p.service.split(',') }
+  if (p.zone) f['patientSnapshot.area'] = { $in: p.zone.split(',') }
+  if (p.staff && isOid(p.staff)) and.push({ $or: [{ 'assignment.primaryStaffId': p.staff }, { 'assignment.secondaryStaffIds': p.staff }] })
+  if (p.date && p.date !== 'all') {
+    const today = isoDay()
+    let start: Date, end: Date
+    if (p.date === 'today') ({ start, end } = dayRange(today))
+    else if (p.date === 'tomorrow') ({ start, end } = dayRange(isoDay(Date.now() + 86400_000)))
+    else if (p.date === 'week') {
+      start = dayRange(today).start
+      end = new Date(start.getTime() + 7 * 86400_000)
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(p.date)) ({ start, end } = dayRange(p.date))
+    else start = end = null as any
+    if (start) {
+      const ymd = [isoDay(start)]
+      for (let t = start.getTime() + 86400_000; t < end.getTime(); t += 86400_000) ymd.push(isoDay(t))
+      // unscheduled requests count on their preferred day, or (ASAP) on the day they came in
+      and.push({
+        $or: [
+          { scheduledAt: { $gte: start, $lt: end } },
+          { scheduledAt: null, 'preferred.date': { $in: ymd } },
+          { scheduledAt: null, 'preferred.date': null, 'timeline.requestedAt': { $gte: start, $lt: end } },
+        ],
+      })
+    }
+  }
+  if (p.q?.trim()) {
+    const q = escRe(p.q.trim())
+    const digits = p.q.replace(/\D/g, '')
+    and.push({
+      $or: [
+        { requestNo: new RegExp(q, 'i') },
+        { 'patientSnapshot.name': new RegExp(q, 'i') },
+        { 'patientSnapshot.uhid': new RegExp(`^${q}`, 'i') },
+        ...(digits.length >= 4 ? [{ 'patientSnapshot.phone': new RegExp(digits.slice(-10)) }] : []),
+      ],
+    })
+  }
+  if (and.length) f.$and = and
+  return f
+}
+
+function scheduleLabel(r: any) {
+  const at = r.scheduledAt
+  const slot = r.slot || r.preferred?.slot
+  if (at) return `${relDay(at)} ${slot && !r.preferred?.time ? slot : fmtTime(at)}`
+  if (r.preferred?.date) return `${relDay(dhakaDate(r.preferred.date))} ${slot ?? r.preferred.time ?? ''}`.trim()
+  return `${relDay(r.timeline?.requestedAt ?? r.createdAt)} ASAP`
+}
+
+function boardSla(r: any, s: any): BoardRow['sla'] {
+  if (r.status === 'COMPLETED') return { tone: 'g', label: r.billing?.invoiceNo ? 'Invoice added' : 'Report ready' }
+  if (r.status === 'CLOSED') return { tone: 'g', label: `Closed ${isoDay(r.timeline?.closedAt) === isoDay() ? fmtTime(r.timeline?.closedAt) : relDay(r.timeline?.closedAt)}` }
+  if (r.status === 'CANCELLED') return { tone: 'g', label: r.cancellation?.reason ? `Cancelled · ${r.cancellation.reason}` : 'Cancelled' }
+  const x = slaInfo(r, s)
+  return x ? { tone: x.tone, label: x.label } : null
+}
+
+export async function boardRows(p: BoardFilters, limit = 400): Promise<BoardRow[]> {
+  const s = await getSettings()
+  const rows = await HomecareRequest.find(boardQuery(p))
+    .select('requestNo status priority patientId patientSnapshot services scheduledAt slot preferred expectedDurationMin timeline assignment billing.invoiceNo cancellation createdAt')
+    .sort({ scheduledAt: 1, createdAt: -1 })
+    .limit(limit)
+    .lean<any[]>()
+  await withPeople(rows)
+  return rows.map((r) => ({
+    id: String(r._id),
+    requestNo: r.requestNo,
+    short: `#${r.requestNo.split('-').pop()}`,
+    status: r.status,
+    priority: r.priority,
+    patientId: String(r.patientId),
+    patient: r.patientSnapshot?.name ?? '',
+    ageGender: ageGender(r.patientSnapshot?.ageYears, r.patientSnapshot?.gender),
+    phone: r.patientSnapshot?.phone ?? '',
+    area: r.patientSnapshot?.area ?? '',
+    services: (r.services ?? []).map((x: any) => x.name).join(', '),
+    schedule: scheduleLabel(r),
+    staff: r.primaryStaff ? { id: r.primaryStaff.id, name: r.primaryStaff.name, short: shortName(r.primaryStaff.name) } : null,
+    sla: boardSla(r, s),
+    checkInAt: r.status === 'IN_PROGRESS' && r.timeline?.checkInAt ? new Date(r.timeline.checkInAt).toISOString() : null,
+    planned: r.expectedDurationMin ?? 45,
+    hasSchedule: !!r.scheduledAt,
+  }))
 }
 
 async function serviceMix(since: Date): Promise<[string, number][]> {

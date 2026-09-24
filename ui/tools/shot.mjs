@@ -18,7 +18,7 @@ const unmsys = (a) => a.replace(/^[A-Za-z]:\/.*?\/Git(?=\/)/, '').replace(/^([A-
 const target = args.map(unmsys).find((a) => a.startsWith('/')) ?? '/dashboard'
 const flag = (n) => args.includes(n)
 const opt = (n) => (args.includes(n) ? args[args.indexOf(n) + 1] : undefined)
-const mobile = flag('--mobile') || target.startsWith('/m')
+const mobile = flag('--mobile') || target === '/m' || target.startsWith('/m/') || target.startsWith('/m?')
 const who = opt('--as') ?? (mobile ? '11432' : 'N-0100')
 const BASE = process.env.APP_URL ?? 'http://localhost:3000'
 const CHROME = ['C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].find((p) => fs.existsSync(p))

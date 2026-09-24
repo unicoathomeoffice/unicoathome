@@ -28,6 +28,7 @@ export const UserInput = z.object({
   whatsapp: z.string().optional(),
   email: z.string().email().optional().or(z.literal('')),
   role: z.enum(ROLES),
+  customRoleId: z.string().optional().or(z.literal('')), // A2 custom role; '' clears it
   departmentId: z.string().optional().or(z.literal('')),
   designationId: z.string().optional().or(z.literal('')),
   skills: z.array(z.string()).default([]),

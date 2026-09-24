@@ -42,12 +42,13 @@ export const POST = route(
     if (dupe) throw bad(dupe.employeeId === input.employeeId ? 'Employee ID already exists' : dupe.phone === input.phone ? 'Phone already belongs to another user' : 'Email already belongs to another user')
     const password = input.password ?? Math.random().toString(36).slice(2, 10) + 'A1'
     // Only SUPER_ADMIN creates active users directly; coordinators' submissions wait in Approvals.
-    const direct = can(user.role, 'users.manage')
+    const direct = can(user, 'users.manage')
     const u = await User.create({
       ...input,
       email: clean(input.email),
       departmentId: clean(input.departmentId),
       designationId: clean(input.designationId),
+      customRoleId: clean(input.customRoleId),
       vehicleId: clean(input.vehicleId),
       supervisorId: clean(input.supervisorId),
       licenceExpiry: input.licenceExpiry ? new Date(input.licenceExpiry) : undefined,

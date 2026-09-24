@@ -1,7 +1,7 @@
 // Server-safe presentational pieces of the request detail (W04).
 import type { ReactNode } from 'react'
 import { Check, X } from 'lucide-react'
-import { Elapsed } from '@/components/client'
+import { Tick } from './widgets'
 import { cx, time } from '@/lib/format'
 import type { Metric, Step, VitalRow } from './lib'
 
@@ -65,16 +65,10 @@ export function Stepper({ steps }: { steps: Step[] }) {
                 <div className={cx('text-[12px]', s.state === 'current' ? 'font-bold text-[#B45309]' : s.state === 'cancelled' ? 'font-bold text-[#B91C1C]' : 'text-slate-500')}>
                   {s.live ? (
                     <>
-                      now · <Elapsed from={s.live} />
+                      now · <Tick from={s.live} />
                     </>
-                  ) : s.sub && s.state !== 'done' ? (
-                    s.sub
-                  ) : s.sub ? (
-                    s.sub
-                  ) : s.at ? (
-                    time(s.at)
                   ) : (
-                    '—'
+                    s.sub ?? (s.at ? time(s.at) : '—')
                   )}
                 </div>
               </div>
@@ -90,18 +84,18 @@ export function Stepper({ steps }: { steps: Step[] }) {
 export function MetricsTable({ rows, className }: { rows: Metric[]; className?: string }) {
   return (
     <div className={cx('overflow-hidden rounded-card border border-slate-200 bg-white', className)}>
-      <div className="grid h-11 grid-cols-[1fr_88px_96px] items-center border-b border-slate-200 bg-slate-50 px-5 text-[11.5px] font-bold uppercase tracking-[.05em] text-slate-500">
+      <div className="grid h-11 grid-cols-[1fr_80px_90px] items-center border-b border-slate-200 bg-slate-50 px-5 text-[11.5px] font-bold uppercase tracking-[.05em] text-slate-500">
         <div className="pr-3">Metric</div>
         <div className="pr-3">Value</div>
         <div className="pr-3">Target</div>
       </div>
       {rows.map((m) => (
-        <div key={m.key} className="grid h-9 grid-cols-[1fr_88px_96px] items-center border-b border-slate-100 px-5 text-[13px] last:border-b-0">
+        <div key={m.key} className="grid h-9 grid-cols-[1fr_80px_90px] items-center border-b border-slate-100 px-5 text-[13px] last:border-b-0">
           <div className="truncate pr-3">{m.label}</div>
           <div className={cx('truncate pr-3', m.ok === false && 'font-semibold text-[#B91C1C]')}>
             {m.liveFrom ? (
               <span className="font-semibold text-[#B45309]">
-                <Elapsed from={m.liveFrom} /> →
+                <Tick from={m.liveFrom} /> →
               </span>
             ) : (
               m.text

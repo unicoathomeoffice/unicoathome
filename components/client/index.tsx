@@ -239,13 +239,21 @@ export function WhatsAppButton({
 }
 
 // ---------------------------------------------------------------- timers
-/** Live mm:ss elapsed since `from` (TimerWidget core) */
-export function Elapsed({ from, className }: { from: string | Date; className?: string }) {
-  const [now, setNow] = useState(() => Date.now())
+/** Ticking clock that is null during SSR/hydration, so server and client markup always match. */
+function useNow() {
+  const [now, setNow] = useState<number | null>(null)
   useEffect(() => {
+    setNow(Date.now())
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [])
+  return now
+}
+
+/** Live mm:ss elapsed since `from` (TimerWidget core) */
+export function Elapsed({ from, className }: { from: string | Date; className?: string }) {
+  const now = useNow()
+  if (now == null) return <span className={className} suppressHydrationWarning>--:--</span>
   const sec = Math.max(0, (now - new Date(from).getTime()) / 1000)
   const h = Math.floor(sec / 3600)
   return <span className={className}>{h ? `${h}:${mmss(sec % 3600)}` : mmss(sec)}</span>
@@ -253,11 +261,8 @@ export function Elapsed({ from, className }: { from: string | Date; className?: 
 
 /** Live countdown to `to`; shows "Overdue mm:ss" after. */
 export function Countdown({ to, className, overdueClassName }: { to: string | Date; className?: string; overdueClassName?: string }) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
-  }, [])
+  const now = useNow()
+  if (now == null) return <span className={className} suppressHydrationWarning>--:--</span>
   const sec = (new Date(to).getTime() - now) / 1000
   if (sec < 0) return <span className={overdueClassName ?? className}>-{mmss(-sec)}</span>
   const h = Math.floor(sec / 3600)

@@ -1,13 +1,22 @@
 import 'server-only'
 import { z } from 'zod'
 import type { Model } from 'mongoose'
-import { Department, Designation, Zone, ServiceType, Vehicle, User, HomecareRequest } from './models'
+import { Department, Designation, Zone, ServiceType, Vehicle, User, HomecareRequest, isOid, oid } from './models'
 import type { Permission } from './constants'
 
 type Master = { model: Model<any>; entity: string; perm: Permission; sort: Record<string, 1 | -1>; schema: z.ZodObject<any>; usage?: (ids: unknown[]) => Promise<Record<string, number>> }
 
 async function countBy(model: Model<any>, field: string, ids: unknown[]) {
-  const rows = await model.aggregate([{ $match: { [field]: { $in: ids }, deletedAt: null } }, { $group: { _id: `$${field}`, n: { $sum: 1 } } }])
+  // aggregate() does not cast: string ids (e.g. from a DELETE route param) must become ObjectIds,
+  // and array fields (services.serviceTypeId) are unwound so multi-service requests count per id.
+  const oids = ids.map((i) => (typeof i === 'string' && isOid(i) ? oid(i) : i))
+  const rows = await model.aggregate([
+    { $match: { [field]: { $in: oids }, deletedAt: null } },
+    { $project: { v: `$${field}` } },
+    { $unwind: '$v' },
+    { $match: { v: { $in: oids } } },
+    { $group: { _id: '$v', n: { $sum: 1 } } },
+  ])
   return Object.fromEntries(rows.map((r) => [String(r._id), r.n]))
 }
 

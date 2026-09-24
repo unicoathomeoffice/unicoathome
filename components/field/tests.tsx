@@ -6,6 +6,7 @@ import { api, useAction, Sheet, ChipPicker } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { TESTS_PROCEDURES } from '@/lib/constants'
 import { cx } from '@/lib/format'
+import { bigBtn } from './bar'
 
 type Lab = { status: string; flag?: string; value?: string; unit?: string; summary?: string }
 
@@ -53,7 +54,7 @@ export function TestsCard({ id, tests, labs, canEdit }: { id: string; tests: str
           <button
             type="button"
             disabled={busy}
-            className={btnClass('p', 'xl', 'flex-1')}
+            className={bigBtn('p')}
             onClick={async () => {
               const ok = await run(() => api(`/requests/${id}`, { method: 'PATCH', body: { tests: sel } }), 'Tests updated')
               if (ok) setOpen(false)

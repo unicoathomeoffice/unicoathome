@@ -11,7 +11,7 @@ export const GET = route<{ id: string }>(async ({ user, params }) => {
   const patient = await Patient.findOne({ _id: params.id, deletedAt: null }).lean<any>()
   if (!patient) throw notFound('Patient')
   const visits = await HomecareRequest.find({ patientId: params.id, deletedAt: null }).select('-deviceStamps').sort({ createdAt: -1 }).limit(100).lean<any[]>()
-  if (!can(user.role, 'requests.readAll')) {
+  if (!can(user, 'requests.readAll')) {
     const mine = visits.some((v) => [v.assignment?.primaryStaffId, ...(v.assignment?.secondaryStaffIds ?? [])].map(String).includes(user.id))
     if (!mine) throw forbidden('You can only see patients you are visiting')
   }

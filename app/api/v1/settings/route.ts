@@ -3,6 +3,7 @@ import { route, body, clientMeta } from '@/lib/api'
 import { getSettings, saveSetting, DEFAULT_SETTINGS } from '@/lib/settings'
 import { emailConfigured, queueEmail } from '@/lib/messaging'
 import { audit } from '@/lib/audit'
+import { blobEnabled } from '@/lib/storage'
 
 export const GET = route(async () => {
   const s = await getSettings()
@@ -13,6 +14,7 @@ export const GET = route(async () => {
       whatsapp: { mode: 'deeplink', country: process.env.WA_DEFAULT_COUNTRY ?? '880' },
       cron: { configured: !!process.env.CRON_SECRET },
       database: { name: 'MongoDB Atlas' },
+      storage: { provider: blobEnabled() ? 'Vercel Blob (private)' : 'MongoDB (inline)', blob: blobEnabled() },
     },
   }
 })

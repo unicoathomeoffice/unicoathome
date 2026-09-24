@@ -6,7 +6,7 @@ import { SignJWT, jwtVerify } from 'jose'
 import bcrypt from 'bcryptjs'
 import { randomUUID } from 'crypto'
 import { db } from './db'
-import { Session, User, Designation } from './models'
+import { Session, User, Designation, CustomRole } from './models'
 import { can, type Permission, type Role } from './constants'
 
 export const COOKIE = 'hc_session'
@@ -22,6 +22,9 @@ export type SessionUser = {
   employeeId: string
   name: string
   role: Role
+  /** set when the user has a custom role (A2): the exact permission list that replaces the base role matrix */
+  permissions?: string[] | null
+  customRole?: string
   designation?: string
   phone: string
   email?: string
@@ -98,12 +101,17 @@ export const getUser = cache(async function getUser(): Promise<SessionUser | nul
   if (!session.lastSeenAt || Date.now() - new Date(session.lastSeenAt).getTime() > 5 * 60_000) {
     Session.updateOne({ jti: payload.jti }, { lastSeenAt: new Date() }).catch(() => {})
   }
-  const designation = user.designationId ? await Designation.findById(user.designationId).select('title').lean<any>() : null
+  const [designation, custom] = await Promise.all([
+    user.designationId ? Designation.findById(user.designationId).select('title').lean<any>() : null,
+    user.customRoleId ? CustomRole.findById(user.customRoleId).select('name permissions').lean<any>() : null,
+  ])
   return {
     id: String(user._id),
     employeeId: user.employeeId,
     name: user.name ?? '',
     role: user.role,
+    permissions: custom ? custom.permissions ?? [] : null,
+    customRole: custom?.name,
     designation: designation?.title,
     phone: user.phone,
     email: user.email,
@@ -123,7 +131,7 @@ export async function requireWebUser(perm?: Permission): Promise<SessionUser> {
   const u = await getUser()
   if (!u) redirect('/login')
   if (!u.platformAccess.includes('web')) redirect('/m')
-  if (perm && !can(u.role, perm)) redirect('/dashboard?denied=1')
+  if (perm && !can(u, perm)) redirect('/dashboard?denied=1')
   return u
 }
 
@@ -132,7 +140,7 @@ export async function requireAppUser(perm?: Permission): Promise<SessionUser> {
   const u = await getUser()
   if (!u) redirect('/m/login')
   if (!u.platformAccess.includes('app')) redirect('/dashboard')
-  if (perm && !can(u.role, perm)) redirect('/m?denied=1')
+  if (perm && !can(u, perm)) redirect('/m?denied=1')
   return u
 }
 

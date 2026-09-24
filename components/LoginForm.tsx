@@ -64,7 +64,7 @@ export function LoginForm({ client }: { client: 'web' | 'app' }) {
           <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="size-4 accent-primary" />
           {client === 'app' ? 'Remember this device' : 'Keep me signed in for 30 days'}
         </label>
-        <a href={`mailto:?subject=${encodeURIComponent('Unico HomeCare password reset')}`} className="font-semibold text-primary" title="Ask your coordinator or IT to reset your password from Staff & users">
+        <a href={client === 'app' ? '/m/forgot' : `mailto:?subject=${encodeURIComponent('Unico HomeCare password reset')}`} className="font-semibold text-primary" title="Ask your coordinator or IT to reset your password from Staff & users">
           Forgot password?
         </a>
       </div>

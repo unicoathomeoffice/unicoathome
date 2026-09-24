@@ -23,7 +23,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     console.error('sweep failed', e)
   }
   const d = await dashboardData()
-  const canAssign = can(user.role, 'requests.assign')
+  const canAssign = can(user, 'requests.assign')
 
   const toggle = (
     <div className="hidden rounded-lg border border-slate-300 bg-white p-0.5 md:flex" role="group" aria-label="Density">
@@ -68,7 +68,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   return (
     <AdminPage title="Dashboard" actions={toggle}>
       <AutoRefresh seconds={30} />
-      <div className={cx('flex flex-col', compact ? 'gap-3' : 'gap-5')}>
+      <div className={cx('flex min-h-full flex-col', compact ? 'gap-3' : 'gap-5')}>
         <div className={cx('grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7', compact ? 'gap-3' : 'gap-5')}>
           {tiles.map((t) => (
             <Kpi key={t.label} label={t.label} n={t.n} color={t.color} sub={compact ? undefined : t.sub} dense={compact} href={t.href} />
@@ -76,7 +76,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
 
         {compact ? (
-          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-[1.6fr_1fr_1fr]">
+          <div className="grid flex-1 gap-3 lg:grid-cols-2 xl:grid-cols-[1.6fr_1fr_1fr]">
             <Card pad={false} className="flex flex-col p-4 lg:col-span-2 xl:col-span-1">
               <Trend d={d} compact />
             </Card>
@@ -103,7 +103,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             <div className="grid gap-5 lg:grid-cols-2">
               <Card>
                 <div className="mb-3.5 text-[15px] font-bold">Completion by service · this week</div>
-                <HBars items={d.svcWeek} />
+                <HBars items={d.svcWeek.slice(0, 5)} />
               </Card>
               <Card>
                 <div className="mb-3.5 text-[15px] font-bold">Top zones · this week</div>

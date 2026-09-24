@@ -7,10 +7,14 @@ import { MASTER } from '@/lib/master'
 export const PATCH = route<{ kind: string; id: string }>(async ({ req, user, params }) => {
   const m = MASTER[params.kind]
   if (!m || !isOid(params.id)) throw notFound('Record')
-  if (!can(user.role, m.perm)) throw forbidden()
+  if (!can(user, m.perm)) throw forbidden()
   const doc = await m.model.findById(params.id)
   if (!doc) throw notFound('Record')
-  const input = (await body(req, m.schema.partial())) as Record<string, unknown>
+  // zod 4 applies .default() inside .partial() — keep only keys the client actually sent
+  const sent = await req.clone().json().catch(() => ({}))
+  const parsed = (await body(req, m.schema.partial())) as Record<string, unknown>
+  // '' clears a field (e.g. unlink a car's driver: { driverId: '' })
+  const input = Object.fromEntries(Object.entries(parsed).filter(([k]) => k in (sent ?? {})).map(([k, v]) => [k, v === '' ? undefined : v]))
   const before = doc.toObject()
   doc.set(input)
   await doc.save()
@@ -22,7 +26,7 @@ export const PATCH = route<{ kind: string; id: string }>(async ({ req, user, par
 export const DELETE = route<{ kind: string; id: string }>(async ({ req, user, params }) => {
   const m = MASTER[params.kind]
   if (!m || !isOid(params.id)) throw notFound('Record')
-  if (!can(user.role, m.perm)) throw forbidden()
+  if (!can(user, m.perm)) throw forbidden()
   if (m.usage) {
     const n = (await m.usage([params.id]))[params.id] ?? 0
     if (n > 0) throw bad(`In use by ${n} record${n === 1 ? '' : 's'}. Deactivate it instead.`)

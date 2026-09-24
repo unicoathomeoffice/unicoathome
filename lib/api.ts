@@ -52,7 +52,7 @@ export function route<P = Record<string, string>>(fn: Handler<P>, opt: { perm?: 
       await db()
       const user = await getUser()
       if (!user) throw new ApiError(401, 'UNAUTHENTICATED', 'Please sign in again')
-      if (opt.perm && !can(user.role, opt.perm)) throw forbidden()
+      if (opt.perm && !can(user, opt.perm)) throw forbidden()
       if (opt.roles && !opt.roles.includes(user.role)) throw forbidden()
       const out = await fn({ req, user, params: (await ctx?.params) ?? ({} as P) })
       if (out instanceof Response) return out

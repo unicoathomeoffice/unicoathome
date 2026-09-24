@@ -66,6 +66,22 @@ export async function getSettings(): Promise<Settings> {
   return merge(DEFAULT_SETTINGS, over)
 }
 
+/** Map notification types used in code onto the event rows of the E4 matrix. */
+const EVENT_ALIAS: Record<string, string> = { ESCALATION: 'DECLINED', TRANSPORT: 'TRANSPORT_ASSIGNED' }
+
+/**
+ * E4 notification matrix check: rules[event][recipient] = channels[].
+ * Anything not configured is allowed, so new events never go silent by accident.
+ * For in-app delivery, either 'inapp' or 'push' counts (the web app has no separate push).
+ */
+export function ruleAllows(rules: Settings['notificationRules'], event: string, recipient: string, channel: 'inapp' | 'push' | 'email' | 'whatsapp') {
+  const row = rules?.[EVENT_ALIAS[event] ?? event]
+  const list = row?.[recipient]
+  if (!Array.isArray(list)) return true
+  if (event === 'ASSIGNED' && recipient === 'STAFF') return true // locked on (plan §5.7)
+  return channel === 'inapp' ? list.includes('inapp') || list.includes('push') : list.includes(channel)
+}
+
 export async function saveSetting(key: keyof Settings | string, value: unknown, userId?: string) {
   await Setting.updateOne({ key }, { value, updatedBy: userId }, { upsert: true })
 }

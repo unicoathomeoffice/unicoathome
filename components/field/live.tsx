@@ -2,6 +2,7 @@
 // Offline awareness for the field app: an outbox in localStorage for stamped visit actions
 // (ticks, vitals, notes, journey, check-in) and the SyncBanner that shows / flushes it.
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { CloudOff, RefreshCw } from 'lucide-react'
 import { api } from '@/components/client'
@@ -122,4 +123,48 @@ export function SyncBanner() {
       {online ? `Syncing ${pending} action${pending === 1 ? '' : 's'}…` : `Offline · ${pending ? `${pending} action${pending === 1 ? '' : 's'} pending · ` : ''}actions will retry`}
     </div>
   )
+}
+
+/** Live h:mm:ss / mm:ss since `from` (hydration-safe: server and client may differ by a second). */
+export function LiveElapsed({ from, className }: { from: string | Date; className?: string }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const sec = Math.max(0, (now - new Date(from).getTime()) / 1000)
+  const h = Math.floor(sec / 3600)
+  const m = Math.floor((sec % 3600) / 60)
+  const s = Math.floor(sec % 60)
+  const two = (n: number) => String(n).padStart(2, '0')
+  return (
+    <span className={className} suppressHydrationWarning>
+      {h ? `${h}:${two(m)}:${two(s)}` : `${two(m)}:${two(s)}`}
+    </span>
+  )
+}
+
+/** Live countdown "mm:ss" / "1h 12m" to `to`; "-mm:ss" once passed (hydration-safe). */
+export function LiveCountdown({ to, className, overdueClassName }: { to: string | Date; className?: string; overdueClassName?: string }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const sec = (new Date(to).getTime() - now) / 1000
+  const a = Math.abs(sec)
+  const two = (n: number) => String(Math.floor(n)).padStart(2, '0')
+  const txt = sec < 0 ? `-${two(a / 60)}:${two(a % 60)}` : a >= 3600 ? `${Math.floor(a / 3600)}h ${Math.floor((a % 3600) / 60)}m` : `${two(a / 60)}:${two(a % 60)}`
+  return (
+    <span className={sec < 0 ? overdueClassName ?? className : className} suppressHydrationWarning>
+      {txt}
+    </span>
+  )
+}
+
+/** Render children into document.body (sheets opened from inside sticky headers/bars). */
+export function BodyPortal({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => setReady(true), [])
+  return ready ? createPortal(children, document.body) : null
 }

@@ -121,7 +121,7 @@ async function main() {
   const passwordHash = await bcrypt.hash(PASSWORD, 10)
   type U = [string, string, Role, string, string, string, string[], string[], string?]
   const rows: U[] = [
-    ['A-0001', 'Rafiq Ahmed', 'SUPER_ADMIN', '01700000001', 'IT Administrator', 'IT', [], [], 'admin@unicohospitals.com'],
+    ['A-0001', 'Rafiq Ahmed', 'SUPER_ADMIN', '01700000001', 'IT Administrator', 'IT', [], [], 'unicoathome.office@gmail.com'],
     ['N-0100', 'Nasrin Sultana', 'HC_ADMIN', '01711000100', 'Home Care Coordinator', 'FM', [], [], 'nasrin.sultana@unicohospitals.com'],
     ['FD-0201', 'Tanjina Akter', 'FRONT_DESK', '01711000201', 'Front Desk Executive', 'FO', [], [], 'frontdesk@unicohospitals.com'],
     ['V-0301', 'Dr. Kamrul Hasan', 'VIEWER', '01711000301', 'Manager – Operations', 'FM', [], [], 'kamrul.hasan@unicohospitals.com'],

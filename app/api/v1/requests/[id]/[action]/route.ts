@@ -48,7 +48,7 @@ const ACTIONS: Record<string, Action> = {
 export const POST = route<{ id: string; action: string }>(async ({ req, user, params }) => {
   const a = ACTIONS[params.action]
   if (!a) throw notFound('Action')
-  if (a.perm && !can(user.role, a.perm)) throw forbidden()
+  if (a.perm && !can(user, a.perm)) throw forbidden()
   const r = await svc.loadRequest(params.id, user)
   const input = a.schema ? await body(req, a.schema) : {}
   const result = await a.run({ r, user, meta: clientMeta(req, user), req }, input)

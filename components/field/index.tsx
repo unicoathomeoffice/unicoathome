@@ -1,13 +1,12 @@
 // Field app (M03–M15) presentational pieces. Server-safe: no hooks (live bits are small client islands).
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { Check, ChevronLeft } from 'lucide-react'
+import { Check } from 'lucide-react'
 import { StatusChip, PriorityBadge, Avatar } from '@/components/ui'
 import { ContactBar } from '@/components/mobile'
-import { Elapsed } from '@/components/client'
+import { LiveElapsed } from './live'
 import { cx, time, minutesBetween, phone as fmtPhone } from '@/lib/format'
 import { LATE_AFTER_MIN } from '@/lib/constants'
-import { SyncBanner } from './live'
 
 // ---------------------------------------------------------------- small helpers
 export const svcName = (r: any) => (r.services ?? []).map((s: any) => s.name).join(' + ') || 'Home care visit'
@@ -26,49 +25,15 @@ export function checklistStats(r: any) {
 
 /** "+4 min · on time" / "12 min late" relative to the scheduled time */
 export function punctuality(r: any, at?: string | Date | null) {
-  const late = r.visit?.lateMin != null && !at ? r.visit.lateMin : minutesBetween(r.scheduledAt, at ?? r.timeline?.checkInAt)
+  const late = minutesBetween(r.scheduledAt, at ?? r.timeline?.checkInAt) ?? r.visit?.lateMin ?? null
   if (late == null) return null
   if (late > LATE_AFTER_MIN) return { late: true, label: `${late} min late`, min: late }
   if (late < 0) return { late: false, label: `${-late} min early · on time`, min: late }
   return { late: false, label: `+${late} min · on time`, min: late }
 }
 
-// ---------------------------------------------------------------- header (with offline banner)
-export function FHeader({ title, sub, back, right, below }: { title: ReactNode; sub?: ReactNode; back?: string; right?: ReactNode; below?: ReactNode }) {
-  return (
-    <div className="sticky top-0 z-20">
-      <SyncBanner />
-      <header className="border-b border-slate-200 bg-white px-3 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
-        <div className="flex items-center gap-2">
-          {back ? (
-            <Link href={back} className="flex size-10 flex-none items-center justify-center text-slate-700" aria-label="Back">
-              <ChevronLeft size={22} />
-            </Link>
-          ) : (
-            <div className="w-2" />
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[17px] font-bold">{title}</div>
-            {sub && <div className="truncate text-[13px] text-slate-500">{sub}</div>}
-          </div>
-          {right}
-        </div>
-        {below}
-      </header>
-    </div>
-  )
-}
-
-/** Amber pulsing elapsed pill (M08-e / M09 header) */
-export function ElapsedPill({ from }: { from?: string | null }) {
-  if (!from) return null
-  return (
-    <span className="inline-flex h-7 flex-none items-center gap-1.5 rounded-full bg-[#FEF3C7] px-2.5 text-[13px] font-bold text-[#B45309]">
-      <span className="size-[7px] animate-hcpulse rounded-full bg-[#F59E0B]" />
-      <Elapsed from={from} />
-    </span>
-  )
-}
+// header + timer pill live in ./bar (usable from client screens too)
+export { CHeader as FHeader, TimerPill as ElapsedPill } from './bar'
 
 // ---------------------------------------------------------------- visit card (M03 / M04)
 export function VisitCard({ r, href, highlight, footer, muted }: { r: any; href: string; highlight?: boolean; footer?: ReactNode; muted?: boolean }) {
@@ -126,7 +91,7 @@ export function TimelineStepper({ r }: { r: any }) {
   const journeySkipped = !t.enRouteAt && !!t.checkInAt
   const ended = ['CANCELLED', 'RESCHEDULED'].includes(r.status)
   const cur = ended ? -1 : steps.findIndex((s) => !s.at && !(s.key === 'journey' && journeySkipped))
-  const done = (i: number) => !!steps[i].at || (steps[i].key === 'journey' && journeySkipped)
+  const done = (i: number) => !!steps[i]?.at || (steps[i]?.key === 'journey' && journeySkipped)
 
   return (
     <div className="grid grid-cols-[20px_1fr_auto] gap-x-3">
@@ -152,7 +117,7 @@ export function TimelineStepper({ r }: { r: any }) {
         else if (isCur && s.key === 'checklist' && t.checkInAt)
           right = (
             <span className="text-[14px] font-bold text-[#B45309]">
-              <Elapsed from={t.checkInAt} /> elapsed
+              <LiveElapsed from={t.checkInAt} /> elapsed
             </span>
           )
         else if (isCur && s.key === 'accepted' && r.assignment?.respondBy) right = <span className="text-[13px] font-semibold text-[#B45309]">by {time(r.assignment.respondBy)}</span>
@@ -187,7 +152,7 @@ export function PatientCard({ r, patient, compact }: { r: any; patient: any; com
   const ps = r.patientSnapshot ?? {}
   const allergies: string[] = [...new Set<string>([...(patient?.allergies ?? []), ...(r.clinical?.allergies ?? [])])].filter(Boolean)
   const g = patient?.guardian
-  const address = patient?.address?.full ? [patient.address.full, patient.address.area].filter(Boolean).join(', ') : ps.address
+  const address = fullAddress(patient, ps.address)
   return (
     <div className="rounded-card bg-white px-4 py-3.5 shadow-card">
       <div className="flex items-center gap-3">
@@ -214,6 +179,25 @@ export function PatientCard({ r, patient, compact }: { r: any; patient: any; com
       <div className="mt-3">
         <ContactBar phone={ps.phone} address={address} lat={patient?.address?.lat} lng={patient?.address?.lng} />
       </div>
+    </div>
+  )
+}
+
+/** Link-based segmented control (same look as the client Segmented) */
+export function SegLinks({ items, active, h = 36 }: { items: { key: string; label: ReactNode; href: string }[]; active: string; h?: number }) {
+  return (
+    <div className="flex gap-[3px] rounded-[10px] bg-slate-200 p-[3px]">
+      {items.map((i) => (
+        <Link
+          key={i.key}
+          href={i.href}
+          scroll={false}
+          className={cx('flex flex-1 items-center justify-center whitespace-nowrap rounded-lg px-2 text-sm font-semibold', i.key === active ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,.1)]' : 'text-slate-500')}
+          style={{ height: h }}
+        >
+          {i.label}
+        </Link>
+      ))}
     </div>
   )
 }
@@ -245,4 +229,11 @@ export function Mini({ k, v, className }: { k: ReactNode; v: ReactNode; classNam
 /** Not-on-team notice for coordinators viewing a visit in the app */
 export function ReadOnlyNote({ children }: { children?: ReactNode }) {
   return <div className="rounded-card bg-slate-200/70 px-4 py-3 text-[13px] text-slate-600">{children ?? 'You are viewing this visit. Only the assigned care team can record visit steps.'}</div>
+}
+
+/** Full address without repeating the area when it is already part of it */
+export function fullAddress(patient: any, fallback?: string) {
+  const a = patient?.address
+  if (!a?.full) return fallback ?? ''
+  return a.area && !a.full.toLowerCase().includes(String(a.area).toLowerCase()) ? `${a.full}, ${a.area}` : a.full
 }

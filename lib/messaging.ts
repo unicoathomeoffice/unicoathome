@@ -4,6 +4,7 @@ import nodemailer, { type Transporter } from 'nodemailer'
 import { MessageLog, Notification, Template, User } from './models'
 import { DEFAULT_TEMPLATES, emailShell, renderText, type TemplateDef } from './templates'
 import type { Role } from './constants'
+import { getSettings, ruleAllows } from './settings'
 
 /** Run work after the response is sent (Vercel-safe). Falls back to fire-and-forget outside a request. */
 export function background(fn: () => Promise<unknown>) {
@@ -103,8 +104,10 @@ export async function deliverEmail(logId: string, cc?: string) {
   }
   log.attempts = (log.attempts ?? 0) + 1
   try {
-    const from = `"${process.env.EMAIL_FROM_NAME ?? 'Unico HomeCare'}" <${process.env.GMAIL_USER}>`
-    const info = await mailer().sendMail({ from, to: log.to, cc, subject: log.subject, text: log.renderedText, html: log.renderedHtml })
+    const s = await getSettings()
+    const fromName = (s.email.fromName || process.env.EMAIL_FROM_NAME || 'Unico HomeCare').replace(/"/g, '')
+    const from = `"${fromName}" <${process.env.GMAIL_USER}>`
+    const info = await mailer().sendMail({ from, to: log.to, cc, replyTo: s.email.replyTo || undefined, subject: log.subject, text: log.renderedText, html: log.renderedHtml })
     log.status = 'SENT'
     log.providerId = info.messageId
     log.error = undefined
@@ -150,11 +153,26 @@ export async function prepareWhatsApp(input: { to: string; toName?: string; text
 }
 
 // ---------------------------------------------------------------- in-app notifications
-type NotifyInput = { type: string; title: string; body?: string; requestId?: unknown; url?: string; priority?: 'normal' | 'high' }
+type NotifyInput = {
+  type: string
+  title: string
+  body?: string
+  requestId?: unknown
+  url?: string
+  priority?: 'normal' | 'high'
+  /** recipient column in the E4 matrix (STAFF, DRIVER…) — when set, the notification rules decide whether it is sent */
+  as?: 'STAFF' | 'DRIVER'
+  /** matrix event row when it differs from the type (e.g. PETTY_CASH for an APPROVAL notification) */
+  event?: string
+}
 
 export async function notifyUsers(userIds: unknown[], n: NotifyInput) {
   const ids = [...new Set(userIds.filter(Boolean).map(String))]
   if (!ids.length) return
+  if (n.as) {
+    const { notificationRules } = await getSettings()
+    if (!ruleAllows(notificationRules, n.event ?? n.type, n.as, 'inapp')) return
+  }
   await Notification.insertMany(
     ids.map((userId) => ({
       userId,
@@ -172,6 +190,9 @@ export async function notifyUsers(userIds: unknown[], n: NotifyInput) {
 }
 
 export async function notifyRoles(roles: Role[], n: NotifyInput, exceptUserId?: string) {
+  const { notificationRules } = await getSettings()
+  roles = roles.filter((r) => ruleAllows(notificationRules, n.type, r, 'inapp'))
+  if (!roles.length) return
   const users = await User.find({ role: { $in: roles }, status: 'ACTIVE', deletedAt: null }).select('_id').lean<any[]>()
   await notifyUsers(
     users.map((u) => u._id).filter((id) => String(id) !== exceptUserId),

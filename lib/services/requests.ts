@@ -17,7 +17,7 @@ import { ApiError, bad, conflict, forbidden, notFound } from '../api'
 import { audit } from '../audit'
 import { can, FIELD_ROLES, TRANSITIONS, VITALS, type Status } from '../constants'
 import { background, notifyRoles, notifyUsers, queueEmail, renderTemplate } from '../messaging'
-import { getSettings } from '../settings'
+import { getSettings, ruleAllows } from '../settings'
 import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, dayRange } from '../format'
 import type { SessionUser } from '../auth'
 
@@ -40,7 +40,7 @@ export function isTeamMember(user: SessionUser, r: any) {
 }
 
 export function canView(user: SessionUser, r: any) {
-  if (can(user.role, 'requests.readAll')) return true
+  if (can(user, 'requests.readAll')) return true
   if (isTeamMember(user, r)) return true
   if (String(r.createdBy) === user.id) return true
   if (user.role === 'DRIVER' && String(r.transport?.driverId) === user.id) return true
@@ -106,9 +106,18 @@ export async function templateVars(r: any, staffId?: unknown) {
 }
 
 /** Email the patient (if they have an email and consented) using a template. WhatsApp is sent from the UI via deep link. */
+const PATIENT_EVENT: Record<string, string> = {
+  patient_confirmed: 'CONFIRMED',
+  patient_assigned: 'ASSIGNED',
+  patient_rescheduled: 'RESCHEDULED',
+  patient_cancelled: 'CANCELLED',
+  patient_completed: 'COMPLETED',
+}
+
 async function emailPatient(r: any, templateKey: string, user: SessionUser | null, staffId?: unknown) {
   const s = await getSettings()
   if (!s.email.sendPatientEmails) return
+  if (PATIENT_EVENT[templateKey] && !ruleAllows(s.notificationRules, PATIENT_EVENT[templateKey], 'PATIENT', 'email')) return
   const p = await Patient.findById(r.patientId).select('email consent name').lean<any>()
   if (!p?.email || p.consent?.email === false) return
   const vars = await templateVars(r, staffId)
@@ -170,7 +179,7 @@ export async function buildChecklist(serviceTypeIds: unknown[]) {
 }
 
 export async function createRequest(input: CreateRequestInput, user: SessionUser, meta: Meta = {}) {
-  if (!can(user.role, 'requests.create')) throw forbidden()
+  if (!can(user, 'requests.create')) throw forbidden()
   let patient: any
   if (input.patientId) {
     if (!isOid(input.patientId)) throw bad('Invalid patient')
@@ -361,8 +370,8 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
       url: appUrl(r._id),
       priority: 'high',
     })
-    await notifyUsers(input.secondaryStaffIds, { type: 'ASSIGNED', title: `Added to care team ${r.requestNo}`, body: `${r.patientSnapshot.name} · ${when}`, requestId: r._id, url: appUrl(r._id) })
-    if (prevPrimary && prevPrimary !== input.primaryStaffId) await notifyUsers([prevPrimary], { type: 'CANCELLED', title: `${r.requestNo} reassigned`, body: 'This visit was given to another staff member', requestId: r._id })
+    await notifyUsers(input.secondaryStaffIds, { type: 'ASSIGNED', as: 'STAFF', title: `Added to care team ${r.requestNo}`, body: `${r.patientSnapshot.name} · ${when}`, requestId: r._id, url: appUrl(r._id) })
+    if (prevPrimary && prevPrimary !== input.primaryStaffId) await notifyUsers([prevPrimary], { type: 'CANCELLED', as: 'STAFF', title: `${r.requestNo} reassigned`, body: 'This visit was given to another staff member', requestId: r._id })
     await emailPatient(r, 'patient_assigned', user, input.primaryStaffId)
   })
 }
@@ -382,7 +391,7 @@ export async function reschedule(r: any, input: z.infer<typeof RescheduleInput>,
   await r.save()
   await audit(user, 'request.reschedule', 'request', r._id, { before: { scheduledAt: from }, after: { scheduledAt: r.scheduledAt, reason: input.reason }, label: r.requestNo }, meta)
   background(async () => {
-    await notifyUsers(team, { type: 'RESCHEDULED', title: `${r.requestNo} rescheduled`, body: `New time ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)} · needs re-assignment`, requestId: r._id, url: appUrl(r._id) })
+    await notifyUsers(team, { type: 'RESCHEDULED', as: 'STAFF', title: `${r.requestNo} rescheduled`, body: `New time ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)} · needs re-assignment`, requestId: r._id, url: appUrl(r._id) })
     await emailPatient(r, 'patient_rescheduled', user)
   })
 }
@@ -394,7 +403,7 @@ export async function cancel(r: any, input: z.infer<typeof CancelInput>, user: S
   await r.save()
   await audit(user, 'request.cancel', 'request', r._id, { before: { status: from }, after: { status: 'CANCELLED', reason: input.reason }, label: r.requestNo }, meta)
   background(async () => {
-    await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? []), r.transport?.driverId], { type: 'CANCELLED', title: `${r.requestNo} cancelled`, body: input.reason, requestId: r._id })
+    await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? []), r.transport?.driverId], { type: 'CANCELLED', as: 'STAFF', title: `${r.requestNo} cancelled`, body: input.reason, requestId: r._id })
     await emailPatient(r, 'patient_cancelled', user)
   })
 }
@@ -423,7 +432,7 @@ export async function close(r: any, input: z.infer<typeof CloseInput>, user: Ses
 
 /** Invoice fields can be added by the front desk while the visit is still COMPLETED (before closing). */
 export async function saveInvoice(r: any, input: Partial<z.infer<typeof CloseInput>>, user: SessionUser, meta: Meta) {
-  if (!can(user.role, 'billing.invoice')) throw forbidden()
+  if (!can(user, 'billing.invoice')) throw forbidden()
   for (const k of ['invoiceNo', 'invoiceAmount', 'invoicePrinted', 'billAmount'] as const) if (input[k] != null) r.set(`billing.${k}`, input[k])
   if (input.billingStatus) r.set('billing.status', input.billingStatus)
   await r.save()
@@ -639,7 +648,7 @@ export async function completeVisit(r: any, user: SessionUser, meta: Meta) {
     await notifyRoles(['HC_ADMIN'], { type: 'COMPLETED', title: `${r.requestNo} completed`, body: `${user.name} · ${r.patientSnapshot.name} · ${r.visit.durationMin} min · report ready`, requestId: r._id, url: url(r._id) })
     await emailPatient(r, 'patient_completed', user)
     const s = await getSettings()
-    if (s.email.sendDepartmentReport && s.email.departmentCc.length) {
+    if (s.email.sendDepartmentReport && s.email.departmentCc.length && ruleAllows(s.notificationRules, 'COMPLETED', 'DEPARTMENT', 'email')) {
       const vars = await templateVars(r, r.assignment?.primaryStaffId)
       const t = await renderTemplate('dept_visit_report', vars)
       if (t.active)
@@ -669,7 +678,7 @@ export async function requestPettyCash(r: any, input: z.infer<typeof PettyCashIn
 }
 
 export async function decidePettyCash(r: any, pettyCashId: string, approve: boolean, user: SessionUser, meta: Meta) {
-  if (!can(user.role, 'approvals.decide')) throw forbidden()
+  if (!can(user, 'approvals.decide')) throw forbidden()
   const pc = r.pettyCash.id(pettyCashId)
   if (!pc) throw notFound('Petty cash request')
   pc.status = approve ? 'APPROVED' : 'REJECTED'
@@ -678,7 +687,7 @@ export async function decidePettyCash(r: any, pettyCashId: string, approve: bool
   await r.save()
   await Approval.updateOne({ 'payload.pettyCashId': pc._id }, { status: pc.status, decidedBy: user.id, decidedAt: new Date() })
   await audit(user, `petty_cash.${approve ? 'approve' : 'reject'}`, 'request', r._id, { after: { amount: pc.amount, status: pc.status }, label: r.requestNo }, meta)
-  background(() => notifyUsers([pc.requestedBy], { type: 'APPROVAL', title: `Petty cash ৳${pc.amount} ${approve ? 'approved' : 'rejected'}`, body: r.requestNo, requestId: r._id, url: appUrl(r._id) }))
+  background(() => notifyUsers([pc.requestedBy], { type: 'APPROVAL', as: 'STAFF', event: 'PETTY_CASH', title: `Petty cash ৳${pc.amount} ${approve ? 'approved' : 'rejected'}`, body: r.requestNo, requestId: r._id, url: appUrl(r._id) }))
 }
 
 // ============================================================== transport
@@ -690,7 +699,7 @@ export const TransportInput = z.object({
   returnTime: z.string().optional(),
 })
 export async function assignTransport(r: any, input: z.infer<typeof TransportInput>, user: SessionUser, meta: Meta) {
-  if (!can(user.role, 'transport.manage')) throw forbidden()
+  if (!can(user, 'transport.manage')) throw forbidden()
   const day = isoDay(r.scheduledAt ?? new Date())
   r.set('transport.needed', true)
   r.set('transport.mode', input.mode)
@@ -715,15 +724,17 @@ export async function assignTransport(r: any, input: z.infer<typeof TransportInp
       { key: 'return', label: 'Return to hospital', plannedAt: ret },
     ])
     await r.save()
-    background(() =>
-      notifyUsers([driverId, r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])], {
-        type: 'TRANSPORT',
-        title: `${v.name} · ${v.plate} for ${r.requestNo}`,
-        body: `Pick-up at hospital ${pickup ? fmtTime(pickup) : ''} · ${r.patientSnapshot.area ?? ''}`,
-        requestId: r._id,
-        url: appUrl(r._id),
-      }),
-    )
+    const note = {
+      type: 'TRANSPORT',
+      event: 'TRANSPORT_ASSIGNED',
+      title: `${v.name} · ${v.plate} for ${r.requestNo}`,
+      body: `Pick-up at hospital ${pickup ? fmtTime(pickup) : ''} · ${r.patientSnapshot.area ?? ''}`,
+      requestId: r._id,
+    }
+    background(async () => {
+      await notifyUsers([driverId], { ...note, as: 'DRIVER', url: '/m/trips' })
+      await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])], { ...note, as: 'STAFF', url: appUrl(r._id) })
+    })
   } else {
     r.set('transport.status', 'OWN')
     r.set('transport.vehicleId', undefined)
@@ -734,7 +745,7 @@ export async function assignTransport(r: any, input: z.infer<typeof TransportInp
 }
 
 export async function stampTransportLeg(r: any, legKey: string, user: SessionUser, meta: Meta) {
-  if (String(r.transport?.driverId) !== user.id && !can(user.role, 'transport.manage')) throw forbidden()
+  if (String(r.transport?.driverId) !== user.id && !can(user, 'transport.manage')) throw forbidden()
   const leg = r.transport.legs.find((l: any) => l.key === legKey)
   if (!leg) throw notFound('Trip leg')
   leg.at = new Date()

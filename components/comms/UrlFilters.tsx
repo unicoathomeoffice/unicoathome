@@ -1,5 +1,5 @@
 'use client'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useState, useTransition, type ReactNode } from 'react'
 import { ChevronDown, Search, Loader2 } from 'lucide-react'
 import { cx } from '@/lib/format'
@@ -8,10 +8,10 @@ import { cx } from '@/lib/format'
 export function useUrlParams(reset: string[] = ['id']) {
   const router = useRouter()
   const path = usePathname()
-  const sp = useSearchParams()
   const [pending, start] = useTransition()
   const set = (patch: Record<string, string | null | undefined>) => {
-    const q = new URLSearchParams(sp.toString())
+    // read the live URL at event time (no useSearchParams → no Suspense requirement)
+    const q = new URLSearchParams(window.location.search)
     for (const k of reset) q.delete(k)
     for (const [k, v] of Object.entries(patch)) {
       if (v == null || v === '') q.delete(k)
@@ -20,7 +20,7 @@ export function useUrlParams(reset: string[] = ['id']) {
     const s = q.toString()
     start(() => router.push(s ? `${path}?${s}` : path, { scroll: false }))
   }
-  return { set, pending, sp }
+  return { set, pending }
 }
 
 /** Pill-looking dropdown ("Status: all ▾") that writes one URL param. */

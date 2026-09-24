@@ -188,7 +188,7 @@ export async function getReport(input: ReportFilter) {
   const prevCount = await HomecareRequest.countDocuments({ ...m, 'timeline.requestedAt': { $gte: prevStart, $lt: prevEnd } })
 
   // names for staff ids
-  const staffIds = [...new Set([...agg.staff.map((x: any) => String(x._id)), ...agg.staffDeclines.map((x: any) => String(x._id)), ...(f.groupBy === 'staff' ? agg.breakdown.map((x: any) => String(x._id)) : [])])].filter((x) => x && x !== 'null')
+  const staffIds = [...new Set([...(agg.staff as any[]).map((x: any) => String(x._id)), ...agg.staffDeclines.map((x: any) => String(x._id)), ...(f.groupBy === 'staff' ? (agg.breakdown as any[]).map((x: any) => String(x._id)) : [])])].filter((x) => x && x !== 'null')
   const users = await User.find({ _id: { $in: staffIds } }).select('name role employeeId designationId').lean<any[]>()
   const desigs = await Designation.find({ _id: { $in: users.map((u) => u.designationId).filter(Boolean) } }).select('title').lean<any[]>()
   const who = (id: unknown) => {
@@ -232,24 +232,24 @@ export async function getReport(input: ReportFilter) {
     changePct: prevCount ? Math.round(((totals.n - prevCount) / prevCount) * 100) : null,
     timeouts,
     declines: totals.declines - timeouts,
-    declineReasons: agg.declineReasons.map((d: any) => ({ reason: d._id as string, n: d.n as number })),
+    declineReasons: (agg.declineReasons as any[]).map((d: any) => ({ reason: d._id as string, n: d.n as number })),
     volume,
-    breakdown: agg.breakdown.map((x: any) => ({ key: String(x._id), label: label(x._id), ...shapeRow(x) })),
+    breakdown: (agg.breakdown as any[]).map((x: any) => ({ key: String(x._id), label: label(x._id), ...shapeRow(x) })),
     staff,
-    services: agg.services.map((x: any) => ({ name: x._id as string, n: x.n as number, completed: x.completed as number })),
-    zones: agg.zones.map((x: any) => ({ name: x._id as string, n: x.n as number })),
-    statuses: agg.statuses.map((x: any) => ({ status: x._id as string, label: STATUS_LABEL[x._id as Status] ?? x._id, n: x.n as number })),
+    services: (agg.services as any[]).map((x: any) => ({ name: x._id as string, n: x.n as number, completed: x.completed as number })),
+    zones: (agg.zones as any[]).map((x: any) => ({ name: x._id as string, n: x.n as number })),
+    statuses: (agg.statuses as any[]).map((x: any) => ({ status: x._id as string, label: STATUS_LABEL[x._id as Status] ?? x._id, n: x.n as number })),
     priorities: Object.fromEntries(agg.priorities.map((x: any) => [x._id, x.n])) as Record<string, number>,
     revenue: {
       billed: totals.billed,
       paid: totals.paid,
       due: totals.due,
-      methods: agg.methods.map((x: any) => ({ method: x._id as string, label: (PAYMENT_METHOD_LABEL as any)[x._id] ?? 'Not recorded', n: x.n as number, amount: x.amount as number })),
+      methods: (agg.methods as any[]).map((x: any) => ({ method: x._id as string, label: (PAYMENT_METHOD_LABEL as any)[x._id] ?? 'Not recorded', n: x.n as number, amount: x.amount as number })),
       invoicePrinted: inv.printed as number,
       invoiceNotPrinted: inv.notPrinted as number,
       unbilled: inv.unbilled as number,
     },
-    transport: agg.transport.map((x: any) => ({ mode: x._id as string, label: (TRANSPORT_MODE_LABEL as any)[x._id] ?? 'Not recorded', n: x.n as number })),
+    transport: (agg.transport as any[]).map((x: any) => ({ mode: x._id as string, label: (TRANSPORT_MODE_LABEL as any)[x._id] ?? 'Not recorded', n: x.n as number })),
     petty: {
       approved: pettyBy('APPROVED'),
       pending: pettyBy('PENDING'),

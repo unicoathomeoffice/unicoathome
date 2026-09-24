@@ -1,7 +1,7 @@
 import 'server-only'
 import { HomecareRequest, AssignmentLog, Notification, User } from '../models'
 import { notifyRoles, notifyUsers, queueEmail } from '../messaging'
-import { getSettings } from '../settings'
+import { getSettings, ruleAllows } from '../settings'
 import { audit } from '../audit'
 import { dayRange, isoDay, date as fmtDate } from '../format'
 import { rankCandidates } from './requests'
@@ -52,7 +52,7 @@ export async function sweep(force = false) {
     const already = await Notification.exists({ type: 'OVERDUE', 'data.requestId': r._id })
     if (already) continue
     const mins = Math.round((now.getTime() - new Date(r.scheduledAt).getTime()) / 60000)
-    await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])], { type: 'OVERDUE', title: `Check in overdue · ${r.requestNo}`, body: `${mins} min past the scheduled time`, requestId: r._id, url: `/m/visits/${r._id}`, priority: 'high' })
+    await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])], { type: 'OVERDUE', as: 'STAFF', title: `Check in overdue · ${r.requestNo}`, body: `${mins} min past the scheduled time`, requestId: r._id, url: `/m/visits/${r._id}`, priority: 'high' })
     await notifyRoles(['HC_ADMIN'], { type: 'OVERDUE', title: `${r.requestNo} overdue`, body: `Check-in ${mins} min past ${r.patientSnapshot?.name}`, requestId: r._id, url: `/requests/${r._id}`, priority: 'high' })
     overdue++
   }
@@ -68,7 +68,7 @@ export async function reminders() {
     const to = new Date(now + before * 60_000)
     const due = await HomecareRequest.find({ status: { $in: ['ASSIGNED', 'ACCEPTED'] }, scheduledAt: { $gte: from, $lt: to }, deletedAt: null }).lean<any[]>()
     for (const r of due) {
-      await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])], { type: 'REMINDER', title: `Visit in ${before === 120 ? '2 hours' : '30 min'} · ${r.patientSnapshot?.name}`, body: `${r.requestNo} · ${r.patientSnapshot?.area ?? ''}`, requestId: r._id, url: `/m/visits/${r._id}` })
+      await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])], { type: 'REMINDER', as: 'STAFF', title: `Visit in ${before === 120 ? '2 hours' : '30 min'} · ${r.patientSnapshot?.name}`, body: `${r.requestNo} · ${r.patientSnapshot?.area ?? ''}`, requestId: r._id, url: `/m/visits/${r._id}` })
       sent++
     }
   }
@@ -95,7 +95,8 @@ export async function dailyDigest() {
     `Still open: ${open}`,
     `On-time arrival: ${completed.length ? Math.round((onTime / completed.length) * 100) : 100}%`,
   ].join('\n')
-  const admins = await User.find({ role: { $in: ['HC_ADMIN', 'VIEWER'] }, status: 'ACTIVE', email: { $exists: true, $ne: null }, 'notificationPrefs.email': { $ne: false } }).select('email name').lean<any[]>()
+  const digestRoles = ['HC_ADMIN', 'VIEWER'].filter((r) => ruleAllows(s.notificationRules, 'DAILY_DIGEST', r, 'email'))
+  const admins = await User.find({ role: { $in: digestRoles }, status: 'ACTIVE', email: { $exists: true, $ne: null }, 'notificationPrefs.email': { $ne: false } }).select('email name').lean<any[]>()
   for (const a of admins) await queueEmail({ to: a.email, toName: a.name, subject: `Home care daily digest · ${fmtDate(new Date())}`, text, templateKey: 'admin_daily_digest', cta: { label: 'Open dashboard', url: `${process.env.APP_BASE_URL ?? ''}/dashboard` } })
   return { sent: admins.length }
 }

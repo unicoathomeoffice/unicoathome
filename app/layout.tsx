@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from 'next'
-import { DM_Sans } from 'next/font/google'
+import localFont from 'next/font/local'
 import { ToastProvider } from '@/components/client/toast'
 import './globals.css'
 
-const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans', display: 'swap' })
+// Self-hosted (no build-time dependency on Google Fonts). Variable weight 100–1000.
+const dmSans = localFont({ src: './fonts/dm-sans.woff2', variable: '--font-dm-sans', weight: '100 1000', display: 'swap' })
 
 export const metadata: Metadata = {
   title: { default: 'Unico HomeCare', template: '%s · Unico HomeCare' },

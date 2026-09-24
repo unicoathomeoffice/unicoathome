@@ -92,7 +92,7 @@ export async function MScreen({
             {right}
           </header>
         ))}
-      <main className={cx('grid flex-1 auto-rows-max content-start gap-3', pad && 'px-5 py-4')}>{children}</main>
+      <main className={cx('grid flex-1 grid-cols-[minmax(0,1fr)] auto-rows-max content-start gap-3', pad && 'px-5 py-4')}>{children}</main>
       {bottom && (
         <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
           {bottomNote && <div className="mb-2 text-center text-[12px] font-semibold text-[#B45309]">{bottomNote}</div>}

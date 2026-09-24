@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { route, body, clientMeta, notFound } from '@/lib/api'
-import { CustomRole, isOid } from '@/lib/models'
+import { route, body, clientMeta, notFound, bad } from '@/lib/api'
+import { CustomRole, User, isOid } from '@/lib/models'
 import { PERMISSIONS } from '@/lib/constants'
 import { audit, diff } from '@/lib/audit'
 
@@ -30,6 +30,8 @@ export const PATCH = route<{ id: string }>(
 export const DELETE = route<{ id: string }>(
   async ({ req, user, params }) => {
     if (!isOid(params.id)) throw notFound('Role')
+    const holders = await User.countDocuments({ customRoleId: params.id, deletedAt: null })
+    if (holders) throw bad(`${holders} user${holders === 1 ? ' has' : 's have'} this role. Remove it from them in Staff first.`)
     const doc = await CustomRole.findByIdAndDelete(params.id)
     if (!doc) throw notFound('Role')
     await audit(user, 'role.delete', 'role', params.id, { before: doc.toObject(), label: doc.name }, clientMeta(req, user))

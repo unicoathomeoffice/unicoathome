@@ -186,7 +186,7 @@ export function AssignDrawer(p: AssignProps) {
             They got a push and in-app card and must accept within {p.acceptTimeoutMin} min. Send the staff_assigned WhatsApp from your phone as well.
           </div>
           <WhatsAppButton requestId={p.requestId} templateKey="staff_assigned" to="staff" staffId={done.id} kind="g" size="lg" className="mt-2 w-full max-w-xs">
-            Notify {done.name.split(' ')[0]} via WhatsApp
+            Notify {done.name.replace(/^(Dr\.?|Md\.?|Mst\.?)\s+/i, '').split(' ')[0]} via WhatsApp
           </WhatsAppButton>
           <button className={btnClass('o', 'md', 'w-full max-w-xs')} onClick={p.onClose}>
             Done

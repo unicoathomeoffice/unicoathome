@@ -24,7 +24,7 @@ export const GET = route(async ({ req, user }) => {
     const q = p.get('q')!.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     f.$and = [{ $or: [{ requestNo: new RegExp(q, 'i') }, { 'patientSnapshot.name': new RegExp(q, 'i') }, { 'patientSnapshot.phone': new RegExp(q.replace(/\D/g, '') || q) }, { 'patientSnapshot.uhid': new RegExp(q, 'i') }] }]
   }
-  if (!can(user.role, 'requests.readAll') || p.get('mine') === '1') {
+  if (!can(user, 'requests.readAll') || p.get('mine') === '1') {
     const mine = [{ 'assignment.primaryStaffId': user.id }, { 'assignment.secondaryStaffIds': user.id }, { createdBy: user.id }, { 'transport.driverId': user.id }]
     f.$and = [...(f.$and ?? []), { $or: user.role === 'TRANSPORT_SUPERVISOR' && p.get('mine') !== '1' ? [...mine, { 'transport.needed': true }] : mine }]
   }
