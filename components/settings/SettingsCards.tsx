@@ -7,6 +7,8 @@ import { api, Toggle, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { MsgStatus } from '@/components/comms/MessageBits'
 import { cx } from '@/lib/format'
+import { GmailConnection } from './GmailConnection'
+import type { GmailStatus } from '@/lib/gmail-types'
 
 // W15 editable cards. Each saves one settings key with PATCH /api/v1/settings {key, value}.
 
@@ -111,15 +113,16 @@ export function GeneralCard({ initial }: { initial: General }) {
 type Email = { fromName: string; replyTo: string; departmentCc: string[]; sendPatientEmails: boolean; sendDepartmentReport: boolean; dailyDigest: boolean }
 export function GmailCard({
   initial,
-  gmail,
+  gmail: initialGmail,
   lastSend,
   myEmail,
 }: {
   initial: Email
-  gmail: { configured: boolean; user: string | null }
+  gmail: GmailStatus
   lastSend: { at: string; label: string; status: string; id: string } | null
   myEmail?: string
 }) {
+  const [gmail, setGmail] = useState(initialGmail)
   const toast = useToast()
   const [v, setV] = useState({ ...initial, cc: initial.departmentCc.join(', ') })
   const { save, busy } = useSave('email')
@@ -140,7 +143,7 @@ export function GmailCard({
     try {
       const r = await api<{ id: string }>('/settings', { body: { test: 'email', to } })
       setTest({ id: r.id, status: 'QUEUED' })
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 30; i++) {
         await new Promise((res) => setTimeout(res, 1000))
         const m = await api<{ message: any }>(`/messages/${r.id}`).catch(() => null)
         if (m?.message) {
@@ -162,7 +165,7 @@ export function GmailCard({
       right={
         gmail.configured ? (
           <span className="inline-flex h-6 items-center gap-1 rounded-full bg-[#DCFCE7] px-2 text-[11px] font-bold text-[#15803D]">
-            <CheckCircle2 size={13} /> CONNECTED
+            <CheckCircle2 size={13} /> CONFIGURED
           </span>
         ) : (
           <span className="inline-flex h-6 items-center gap-1 rounded-full bg-[#FFEDD5] px-2 text-[11px] font-bold text-[#C2410C]">
@@ -171,20 +174,7 @@ export function GmailCard({
         )
       }
     >
-      <div className="flex gap-[3px] rounded-[10px] bg-slate-200 p-[3px] text-[12.5px] font-semibold">
-        <div className="flex h-8 flex-1 items-center justify-center rounded-lg bg-slate-900 text-white">A · SMTP + App Password</div>
-        <div className="flex h-8 flex-1 items-center justify-center rounded-lg text-slate-500" title="Option B (Gmail API + OAuth2) can be added later">
-          B · Gmail API OAuth2
-        </div>
-      </div>
-      <div className="mt-3 flex items-center justify-between text-[13px]">
-        <span className="text-slate-500">Sending account</span>
-        <span className="font-mono font-semibold">{gmail.user ?? '— set GMAIL_USER'}</span>
-      </div>
-      <div className="flex items-center justify-between py-1 text-[13px]">
-        <span className="text-slate-500">App password</span>
-        <span className="font-mono font-semibold">{gmail.configured ? '•••• •••• •••• ••••' : '— set GMAIL_APP_PASSWORD'}</span>
-      </div>
+      <GmailConnection gmail={gmail} onSaved={setGmail} />
       <div className="flex items-center justify-between py-1 text-[13px]">
         <span className="text-slate-500">Last send</span>
         {lastSend ? (

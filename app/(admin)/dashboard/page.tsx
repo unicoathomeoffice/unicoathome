@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { after } from 'next/server'
 import { CheckCircle2 } from 'lucide-react'
 import { requireWebUser } from '@/lib/auth'
 import { can, STATUS_COLORS } from '@/lib/constants'
@@ -17,11 +18,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const user = await requireWebUser()
   const { density } = await searchParams
   const compact = density === 'compact'
-  try {
-    await sweep()
-  } catch (e) {
-    console.error('sweep failed', e)
-  }
+  after(async () => {
+    try { await sweep() } catch (e) { console.error('sweep failed', e) }
+  })
   const d = await dashboardData()
   const canAssign = can(user, 'requests.assign')
 

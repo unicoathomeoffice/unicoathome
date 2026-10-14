@@ -5,23 +5,25 @@ import { getUser } from '@/lib/auth'
 import { Notification } from '@/lib/models'
 import { UnreadBadge } from '@/components/client'
 import { cx } from '@/lib/format'
+import { can } from '@/lib/constants'
 import { mapsUrl, telUrl } from '@/components/ui'
 import { Phone, MapPin } from 'lucide-react'
 
 type TabKey = 'home' | 'visits' | 'admin' | 'notifications' | 'profile' | 'trips' | 'fleet' | 'vehicle'
 
-export function tabsFor(role: string): { key: TabKey; label: string; href: string; icon: any }[] {
+export function tabsFor(user: { role: string; permissions?: string[] | null }): { key: TabKey; label: string; href: string; icon: any }[] {
   const common = [
     { key: 'notifications' as const, label: 'Notifications', href: '/m/notifications', icon: Bell },
     { key: 'profile' as const, label: 'Profile', href: '/m/profile', icon: UserRound },
   ]
+  const role = user.role
   if (role === 'DRIVER') return [{ key: 'trips', label: 'Trips', href: '/m/trips', icon: Truck }, { key: 'vehicle', label: 'Vehicle', href: '/m/vehicle', icon: Car }, ...common]
   if (role === 'TRANSPORT_SUPERVISOR') return [{ key: 'trips', label: 'Trips', href: '/m/trips', icon: Truck }, { key: 'fleet', label: 'Fleet', href: '/m/fleet', icon: Car }, ...common]
   const base = [
     { key: 'home' as const, label: 'Home', href: '/m', icon: Home },
     { key: 'visits' as const, label: 'Visits', href: '/m/visits', icon: ClipboardList },
   ]
-  if (['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK'].includes(role)) base.push({ key: 'admin' as any, label: 'Admin', href: '/m/admin', icon: LayoutGrid })
+  if (can(user, 'requests.readAll')) base.push({ key: 'admin' as any, label: 'Admin', href: '/m/admin', icon: LayoutGrid })
   return [...base, ...common]
 }
 
@@ -30,7 +32,7 @@ async function TabBar({ active }: { active: TabKey }) {
   const unread = await Notification.countDocuments({ userId: user.id, readAt: null })
   return (
     <nav className="sticky bottom-0 z-20 flex border-t border-slate-200 bg-white px-2 pb-[max(10px,env(safe-area-inset-bottom))] pt-2">
-      {tabsFor(user.role).map((t) => (
+      {tabsFor(user).map((t) => (
         <Link key={t.key} href={t.href} className={cx('relative flex flex-1 flex-col items-center gap-[3px] text-[11px]', t.key === active ? 'font-semibold text-primary' : 'font-medium text-slate-500')}>
           <t.icon size={24} strokeWidth={t.key === active ? 2.2 : 2} />
           {t.label}

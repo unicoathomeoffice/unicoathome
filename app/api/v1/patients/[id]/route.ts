@@ -38,7 +38,10 @@ export const PATCH = route<{ id: string }>(
     }
     const { address, dob, email, consent, ...rest } = input
     p.set(rest)
-    if (address) p.set('address', { ...(before.address ?? {}), ...address })
+    if (address) {
+      const moved = address.full != null && address.full !== before.address?.full && !('lat' in address)
+      p.set('address', { ...(before.address ?? {}), ...address, ...(moved ? { lat: null, lng: null } : {}) }) // a new address without a pin drops the old pin
+    }
     if (dob) p.dob = new Date(dob)
     if (email != null) p.email = email || undefined
     if (consent) p.set('consent', { ...consent, at: new Date(), by: user.id })

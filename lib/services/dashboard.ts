@@ -38,12 +38,20 @@ export type Escalation = {
 }
 
 export async function dashboardData() {
-  const s = await getSettings()
   const now = Date.now()
-  const open = await HomecareRequest.find({ status: { $in: ['NEW', 'VERIFIED', 'CONFIRMED', 'RESCHEDULED', 'ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED'] }, deletedAt: null })
-    .select('requestNo status priority patientSnapshot services scheduledAt slot expectedDurationMin timeline assignment')
-    .sort({ scheduledAt: 1 })
-    .lean<any[]>()
+  const days = Array.from({ length: 14 }, (_, i) => isoDay(now - (13 - i) * 86400_000))
+  const from = dayRange(days[0]).start
+  const ws = weekStart()
+  const { start: todayStart } = dayRange()
+  const [s, open, recent, svcWeek, svcToday, zonesWeek, zonesToday] = await Promise.all([
+    getSettings(),
+    HomecareRequest.find({ status: { $in: ['NEW', 'VERIFIED', 'CONFIRMED', 'RESCHEDULED', 'ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED'] }, deletedAt: null })
+      .select('requestNo status priority patientSnapshot services scheduledAt slot expectedDurationMin timeline assignment')
+      .sort({ scheduledAt: 1 }).lean<any[]>(),
+    HomecareRequest.find({ deletedAt: null, $or: [{ 'timeline.requestedAt': { $gte: from } }, { 'timeline.checkInAt': { $gte: from } }, { 'timeline.completedAt': { $gte: from } }] })
+      .select('timeline visit.lateMin visit.durationMin expectedDurationMin scheduledAt').lean<any[]>(),
+    serviceMix(ws), serviceMix(todayStart), zoneMix(ws), zoneMix(todayStart),
+  ])
   await withPeople(open)
   const by = (...st: string[]) => open.filter((r) => st.includes(r.status))
 
@@ -73,11 +81,6 @@ export async function dashboardData() {
   }
 
   // ---------------------------------------------------------------- 14-day trend + SLA metrics
-  const days = Array.from({ length: 14 }, (_, i) => isoDay(now - (13 - i) * 86400_000))
-  const from = dayRange(days[0]).start
-  const recent = await HomecareRequest.find({ deletedAt: null, $or: [{ 'timeline.requestedAt': { $gte: from } }, { 'timeline.checkInAt': { $gte: from } }, { 'timeline.completedAt': { $gte: from } }] })
-    .select('timeline visit.lateMin visit.durationMin expectedDurationMin scheduledAt')
-    .lean<any[]>()
   const perDay = days.map((d) => recent.filter((r) => r.timeline?.requestedAt && isoDay(r.timeline.requestedAt) === d).length)
   const total = perDay.reduce((a, b) => a + b, 0)
 
@@ -130,8 +133,11 @@ export async function dashboardData() {
       sub: `Check-in ${late} min past ${fmtTime(r.scheduledAt)}${r.primaryStaff ? ` · ${shortName(r.primaryStaff.name)}` : ''}`,
       action: 'open',
     })
-  for (const r of awaiting.slice(0, 4)) {
-    const next = (await rankCandidates(r, 3).catch(() => [])).find((c) => c.id !== String(r.assignment?.primaryStaffId))
+  const awaitingSuggestions = await Promise.all(awaiting.slice(0, 4).map(async (r) => ({
+    r,
+    next: (await rankCandidates(r, 3).catch(() => [])).find((c) => c.id !== String(r.assignment?.primaryStaffId)),
+  })))
+  for (const { r, next } of awaitingSuggestions) {
     esc.push({
       id: String(r._id),
       requestNo: r.requestNo,
@@ -157,16 +163,6 @@ export async function dashboardData() {
       action: 'open',
     })
   }
-
-  // ---------------------------------------------------------------- service mix & zones
-  const ws = weekStart()
-  const { start: todayStart } = dayRange()
-  const [svcWeek, svcToday, zonesWeek, zonesToday] = await Promise.all([
-    serviceMix(ws),
-    serviceMix(todayStart),
-    zoneMix(ws),
-    zoneMix(todayStart),
-  ])
 
   return { kpis, trend: { days, perDay, total, avg: Math.round((total / 14) * 10) / 10 }, metrics, live, escalations: esc, svcWeek, svcToday, zonesWeek, zonesToday }
 }
@@ -246,12 +242,14 @@ function boardSla(r: any, s: any): BoardRow['sla'] {
 }
 
 export async function boardRows(p: BoardFilters, limit = 400): Promise<BoardRow[]> {
-  const s = await getSettings()
-  const rows = await HomecareRequest.find(boardQuery(p))
+  const [s, rows] = await Promise.all([
+    getSettings(),
+    HomecareRequest.find(boardQuery(p))
     .select('requestNo status priority patientId patientSnapshot services scheduledAt slot preferred expectedDurationMin timeline assignment billing.invoiceNo cancellation createdAt')
     .sort({ scheduledAt: 1, createdAt: -1 })
     .limit(limit)
-    .lean<any[]>()
+    .lean<any[]>(),
+  ])
   await withPeople(rows)
   return rows.map((r) => ({
     id: String(r._id),

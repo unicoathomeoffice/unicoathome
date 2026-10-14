@@ -4,6 +4,7 @@ import { Clock } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { STATUS_COLORS, STATUS_LABEL, type Status, type Priority } from '@/lib/constants'
 import { cx, initialsOf } from '@/lib/format'
+import { embedUrl, type Place } from '@/lib/maps'
 
 // ---------------------------------------------------------------- chips & badges
 export function StatusChip({ status, sm, label }: { status: Status | string; sm?: boolean; label?: string }) {
@@ -309,6 +310,19 @@ export function MapBox({ height = 160, note, children, href }: { height?: number
     </a>
   ) : (
     box
+  )
+}
+
+/** Real Google map of one place (Maps Embed API — free). Tapping the label opens Google Maps for directions. */
+export function MapEmbed({ lat, lng, address, height = 180, note, zoom, className }: Place & { height?: number; note?: string; zoom?: number; className?: string }) {
+  if (lat == null && !address) return null
+  return (
+    <div className={cx('relative overflow-hidden rounded-card bg-[#E5EEF2]', className)} style={{ height }}>
+      <iframe title={`Map · ${address ?? `${lat},${lng}`}`} src={embedUrl({ lat, lng, address }, zoom)} className="size-full border-0" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
+      <a href={mapsUrl(address, lat, lng)} target="_blank" rel="noreferrer" className="absolute bottom-2.5 left-3 rounded-md bg-white/90 px-2 py-0.5 text-[11px] font-semibold text-slate-600 shadow-sm hover:text-primary-700">
+        {note ?? (lat != null ? 'Pinned location · open in Google Maps' : 'Approximate · open in Google Maps')}
+      </a>
+    </div>
   )
 }
 

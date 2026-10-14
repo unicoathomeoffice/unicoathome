@@ -1,5 +1,5 @@
 // Pure helpers for the request detail (W04), assign drawer (W06) and visit report (E2). Server- and client-safe.
-import { VITALS, TRANSITIONS, can, type Status } from '@/lib/constants'
+import { VITALS, TRANSITIONS, can, type Actor, type Status } from '@/lib/constants'
 import { dur, isoDay, minutesBetween, time } from '@/lib/format'
 
 export type Sla = { confirmRoutineMin: number; confirmUrgentMin: number; assignMin: number; acceptTimeoutMin: number; lateAfterMin: number; overtimePct: number }
@@ -117,7 +117,7 @@ export function vitalRows(v: any): VitalRow[] {
 
 // ---------------------------------------------------------------- permissions for the action bar
 export type Perms = { manage: boolean; assign: boolean; invoice: boolean; send: boolean; decide: boolean; edit: boolean }
-export function permsFor(role: string): Perms {
+export function permsFor(role: Actor): Perms {
   return {
     manage: can(role, 'requests.manage'),
     assign: can(role, 'requests.assign'),

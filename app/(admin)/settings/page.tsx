@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 import { ArrowRight, BellRing, CheckCircle2, Circle, FileText, SlidersHorizontal } from 'lucide-react'
 import { requireWebUser } from '@/lib/auth'
 import { getSettings } from '@/lib/settings'
-import { emailConfigured } from '@/lib/messaging'
+import { getGmailStatus } from '@/lib/gmail'
 import { MessageLog, Notification } from '@/lib/models'
 import { DEFAULT_TEMPLATES } from '@/lib/templates'
 import { AdminPage } from '@/components/admin/AdminPage'
@@ -12,6 +12,7 @@ import { FeaturesCard, GeneralCard, GmailCard, JobsCard, SCard, WhatsAppCard } f
 import { when } from '@/components/comms/MessageBits'
 import { cx } from '@/lib/format'
 import vercel from '@/vercel.json'
+import { canOpenSettings } from '@/lib/constants'
 
 export const metadata: Metadata = { title: 'Settings & integrations' }
 
@@ -41,14 +42,14 @@ function cronText(expr: string) {
 
 export default async function SettingsPage() {
   const user = await requireWebUser()
-  if (!['SUPER_ADMIN', 'HC_ADMIN'].includes(user.role)) redirect('/dashboard?denied=1')
+  if (!canOpenSettings(user)) redirect('/dashboard?denied=1')
   const [s, lastEmail, inapp7d, unreadAll] = await Promise.all([
     getSettings(),
     MessageLog.findOne({ channel: 'EMAIL' }).sort({ at: -1 }).select('at templateKey status subject').lean<any>(),
     Notification.countDocuments({ createdAt: { $gte: new Date(Date.now() - 7 * 86400_000) } }),
     Notification.countDocuments({ readAt: null }),
   ])
-  const gmail = { configured: emailConfigured(), user: process.env.GMAIL_USER ? process.env.GMAIL_USER.replace(/^(.{3}).*(@.*)$/, '$1•••$2') : null }
+  const gmail = await getGmailStatus()
   const sla = s.sla
   const schedules = ((vercel as any).crons ?? []).map((c: any) => ({ path: c.path, when: cronText(c.schedule) }))
 

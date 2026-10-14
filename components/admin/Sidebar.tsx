@@ -5,31 +5,36 @@ import { useState } from 'react'
 import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X } from 'lucide-react'
 import { cx } from '@/lib/format'
 import { api } from '@/components/client/api'
+import type { Permission } from '@/lib/constants'
 
-type NavUser = { name: string; initials: string; roleLabel: string; role: string }
+/** perms: what the signed-in user holds (custom role included) — computed on the server with permissionsFor() */
+type NavUser = { name: string; initials: string; roleLabel: string; perms: Permission[] }
 
-const NAV = [
+type Perm = Permission | ((perms: Permission[]) => boolean)
+
+const NAV: { href: string; label: string; icon: any; countKey?: string; perm?: Perm }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: Home },
-  { href: '/requests', label: 'Requests', icon: KanbanSquare, countKey: 'open' },
-  { href: '/patients', label: 'Patients', icon: Users },
-  { href: '/staff', label: 'Staff', icon: UserRound, roles: ['SUPER_ADMIN', 'HC_ADMIN'] },
-  { href: '/reports', label: 'Reports', icon: BarChart3, roles: ['SUPER_ADMIN', 'HC_ADMIN', 'VIEWER'] },
-  { href: '/messages', label: 'Messages', icon: Mail, roles: ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER'] },
+  { href: '/requests', label: 'Requests', icon: KanbanSquare, countKey: 'open', perm: 'requests.readAll' },
+  { href: '/patients', label: 'Patients', icon: Users, perm: 'requests.readAll' },
+  { href: '/staff', label: 'Staff', icon: UserRound, perm: 'users.read' },
+  { href: '/reports', label: 'Reports', icon: BarChart3, perm: 'reports.view' },
+  { href: '/messages', label: 'Messages', icon: Mail, perm: (p) => p.includes('requests.readAll') && (p.includes('messages.send') || p.includes('reports.view')) },
   { href: '/notifications', label: 'Notifications', icon: Bell, countKey: 'unread' },
-  { href: '/settings', label: 'Settings', icon: Settings, roles: ['SUPER_ADMIN', 'HC_ADMIN'] },
+  { href: '/settings', label: 'Settings', icon: Settings },
 ]
 
-const SETTINGS_SUB = [
-  { href: '/settings', label: 'General & integrations' },
-  { href: '/settings/designations', label: 'Designations & departments' },
-  { href: '/settings/services', label: 'Service types' },
-  { href: '/settings/roles', label: 'Roles & permissions' },
-  { href: '/settings/fleet', label: 'Fleet & drivers' },
-  { href: '/settings/zones', label: 'Zones, slots & rules' },
-  { href: '/settings/approvals', label: 'Approvals' },
-  { href: '/settings/templates', label: 'Templates' },
-  { href: '/settings/notifications', label: 'Notification rules' },
-  { href: '/audit', label: 'Audit log' },
+const SETTINGS_HUB: Perm = (p) => p.includes('settings.manage') || p.includes('templates.manage')
+const SETTINGS_SUB: { href: string; label: string; perm: Perm }[] = [
+  { href: '/settings', label: 'General & integrations', perm: SETTINGS_HUB },
+  { href: '/settings/designations', label: 'Designations & departments', perm: 'master.manage' },
+  { href: '/settings/services', label: 'Service types', perm: 'requests.manage' },
+  { href: '/settings/roles', label: 'Roles & permissions', perm: 'users.manage' },
+  { href: '/settings/fleet', label: 'Fleet & drivers', perm: 'transport.manage' },
+  { href: '/settings/zones', label: 'Zones, slots & rules', perm: 'requests.manage' },
+  { href: '/settings/approvals', label: 'Approvals', perm: 'approvals.decide' },
+  { href: '/settings/templates', label: 'Templates', perm: 'templates.manage' },
+  { href: '/settings/notifications', label: 'Notification rules', perm: SETTINGS_HUB },
+  { href: '/audit', label: 'Audit log', perm: 'audit.view' },
 ]
 
 export function Sidebar({ user, counts }: { user: NavUser; counts: Record<string, number> }) {
@@ -38,6 +43,10 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Record<string
   const [mobileOpen, setMobileOpen] = useState(false)
   const inSettings = path.startsWith('/settings') || path.startsWith('/audit')
   const active = (href: string) => (href === '/settings' ? inSettings : path === href || path.startsWith(href + '/'))
+  const allowed = (perm?: Perm) => !perm || (typeof perm === 'function' ? perm(user.perms) : user.perms.includes(perm))
+  const settingsSub = SETTINGS_SUB.filter((s) => allowed(s.perm))
+  // Settings shows when any settings page is open to the user; it links to the first one they can use
+  const nav = NAV.filter((n) => (n.href === '/settings' ? settingsSub.length > 0 : allowed(n.perm))).map((n) => (n.href === '/settings' ? { ...n, href: settingsSub[0].href } : n))
 
   const body = (
     <div className="flex h-full w-[264px] flex-none flex-col bg-navy px-4 py-5 text-white">
@@ -46,8 +55,8 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Record<string
       </Link>
       <div className="mx-3 mb-2 mt-[22px] text-[11px] font-bold uppercase tracking-[.1em] text-white/50">Home Care</div>
       <nav className="no-scrollbar flex flex-1 flex-col gap-0.5 overflow-y-auto">
-        {NAV.filter((n) => !n.roles || n.roles.includes(user.role)).map((n) => {
-          const on = active(n.href)
+        {nav.map((n) => {
+          const on = n.label === 'Settings' ? inSettings : active(n.href)
           const count = n.countKey ? counts[n.countKey] : 0
           return (
             <div key={n.href}>
@@ -65,9 +74,9 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Record<string
                     <span className="text-[12px] text-white/60">{count}</span>
                   ))}
               </Link>
-              {n.href === '/settings' && inSettings && (
+              {n.label === 'Settings' && inSettings && (
                 <div className="my-1 ml-[21px] flex flex-col gap-0.5 border-l border-white/15 pl-3">
-                  {SETTINGS_SUB.filter((s) => user.role === 'SUPER_ADMIN' || !['/settings/roles', '/settings/designations'].includes(s.href)).map((s) => (
+                  {settingsSub.map((s) => (
                     <Link
                       key={s.href}
                       href={s.href}

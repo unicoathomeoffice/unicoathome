@@ -1,4 +1,7 @@
-ui/
-scripts/
+/ui/
+/scripts/
+/.kilo/
+*.tsbuildinfo
+.env*
 *.md
 !README.md

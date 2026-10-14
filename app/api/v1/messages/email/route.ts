@@ -38,7 +38,7 @@ export const POST = route(
     if (!subject || !text) throw bad('Subject and message are required')
     const log = await queueEmail({ to, toName, subject, text, templateKey: input.templateKey, requestId: r?._id, patientId: r?.patientId, initiatedBy: user.id })
     await audit(user, 'message.email_send', 'message', log._id, { after: { to, subject }, label: r?.requestNo }, clientMeta(req, user))
-    return { id: String(log._id), configured: emailConfigured() }
+    return { id: String(log._id), configured: (await emailConfigured()) }
   },
   { perm: 'messages.send' },
 )

@@ -1,6 +1,6 @@
 import 'server-only'
 import { after } from 'next/server'
-import nodemailer, { type Transporter } from 'nodemailer'
+import { getGmailConfig, gmailReady, sendGmail } from './gmail'
 import { MessageLog, Notification, Template, User } from './models'
 import { DEFAULT_TEMPLATES, emailShell, renderText, type TemplateDef } from './templates'
 import type { Role } from './constants'
@@ -40,21 +40,8 @@ export async function renderTemplate(key: string, vars: Record<string, unknown>)
   return { subject, text, active: t.isActive !== false }
 }
 
-// ---------------------------------------------------------------- email (Gmail SMTP + App Password)
-let transporter: Transporter | null = null
-export const emailConfigured = () => !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD)
-
-function mailer() {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
-    })
-  }
-  return transporter
-}
+// ---------------------------------------------------------------- email (Gmail SMTP or Gmail API OAuth2)
+export const emailConfigured = async () => gmailReady(await getGmailConfig())
 
 type EmailInput = {
   to: string
@@ -75,7 +62,7 @@ export async function queueEmail(input: EmailInput) {
   const html = input.html ?? emailShell({ title: input.subject, bodyText: input.text, cta: input.cta, preheader: input.text.slice(0, 90) })
   const log = await MessageLog.create({
     channel: 'EMAIL',
-    provider: 'gmail_smtp',
+    provider: 'gmail',
     to: input.to,
     toName: input.toName,
     subject: input.subject,
@@ -95,21 +82,22 @@ export async function queueEmail(input: EmailInput) {
 export async function deliverEmail(logId: string, cc?: string) {
   const log = await MessageLog.findById(logId)
   if (!log) return
-  if (!emailConfigured()) {
-    log.status = 'SKIPPED'
-    log.error = 'Gmail is not configured (GMAIL_USER / GMAIL_APP_PASSWORD)'
-    log.events.push({ status: 'SKIPPED', at: new Date(), note: log.error })
-    await log.save()
-    return
-  }
   log.attempts = (log.attempts ?? 0) + 1
   try {
+    const config = await getGmailConfig()
+    if (!gmailReady(config)) {
+      log.status = 'SKIPPED'
+      log.error = 'Configure Gmail credentials in Settings ? Integrations'
+      log.events.push({ status: 'SKIPPED', at: new Date(), note: log.error })
+      await log.save()
+      return
+    }
+    log.provider = config.mode === 'smtp' ? 'gmail_smtp' : 'gmail_api'
     const s = await getSettings()
-    const fromName = (s.email.fromName || process.env.EMAIL_FROM_NAME || 'Unico HomeCare').replace(/"/g, '')
-    const from = `"${fromName}" <${process.env.GMAIL_USER}>`
-    const info = await mailer().sendMail({ from, to: log.to, cc, replyTo: s.email.replyTo || undefined, subject: log.subject, text: log.renderedText, html: log.renderedHtml })
+    const from = { name: s.email.fromName || process.env.EMAIL_FROM_NAME || 'Unico HomeCare', address: config[config.mode].user }
+    const messageId = await sendGmail(config, { from, to: log.to, cc, replyTo: s.email.replyTo || undefined, subject: log.subject, text: log.renderedText, html: log.renderedHtml })
     log.status = 'SENT'
-    log.providerId = info.messageId
+    log.providerId = messageId
     log.error = undefined
     log.events.push({ status: 'SENT', at: new Date() })
   } catch (e: any) {

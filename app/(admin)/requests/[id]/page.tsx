@@ -8,7 +8,7 @@ import { AssignmentLog, Attachment, AuditLog, ChatMessage, HomecareRequest, LabR
 import { canView, slaInfo, withPeople } from '@/lib/services/requests'
 import { getSettings } from '@/lib/settings'
 import { initialsOf, isoDay, dayRange, dayNum, time, dur, date } from '@/lib/format'
-import { ROLE_LABEL, TRANSPORT_MODE_LABEL, type Role, type Status } from '@/lib/constants'
+import { ROLE_LABEL, TRANSPORT_MODE_LABEL, canResendMessages, isCoordinator, type Role, type Status } from '@/lib/constants'
 import { ActionBar, EditRequestButton, type ReqLite } from '@/components/request-detail/actions'
 import { LivePill } from '@/components/request-detail/widgets'
 import { AssignmentTab, AttachmentsTab, AuditTab, MessagesTab, OverviewTab, TimelineTab, VisitTab } from '@/components/request-detail/tabs'
@@ -34,7 +34,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
 
   const settings = await getSettings()
   const sla = settings.sla
-  const perms = permsFor(user.role)
+  const perms = permsFor(user)
   const status = r.status as Status
   const acts = availableActions(status)
 
@@ -228,8 +228,8 @@ export default async function RequestDetailPage({ params, searchParams }: { para
         {tab === 'timeline' && <TimelineTab r={R} people={people} sla={sla} />}
         {tab === 'assignment' && <AssignmentTab r={R} people={people} logs={plain(logs)} />}
         {tab === 'visit' && <VisitTab r={R} people={people} photos={plain(photos)} signature={plain(signature)} prescriptions={plain(prescriptions)} labs={plain(labs)} canDecide={perms.decide} reportHref={reportHref} />}
-        {tab === 'messages' && <MessagesTab msgs={plain(msgs)} chat={plain(chat)} people={people} canResend={['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK'].includes(user.role)} />}
-        {tab === 'attachments' && <AttachmentsTab requestId={id} atts={plain(atts)} people={people} canUpload={perms.edit} me={{ id: user.id, admin: ['SUPER_ADMIN', 'HC_ADMIN'].includes(user.role) }} />}
+        {tab === 'messages' && <MessagesTab msgs={plain(msgs)} chat={plain(chat)} people={people} canResend={canResendMessages(user)} />}
+        {tab === 'attachments' && <AttachmentsTab requestId={id} atts={plain(atts)} people={people} canUpload={perms.edit} me={{ id: user.id, admin: isCoordinator(user) }} />}
         {tab === 'audit' && <AuditTab rows={plain(audits)} />}
       </div>
     </AdminPage>

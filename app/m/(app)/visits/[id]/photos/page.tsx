@@ -1,6 +1,7 @@
 import { MScreen } from '@/components/mobile'
 import { loadVisit } from '@/components/field/data'
 import { PhotoManager } from '@/components/field/photos'
+import { isCoordinator } from '@/lib/constants'
 
 export const metadata = { title: 'Photos' }
 
@@ -12,7 +13,7 @@ export default async function Photos({ params }: { params: Promise<{ id: string 
   const { r, team, user, attachments } = await loadVisit(id, { attachments: true })
   const tiles = attachments
     .filter((a: any) => KINDS.includes(a.kind))
-    .map((a: any) => ({ _id: a._id, kind: a.kind, at: a.at, mine: String(a.uploadedBy) === user.id || ['SUPER_ADMIN', 'HC_ADMIN'].includes(user.role) }))
+    .map((a: any) => ({ _id: a._id, kind: a.kind, at: a.at, mine: String(a.uploadedBy) === user.id || isCoordinator(user) }))
   return (
     <MScreen pad={false}>
       <PhotoManager

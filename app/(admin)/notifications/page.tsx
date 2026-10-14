@@ -7,6 +7,7 @@ import { AdminPage } from '@/components/admin/AdminPage'
 import { Empty, LinkButton, Tabs } from '@/components/ui'
 import { NotificationList, MarkAllRead } from '@/components/comms/NotificationList'
 import { isoDay } from '@/lib/format'
+import { canOpenSettings } from '@/lib/constants'
 
 export const metadata: Metadata = { title: 'Notifications' }
 
@@ -40,7 +41,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     const s = q.toString()
     return s ? `/notifications?${s}` : '/notifications'
   }
-  const isAdmin = ['SUPER_ADMIN', 'HC_ADMIN'].includes(user.role)
+  const isAdmin = canOpenSettings(user)
 
   return (
     <AdminPage title="Notifications">

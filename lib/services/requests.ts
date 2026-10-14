@@ -785,20 +785,22 @@ export type Candidate = {
 }
 
 export async function rankCandidates(r: any, limit = 20, roleFilter?: string[]): Promise<Candidate[]> {
-  const types = await ServiceType.find({ _id: { $in: (r.services ?? []).map((s: any) => s.serviceTypeId).filter(Boolean) } }).lean<any[]>()
-  const required = [...new Set(types.flatMap((t) => t.requiredSkills ?? []))]
   const at: Date = r.scheduledAt ?? new Date()
   const dur = r.expectedDurationMin ?? 45
   const { start, end } = dayRange(isoDay(at))
-  const staff = await User.find({ role: { $in: roleFilter ?? ['DOCTOR', 'NURSE', 'ALLIED'] }, status: 'ACTIVE', deletedAt: null }).lean<any[]>()
-  const desigs = await Designation.find({ _id: { $in: staff.map((s) => s.designationId).filter(Boolean) } }).lean<any[]>()
-  const todays = await HomecareRequest.find({
-    _id: { $ne: r._id },
-    scheduledAt: { $gte: start, $lt: end },
-    status: { $in: ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED'] },
-  })
-    .select('assignment scheduledAt expectedDurationMin')
-    .lean<any[]>()
+  const serviceIds = (r.services ?? []).map((s: any) => s.serviceTypeId).filter(Boolean)
+  const [types, staff, todays] = await Promise.all([
+    serviceIds.length ? ServiceType.find({ _id: { $in: serviceIds } }).select('requiredSkills').lean<any[]>() : [],
+    User.find({ role: { $in: roleFilter ?? ['DOCTOR', 'NURSE', 'ALLIED'] }, status: 'ACTIVE', deletedAt: null })
+      .select('name role designationId employeeId availability skills zones').lean<any[]>(),
+    HomecareRequest.find({
+      _id: { $ne: r._id }, scheduledAt: { $gte: start, $lt: end },
+      status: { $in: ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED'] },
+    }).select('assignment scheduledAt expectedDurationMin').lean<any[]>(),
+  ])
+  const required = [...new Set(types.flatMap((t) => t.requiredSkills ?? []))]
+  const designationIds = [...new Set(staff.map((s) => s.designationId).filter(Boolean).map(String))]
+  const desigs = designationIds.length ? await Designation.find({ _id: { $in: designationIds } }).select('title').lean<any[]>() : []
   const area = r.patientSnapshot?.area
   return staff
     .map((u) => {
@@ -850,9 +852,13 @@ export async function withPeople<T extends any[]>(rows: T): Promise<T> {
     if (r.transport?.driverId) ids.add(String(r.transport.driverId))
     if (r.createdBy) ids.add(String(r.createdBy))
   }
-  const users = await User.find({ _id: { $in: [...ids] } }).select('name role employeeId phone designationId').lean<any[]>()
-  const desigs = await Designation.find({ _id: { $in: users.map((u) => u.designationId).filter(Boolean) } }).select('title').lean<any[]>()
-  const vehicles = await Vehicle.find({ _id: { $in: rows.map((r) => r.transport?.vehicleId).filter(Boolean) } }).lean<any[]>()
+  const vehicleIds = [...new Set(rows.map((r) => r.transport?.vehicleId).filter(Boolean).map(String))]
+  const [users, vehicles] = await Promise.all([
+    ids.size ? User.find({ _id: { $in: [...ids] } }).select('name role employeeId phone designationId').lean<any[]>() : [],
+    vehicleIds.length ? Vehicle.find({ _id: { $in: vehicleIds } }).lean<any[]>() : [],
+  ])
+  const designationIds = [...new Set(users.map((u) => u.designationId).filter(Boolean).map(String))]
+  const desigs = designationIds.length ? await Designation.find({ _id: { $in: designationIds } }).select('title').lean<any[]>() : []
   const person = (id: unknown) => {
     const u = users.find((x) => String(x._id) === String(id))
     if (!u) return null

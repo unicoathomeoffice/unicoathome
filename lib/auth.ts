@@ -6,7 +6,8 @@ import { SignJWT, jwtVerify } from 'jose'
 import bcrypt from 'bcryptjs'
 import { randomUUID } from 'crypto'
 import { db } from './db'
-import { Session, User, Designation, CustomRole } from './models'
+import { Session } from './models'
+import { sessionProfile } from './session-profile'
 import { can, type Permission, type Role } from './constants'
 
 export const COOKIE = 'hc_session'
@@ -95,16 +96,14 @@ export const getUser = cache(async function getUser(): Promise<SessionUser | nul
   await db()
   const [session, user] = await Promise.all([
     Session.findOne({ jti: payload.jti }).select('revokedAt lastSeenAt').lean<any>(),
-    User.findById(payload.sub).lean<any>(),
+    sessionProfile(payload.sub),
   ])
   if (!session || session.revokedAt || !user || user.status !== 'ACTIVE' || user.deletedAt) return null
   if (!session.lastSeenAt || Date.now() - new Date(session.lastSeenAt).getTime() > 5 * 60_000) {
     Session.updateOne({ jti: payload.jti }, { lastSeenAt: new Date() }).catch(() => {})
   }
-  const [designation, custom] = await Promise.all([
-    user.designationId ? Designation.findById(user.designationId).select('title').lean<any>() : null,
-    user.customRoleId ? CustomRole.findById(user.customRoleId).select('name permissions').lean<any>() : null,
-  ])
+  const designation = user.designationRecords[0]
+  const custom = user.customRoleRecords[0]
   return {
     id: String(user._id),
     employeeId: user.employeeId,

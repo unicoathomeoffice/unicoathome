@@ -2,13 +2,14 @@ import Link from 'next/link'
 import { Navigation, Route as RouteIcon } from 'lucide-react'
 import { MScreen } from '@/components/mobile'
 import { AutoRefresh } from '@/components/client'
-import { StatusChip, Chips, Empty, MapPin, mapsUrl } from '@/components/ui'
+import { StatusChip, Chips, Empty, MapEmbed, MapPin, mapsUrl } from '@/components/ui'
+import { MAPS_KEY, embedRouteUrl } from '@/lib/maps'
 import { shortName } from '@/components/coord/ui'
 import { pointOf, roadKm, driveMin, project, directionsUrl } from '@/components/transport/geo'
 import { requireAppUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { HomecareRequest, Patient, isOid } from '@/lib/models'
-import { DESK_ROLES } from '@/lib/constants'
+import { can } from '@/lib/constants'
 import { withPeople } from '@/lib/services/requests'
 import { dayRange, day, time, dur } from '@/lib/format'
 
@@ -21,7 +22,7 @@ export default async function DayRoute({ searchParams }: { searchParams: Promise
   const user = await requireAppUser()
   await db()
   const sp = await searchParams
-  const admin = DESK_ROLES.includes(user.role)
+  const admin = can(user, 'requests.readAll')
   const { start, end } = dayRange()
   const f: Record<string, any> = { deletedAt: null, scheduledAt: { $gte: start, $lt: end }, status: { $nin: ['CANCELLED', 'RESCHEDULED'] } }
   const staffFilter = admin && sp.staff && isOid(sp.staff) ? sp.staff : null
@@ -52,6 +53,10 @@ export default async function DayRoute({ searchParams }: { searchParams: Promise
   const open = stops.filter((s) => !DONE.includes(s.r.status))
   // travel lines only make sense for one person's route
   const single = !admin || !!staffFilter
+  // real Google route through the remaining stops (free Embed API) when a key is configured
+  const openPts = open.map((s) => ({ address: s.r.patientSnapshot?.address, lat: s.lat, lng: s.lng }))
+  const routeSrc = single ? embedRouteUrl(openPts) : null
+  const oneStop = single && MAPS_KEY && openPts.length === 1 ? openPts[0] : null
 
   return (
     <MScreen
@@ -69,6 +74,11 @@ export default async function DayRoute({ searchParams }: { searchParams: Promise
       pad={false}
     >
       <AutoRefresh seconds={60} />
+      {routeSrc ? (
+        <iframe title="Today's route" src={routeSrc} className="block h-[300px] w-full border-0 bg-[#E5EEF2]" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
+      ) : oneStop ? (
+        <MapEmbed {...oneStop} height={300} className="rounded-none" note="Next stop · open in Google Maps" />
+      ) : (
       <div
         className="relative h-[300px] bg-[#E5EEF2]"
         style={{ backgroundImage: 'linear-gradient(rgba(15,23,42,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(15,23,42,.06) 1px,transparent 1px)', backgroundSize: '28px 28px' }}
@@ -83,6 +93,7 @@ export default async function DayRoute({ searchParams }: { searchParams: Promise
         ))}
         <div className="absolute bottom-2.5 left-3 rounded-md bg-white/85 px-2 py-0.5 text-[11px] font-semibold text-slate-500">Approximate positions · Dhaka</div>
       </div>
+      )}
       <div className="grid gap-3 px-5 py-4">
         {chips.length > 1 && <Chips items={chips} active={staffFilter ?? 'all'} />}
         {!rows.length && <Empty icon={<RouteIcon size={26} />} title="No visits today" sub={admin ? 'Nothing scheduled for this filter today.' : 'Your assigned visits for today will show here in order.'} />}

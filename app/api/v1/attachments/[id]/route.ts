@@ -3,6 +3,7 @@ import { Attachment, HomecareRequest, isOid } from '@/lib/models'
 import { canView } from '@/lib/services/requests'
 import { audit } from '@/lib/audit'
 import { readBlob, deleteBlob } from '@/lib/storage'
+import { isCoordinator } from '@/lib/constants'
 
 /** GET /api/v1/attachments/:id — streams the file after an access check (private Blob or inline MongoDB). */
 export const GET = route<{ id: string }>(async ({ user, params }) => {
@@ -28,7 +29,7 @@ export const DELETE = route<{ id: string }>(async ({ req, user, params }) => {
   if (!isOid(params.id)) throw notFound('File')
   const a = await Attachment.findById(params.id).select('+blobUrl')
   if (!a) throw notFound('File')
-  if (String(a.uploadedBy) !== user.id && !['SUPER_ADMIN', 'HC_ADMIN'].includes(user.role)) throw forbidden()
+  if (String(a.uploadedBy) !== user.id && !isCoordinator(user)) throw forbidden()
   a.deletedAt = new Date()
   await a.save()
   // Soft-delete keeps the record for audit; the file itself is removed from Blob storage.

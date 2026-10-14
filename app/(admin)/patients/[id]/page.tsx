@@ -7,7 +7,7 @@ import { ACTIVE_STATUSES, can } from '@/lib/constants'
 import { withPeople } from '@/lib/services/requests'
 import { plain } from '@/lib/db'
 import { AdminPage } from '@/components/admin/AdminPage'
-import { Avatar, Card, CardHeader, LinkButton, StatusChip, Tabs, Tag, Table, Tr, btnClass, telUrl } from '@/components/ui'
+import { Avatar, Card, CardHeader, LinkButton, MapEmbed, StatusChip, Tabs, Tag, Table, Tr, btnClass, telUrl } from '@/components/ui'
 import { WhatsAppButton } from '@/components/client'
 import { PatientDrawerButton } from '@/components/people/PatientDrawer'
 import { UploadDocButton } from '@/components/people/UploadDocButton'
@@ -180,6 +180,7 @@ export default async function PatientProfile({ params, searchParams }: { params:
 
           <Card>
             <CardHeader title="Address history" className="mb-3" />
+            <MapEmbed className="mb-3" height={170} lat={patient.address?.lat} lng={patient.address?.lng} address={[patient.address?.full, patient.address?.landmark, patient.address?.area].filter(Boolean).join(', ') || undefined} />
             {history.length === 0 && patient.address?.full && (
               <div className="rounded-[10px] bg-primary-50 px-3 py-2.5">
                 <div className="text-[13.5px] font-semibold">{patient.address.full}</div>

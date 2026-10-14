@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, CheckCircle2, Loader2, LocateOff } from 'lucide-react'
 import { stamp, Toggle, useToast } from '@/components/client'
-import { MapBox, Avatar } from '@/components/ui'
+import { MapBox, MapEmbed, Avatar } from '@/components/ui'
 import { cx, time } from '@/lib/format'
 import { sendOrQueue } from './live'
 import { BottomBar, bigBtn } from './bar'
@@ -69,6 +69,10 @@ export function CheckInForm({ id, scheduledAt, patient, area, address, lateAfter
   return (
     <>
       <div className="relative">
+        {gps && gpsState === 'ok' && fix ? (
+          // rounded to ~10 m so the embedded map doesn't reload on every GPS tick
+          <MapEmbed height={220} zoom={17} lat={Math.round(fix.lat * 1e4) / 1e4} lng={Math.round(fix.lng * 1e4) / 1e4} note={`GPS ±${fix.acc} m${area ? ` · ${area}` : ''}`} />
+        ) : (
         <MapBox height={220} note={gps ? (gpsState === 'ok' && fix ? `GPS ±${fix.acc} m${area ? ` · ${area}` : ''}` : gpsState === 'locating' ? 'Locating…' : gpsErr || 'GPS off') : 'GPS off · time stamp only'}>
           {gps && gpsState === 'ok' && fix ? (
             <>
@@ -84,6 +88,7 @@ export function CheckInForm({ id, scheduledAt, patient, area, address, lateAfter
             <LocateOff size={28} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-slate-400" />
           )}
         </MapBox>
+        )}
       </div>
 
       <div className="rounded-card bg-white p-4 shadow-card">

@@ -546,6 +546,12 @@ const CustomRoleSchema = new Schema<any>(
 )
 export const CustomRole = model('CustomRole', CustomRoleSchema, 'custom_roles')
 
+// Separate from ordinary settings: only ciphertext is persisted here.
+const IntegrationSecretSchema = new Schema<any>({
+  _id: String, encrypted: { type: String, required: true, select: false }, updatedBy: { type: ObjectId, ref: 'User' },
+}, opts)
+export const IntegrationSecret = model('IntegrationSecret', IntegrationSecretSchema, 'integration_secrets')
+
 export { Types }
 export const oid = (id: string | Types.ObjectId) => (typeof id === 'string' ? new Types.ObjectId(id) : id)
 export const isOid = (id: unknown): id is string => typeof id === 'string' && Types.ObjectId.isValid(id) && /^[a-f0-9]{24}$/i.test(id)

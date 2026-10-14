@@ -11,11 +11,11 @@ import { ActionButton } from '@/components/client'
 import { UrlSearch, UrlSelect } from '@/components/comms/UrlFilters'
 import { CHANNEL_LABEL, ChannelIcon, EmailFrame, MSG_STATUS, MsgStatus, PushCard, WaBubble, when } from '@/components/comms/MessageBits'
 import { cx, dayRange, isoDay, phone as fmtPhone, time } from '@/lib/format'
+import { canViewMessages, canResendMessages } from '@/lib/constants'
 
 export const metadata: Metadata = { title: 'Messages' }
 
 type SP = Promise<Record<string, string | undefined>>
-const ROLES = ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER']
 const CHANNELS = ['EMAIL', 'WHATSAPP', 'PUSH'] as const
 const RANGES: Record<string, number> = { today: 0, '7d': 6, '30d': 29 }
 
@@ -26,7 +26,8 @@ function rangeFrom(range?: string) {
 
 export default async function MessagesPage({ searchParams }: { searchParams: SP }) {
   const user = await requireWebUser()
-  if (!ROLES.includes(user.role)) redirect('/dashboard?denied=1')
+  if (!canViewMessages(user)) redirect('/dashboard?denied=1')
+  const gmailConfigured = await emailConfigured()
   const sp = await searchParams
   const channel = CHANNELS.includes(sp.channel as any) ? sp.channel! : ''
   const limit = Math.min(Number(sp.limit) || 100, 500)
@@ -85,7 +86,7 @@ export default async function MessagesPage({ searchParams }: { searchParams: SP 
     return { name: m.toName ?? many[0] ?? '—', sub: m.toName ? many[0] : many.length > 1 ? `+${many.length - 1} more` : '' }
   }
   const es = Object.fromEntries(emailToday.map((x: any) => [x._id, x.n])) as Record<string, number>
-  const canResend = ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK'].includes(user.role)
+  const canResend = canResendMessages(user)
   const COLS = '96px minmax(150px,1.5fr) minmax(130px,1.2fr) 128px 104px 116px'
 
   return (
@@ -119,13 +120,13 @@ export default async function MessagesPage({ searchParams }: { searchParams: SP 
             <Kpi dense label="Sent today" n={Object.values(es).reduce((a, b) => a + b, 0)} />
             <Kpi dense label="Delivered" n={(es.SENT ?? 0) + (es.DELIVERED ?? 0) + (es.OPENED ?? 0)} color="#15803D" />
             <Kpi dense label="Queued" n={es.QUEUED ?? 0} color="#B45309" />
-            <Kpi dense label="Skipped" n={es.SKIPPED ?? 0} color="#C2410C" sub={emailConfigured() ? undefined : 'Gmail not configured'} />
+            <Kpi dense label="Skipped" n={es.SKIPPED ?? 0} color="#C2410C" sub={gmailConfigured ? undefined : 'Gmail not configured'} />
             <Kpi dense label="Failed" n={es.FAILED ?? 0} color="#B91C1C" />
-            <Kpi dense label="Gmail" n={emailConfigured() ? 'Ready' : 'Off'} color={emailConfigured() ? '#15803D' : '#C2410C'} sub={emailConfigured() ? 'SMTP · app password' : 'set GMAIL_USER + APP_PASSWORD'} href="/settings" />
+            <Kpi dense label="Gmail" n={gmailConfigured ? 'Ready' : 'Off'} color={gmailConfigured ? '#15803D' : '#C2410C'} sub={gmailConfigured ? 'SMTP · app password' : 'set GMAIL_USER + APP_PASSWORD'} href="/settings" />
           </div>
         )}
 
-        {!emailConfigured() && channel !== 'PUSH' && (
+        {!gmailConfigured && channel !== 'PUSH' && (
           <div className="flex items-start gap-2.5 rounded-card border border-[#FED7AA] bg-[#FFF7ED] px-4 py-3 text-[13px] text-[#9A3412]">
             <AlertTriangle size={16} className="mt-px flex-none" />
             <div>

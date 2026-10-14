@@ -1,5 +1,5 @@
 import { route, qp, clientMeta, forbidden } from '@/lib/api'
-import { can } from '@/lib/constants'
+import { can, canViewMessages } from '@/lib/constants'
 import { getReport, requestsCsv, messagesCsv, normaliseFilter } from '@/lib/services/reports'
 import { audit } from '@/lib/audit'
 
@@ -13,7 +13,7 @@ export const GET = route(
     const p = qp(req)
     const isMessages = p.get('type') === 'messages'
     // message export follows the Messages page access (front desk included); everything else needs reports.view
-    if (isMessages ? !['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER'].includes(user.role) : !can(user, 'reports.view')) throw forbidden()
+    if (isMessages ? !canViewMessages(user) : !can(user, 'reports.view')) throw forbidden()
     const filter = normaliseFilter({ from: p.get('from'), to: p.get('to'), groupBy: p.get('groupBy'), service: p.get('service'), zone: p.get('zone') })
     if (p.get('format') === 'csv') {
       const type = p.get('type') ?? 'requests'

@@ -95,7 +95,7 @@ export const POST = route<P>(
       initiatedBy: user.id,
     })
     await audit(user, 'template.test_send', 'template', params.key, { after: { to: input.to, requestNo: request?.requestNo }, label: params.key }, clientMeta(req, user))
-    return { id: String(log._id), configured: emailConfigured() }
+    return { id: String(log._id), configured: (await emailConfigured()) }
   },
   { perm: 'templates.manage' },
 )

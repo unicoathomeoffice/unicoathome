@@ -2,15 +2,17 @@ import { z } from 'zod'
 import { route, body, clientMeta } from '@/lib/api'
 import { getSettings, saveSetting, DEFAULT_SETTINGS } from '@/lib/settings'
 import { emailConfigured, queueEmail } from '@/lib/messaging'
+import { getGmailStatus } from '@/lib/gmail'
 import { audit } from '@/lib/audit'
 import { blobEnabled } from '@/lib/storage'
 
 export const GET = route(async () => {
   const s = await getSettings()
+  const gmail = await getGmailStatus()
   return {
     settings: s,
     integrations: {
-      gmail: { configured: emailConfigured(), user: process.env.GMAIL_USER ? process.env.GMAIL_USER.replace(/^(.{3}).*(@.*)$/, '$1•••$2') : null },
+      gmail: { configured: gmail.configured, mode: gmail.mode },
       whatsapp: { mode: 'deeplink', country: process.env.WA_DEFAULT_COUNTRY ?? '880' },
       cron: { configured: !!process.env.CRON_SECRET },
       database: { name: 'MongoDB Atlas' },
@@ -42,7 +44,7 @@ export const POST = route(
     const input = await body(req, z.object({ test: z.literal('email'), to: z.string().email() }))
     const log = await queueEmail({ to: input.to, subject: 'Unico HomeCare · test email', text: `This is a test email sent by ${user.name} from Settings → Integrations.\n\nIf you can read this, Gmail is configured correctly.`, templateKey: 'test', initiatedBy: user.id })
     await audit(user, 'settings.test_email', 'settings', 'email', { after: { to: input.to } }, clientMeta(req, user))
-    return { id: String(log._id), configured: emailConfigured() }
+    return { id: String(log._id), configured: (await emailConfigured()) }
   },
   { roles: ['SUPER_ADMIN', 'HC_ADMIN'] },
 )

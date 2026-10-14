@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Loader2, MapPin, Plus, Search, X } from 'lucide-react'
 import { btnClass, StatusChip } from '@/components/ui'
 import { api, ChipPicker, Segmented, Toggle, useToast } from '@/components/client'
+import { AddressSearchInput, PinPicker } from '@/components/client/maps'
 import { ACTIVE_STATUSES, PAYMENT_METHOD_LABEL, PAYMENT_METHODS, REQUEST_SOURCES, TESTS_PROCEDURES, type Status } from '@/lib/constants'
 import { ageGender, cx, dayNum, initialsOf, phone as fmtPhone, taka, time as fmtTime } from '@/lib/format'
 
@@ -16,7 +17,7 @@ export type FormPatient = {
   gender?: string
   uhid?: string
   email?: string
-  address?: { area?: string; full?: string; landmark?: string }
+  address?: { area?: string; full?: string; landmark?: string; lat?: number | null; lng?: number | null }
   allergies?: string[]
   latest?: { requestId: string; requestNo: string; status: string; scheduledAt?: string; count: number } | null
 }
@@ -29,7 +30,7 @@ const blank = (today: string) => ({
   mode: 'existing' as 'existing' | 'new',
   patient: null as FormPatient | null,
   np: { name: '', phone: '', altPhone: '', ageYears: '', gender: '' as '' | 'M' | 'F' | 'O', uhid: '', email: '' },
-  addr: { area: '', full: '', landmark: '' },
+  addr: { area: '', full: '', landmark: '', lat: null as number | null, lng: null as number | null },
   requester: { type: 'SELF' as 'SELF' | 'RELATIVE', name: '', relation: '', phone: '' },
   serviceCodes: [] as string[],
   otherService: '',
@@ -182,8 +183,8 @@ export function RequestForm({
       // Existing patient with a changed address: update the patient record first (keeps address history)
       if (f.mode === 'existing' && f.patient) {
         const a = f.patient.address ?? {}
-        if ((a.full ?? '') !== f.addr.full.trim() || (a.area ?? '') !== f.addr.area || (a.landmark ?? '') !== f.addr.landmark.trim())
-          await api(`/patients/${f.patient._id}`, { method: 'PATCH', body: { address: { area: f.addr.area || undefined, full: f.addr.full.trim(), landmark: f.addr.landmark.trim() || undefined } } })
+        if ((a.full ?? '') !== f.addr.full.trim() || (a.area ?? '') !== f.addr.area || (a.landmark ?? '') !== f.addr.landmark.trim() || (a.lat ?? null) !== (f.addr.lat ?? null) || (a.lng ?? null) !== (f.addr.lng ?? null))
+          await api(`/patients/${f.patient._id}`, { method: 'PATCH', body: { address: { area: f.addr.area || undefined, full: f.addr.full.trim(), landmark: f.addr.landmark.trim() || undefined, lat: f.addr.lat ?? null, lng: f.addr.lng ?? null } } })
       }
       const slot = f.timeMode === 'slot' && f.slot ? f.slot : undefined
       const time = f.timeMode === 'time' && f.time ? f.time : undefined
@@ -199,7 +200,7 @@ export function RequestForm({
                 gender: f.np.gender || undefined,
                 uhid: f.np.uhid.trim() || undefined,
                 email: f.np.email.trim() || undefined,
-                address: { area: f.addr.area || undefined, full: f.addr.full.trim(), landmark: f.addr.landmark.trim() || undefined },
+                address: { area: f.addr.area || undefined, full: f.addr.full.trim(), landmark: f.addr.landmark.trim() || undefined, lat: f.addr.lat ?? undefined, lng: f.addr.lng ?? undefined },
               },
             }),
         requester: f.requester.type === 'RELATIVE' ? { type: 'RELATIVE', name: f.requester.name.trim() || undefined, relation: f.requester.relation.trim() || undefined, phone: f.requester.phone.trim() || undefined } : { type: 'SELF' },
@@ -361,7 +362,7 @@ function pickPatient(f: F, p: FormPatient): F {
     ...f,
     mode: 'existing',
     patient: p,
-    addr: { area: p.address?.area ?? '', full: p.address?.full ?? '', landmark: p.address?.landmark ?? '' },
+    addr: { area: p.address?.area ?? '', full: p.address?.full ?? '', landmark: p.address?.landmark ?? '', lat: p.address?.lat ?? null, lng: p.address?.lng ?? null },
     allergies: f.allergies || (p.allergies ?? []).join(', '),
   }
 }
@@ -399,6 +400,8 @@ function StepPatient({ f, set, setIn, zones, errors }: { f: F; set: SetF; setIn:
   const [q, setQ] = useState('')
   const [results, setResults] = useState<FormPatient[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [pinOpen, setPinOpen] = useState(false)
+  const pinned = f.addr.lat != null && f.addr.lng != null
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -431,7 +434,7 @@ function StepPatient({ f, set, setIn, zones, errors }: { f: F; set: SetF; setIn:
   const choose = (p: FormPatient) => {
     set('mode', 'existing')
     set('patient', p)
-    set('addr', { area: p.address?.area ?? '', full: p.address?.full ?? '', landmark: p.address?.landmark ?? '' })
+    set('addr', { area: p.address?.area ?? '', full: p.address?.full ?? '', landmark: p.address?.landmark ?? '', lat: p.address?.lat ?? null, lng: p.address?.lng ?? null })
     if (!f.allergies && p.allergies?.length) set('allergies', p.allergies.join(', '))
   }
 
@@ -589,7 +592,13 @@ function StepPatient({ f, set, setIn, zones, errors }: { f: F; set: SetF; setIn:
             </select>
           </Field>
           <Field label="Full address *" error={errors.full}>
-            <input className={cx('hc-input', errCls(errors.full))} value={f.addr.full} onChange={(e) => setIn('addr', { full: e.target.value })} placeholder="House, road, block" />
+            <AddressSearchInput
+              className={cx('hc-input', errCls(errors.full))}
+              value={f.addr.full}
+              onChange={(full) => setIn('addr', { full })}
+              onPlace={(pl) => setIn('addr', { full: pl.full, lat: pl.lat, lng: pl.lng })}
+              placeholder="House, road, block — or search the map"
+            />
           </Field>
           <Field label="Landmark">
             <input className="hc-input" value={f.addr.landmark} onChange={(e) => setIn('addr', { landmark: e.target.value })} placeholder="Near…" />
@@ -619,18 +628,22 @@ function StepPatient({ f, set, setIn, zones, errors }: { f: F; set: SetF; setIn:
             </div>
           </div>
           <div>
-            <span className="hc-label">Location check (optional)</span>
-            <a
-              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([f.addr.full, f.addr.landmark, f.addr.area, 'Dhaka'].filter(Boolean).join(', '))}`}
-              target="_blank"
-              rel="noreferrer"
-              className={cx('relative flex h-10 items-center justify-center gap-1.5 overflow-hidden rounded-card bg-[#E5EEF2] text-[13px] font-semibold text-primary-700', !f.addr.full && 'pointer-events-none opacity-60')}
-              style={{ backgroundImage: 'linear-gradient(rgba(15,23,42,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(15,23,42,.06) 1px,transparent 1px)', backgroundSize: '28px 28px' }}
+            <span className="hc-label">Exact location (optional)</span>
+            <button
+              type="button"
+              onClick={() => setPinOpen((o) => !o)}
+              className={cx('flex h-10 w-full items-center justify-center gap-1.5 rounded-card text-[13px] font-semibold', pinned ? 'bg-[#DCFCE7] text-[#15803D]' : 'bg-[#E5EEF2] text-primary-700')}
+              style={pinned ? undefined : { backgroundImage: 'linear-gradient(rgba(15,23,42,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(15,23,42,.06) 1px,transparent 1px)', backgroundSize: '28px 28px' }}
             >
-              <MapPin size={15} /> Check address on map
-            </a>
+              {pinned ? <Check size={15} /> : <MapPin size={15} />} {pinOpen ? 'Hide map' : pinned ? 'Pinned on map · adjust' : 'Drop pin on map'}
+            </button>
           </div>
         </div>
+        {pinOpen && (
+          <div className="mt-3">
+            <PinPicker lat={f.addr.lat} lng={f.addr.lng} onChange={(pt) => setIn('addr', { lat: pt?.lat ?? null, lng: pt?.lng ?? null })} />
+          </div>
+        )}
       </SectionCard>
     </>
   )

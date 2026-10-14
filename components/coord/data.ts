@@ -2,15 +2,15 @@ import 'server-only'
 import { notFound, redirect } from 'next/navigation'
 import { requireAppUser, type SessionUser } from '@/lib/auth'
 import { db } from '@/lib/db'
-import { DESK_ROLES, type Permission } from '@/lib/constants'
+import { can, type Permission } from '@/lib/constants'
 import { HomecareRequest, Patient, isOid } from '@/lib/models'
 import { canView, withPeople, slaInfo } from '@/lib/services/requests'
 import { getSettings } from '@/lib/settings'
 
-/** Admin tab screens: HC_ADMIN, FRONT_DESK, SUPER_ADMIN (+ optional permission). */
+/** Admin tab screens: desk users who read all requests — HC_ADMIN, FRONT_DESK, SUPER_ADMIN or a custom role (+ optional permission). */
 export async function requireDesk(perm: Permission = 'requests.create'): Promise<SessionUser> {
   const u = await requireAppUser(perm)
-  if (!DESK_ROLES.includes(u.role)) redirect('/m?denied=1')
+  if (!can(u, 'requests.readAll')) redirect('/m?denied=1')
   await db()
   return u
 }

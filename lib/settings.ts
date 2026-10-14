@@ -1,4 +1,5 @@
 import 'server-only'
+import { cache } from 'react'
 import { Setting } from './models'
 import { SLOTS } from './constants'
 
@@ -59,12 +60,12 @@ function merge(base: any, over: any): any {
   return out
 }
 
-export async function getSettings(): Promise<Settings> {
+export const getSettings = cache(async function getSettings(): Promise<Settings> {
   const rows = await Setting.find({}).lean<any[]>()
   const over: any = {}
   for (const r of rows) over[r.key] = r.value
   return merge(DEFAULT_SETTINGS, over)
-}
+})
 
 /** Map notification types used in code onto the event rows of the E4 matrix. */
 const EVENT_ALIAS: Record<string, string> = { ESCALATION: 'DECLINED', TRANSPORT: 'TRANSPORT_ASSIGNED' }

@@ -52,7 +52,11 @@ Field staff are **app-only**. Signing in to the web admin with their accounts is
 | `HOSPITAL_PHONE`, `WA_DEFAULT_COUNTRY` | optional | Shown in patient messages. The country code defaults to `880`. |
 | `CRON_SECRET` | for cron | Vercel Cron sends it as a Bearer token to `/api/v1/jobs/*`. |
 
-Secrets live only in env vars and are never stored in MongoDB.
+Gmail supports two delivery methods in **Settings ? Gmail**: SMTP with a Google App Password, or Gmail API OAuth2 with your client ID, client secret, and offline refresh token. Saving a method makes it active; blank secret fields preserve credentials already saved for the same account/client. Use Send test to verify delivery.
+
+Set `INTEGRATION_ENCRYPTION_KEY` to a random 32-byte hexadecimal key before saving credentials in the UI. Gmail credentials are stored as AES-256-GCM ciphertext in the separate `integration_secrets` collection; plaintext secrets are never returned by the settings API or included in audit logs. Back up this key securely and keep it stable across deployments. Existing `GMAIL_USER` / `GMAIL_APP_PASSWORD` environment variables remain the fallback until configuration is saved. Optional OAuth environment defaults are `GMAIL_MODE=oauth2`, `GMAIL_OAUTH_USER`, `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`.
+
+The OAuth refresh token must be authorized for `https://www.googleapis.com/auth/gmail.send`. The UI provides setup instructions; Google OAuth credentials must be supplied by the account owner.
 
 ## Deploy to Vercel
 

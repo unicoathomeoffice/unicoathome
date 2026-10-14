@@ -12,3 +12,6 @@ npm-debug.log*
 # design source bundle (kept locally, not deployed)
 ui/design
 ui/tools/out
+
+.vercel
+.env*

@@ -3,7 +3,7 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { Bell, Car, FileText, Mail, MessageCircle, MessageSquare, Paperclip, ScrollText, Smartphone, UserX, Wallet } from 'lucide-react'
 import { ActionButton } from '@/components/client'
-import { Avatar, Empty, StatusChip, Tag, type Tone } from '@/components/ui'
+import { Avatar, Empty, MapEmbed, StatusChip, Tag, type Tone } from '@/components/ui'
 import { PAYMENT_METHOD_LABEL, ROLE_LABEL, TRANSPORT_MODE_LABEL, type Role } from '@/lib/constants'
 import { ago, cx, date, dateTime, dayNum, dur, minutesBetween, phone, taka, time } from '@/lib/format'
 import { Field, MetricsTable, Panel, Stepper, SubTitle, VitalTiles } from './ui'
@@ -95,6 +95,7 @@ export function OverviewTab({
               </Field>
             )}
           </div>
+          <MapEmbed className="mt-3.5" height={170} lat={p.address?.lat} lng={p.address?.lng} address={p.address?.full ? [p.address.full, p.address.landmark, p.address.area].filter(Boolean).join(', ') : r.patientSnapshot?.address} />
           <div className="mt-4 border-t border-slate-100 pt-3.5">
             <div className="text-[11px] font-semibold uppercase tracking-[.05em] text-slate-500">Chief complaint</div>
             <div className="mt-1 text-[13px] leading-[19px] text-slate-700">

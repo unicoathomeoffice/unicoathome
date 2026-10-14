@@ -1,4 +1,5 @@
 import { requireWebUser } from '@/lib/auth'
+import { after } from 'next/server'
 import { ACTIVE_STATUSES, can, PRIORITIES, STATUS_LABEL, STATUSES, type Status } from '@/lib/constants'
 import { ServiceType, User, Zone } from '@/lib/models'
 import { sweep } from '@/lib/services/jobs'
@@ -17,11 +18,9 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
   const user = await requireWebUser('requests.readAll')
   const sp = await searchParams
   const view = sp.view === 'table' ? 'table' : 'kanban'
-  try {
-    await sweep()
-  } catch (e) {
-    console.error('sweep failed', e)
-  }
+  after(async () => {
+    try { await sweep() } catch (e) { console.error('sweep failed', e) }
+  })
   const filters: Filters = { status: sp.status, priority: sp.priority, service: sp.service, zone: sp.zone, staff: sp.staff, date: sp.date, q: sp.q }
   const [rows, services, zones, staff] = await Promise.all([
     boardRows(filters),

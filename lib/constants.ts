@@ -74,6 +74,18 @@ export function can(who: Actor, perm: Permission): boolean {
   return (PERMISSIONS[perm] as readonly string[]).includes(who)
 }
 
+/** Every permission the actor holds — handed to client components (sidebar) that can't call can() on the session. */
+export const permissionsFor = (who: Actor) => (Object.keys(PERMISSIONS) as Permission[]).filter((p) => can(who, p))
+
+/** Coordinator-level desk: sees everyone's notes, messages and attachments (admins, or a custom role that can manage requests). */
+export const isCoordinator = (who: Actor) => can(who, 'requests.manage')
+/** Messages page + message export: the desk and management, i.e. anyone who reads all requests and sends or reports. */
+export const canViewMessages = (who: Actor) => can(who, 'requests.readAll') && (can(who, 'messages.send') || can(who, 'reports.view'))
+/** Re-send a logged message: desk roles only (management is read-only). */
+export const canResendMessages = (who: Actor) => can(who, 'requests.readAll') && can(who, 'messages.send')
+/** Settings hub (general, integrations, notification rules). */
+export const canOpenSettings = (who: Actor) => can(who, 'settings.manage') || can(who, 'templates.manage')
+
 /** Default permission list of a fixed role (used to seed custom roles). */
 export const permissionsOf = (role: Role | string) => (Object.keys(PERMISSIONS) as Permission[]).filter((p) => (PERMISSIONS[p] as readonly string[]).includes(role))
 

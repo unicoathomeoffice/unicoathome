@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { Note, User, Designation, Patient, HomecareRequest, isOid } from '../models'
 import { audit } from '../audit'
 import { bad, forbidden, notFound } from '../api'
-import { ADMIN_ROLES, NOTE_TYPES, NOTE_VISIBILITY } from '../constants'
+import { NOTE_TYPES, NOTE_VISIBILITY, isCoordinator } from '../constants'
 import type { SessionUser } from '../auth'
 
 type Meta = { ip?: string; userAgent?: string; client?: string }
@@ -30,7 +30,7 @@ export const NotePatch = z.object({
   visibility: z.enum(NOTE_VISIBILITY).optional(),
 })
 
-export const isCoordinator = (u: Pick<SessionUser, 'role'>) => ADMIN_ROLES.includes(u.role)
+export { isCoordinator }
 
 /** Mongo filter for the notes a user may read: TEAM notes, COORDINATOR notes (coordinators/admins) and their own. */
 export function visibleFilter(user: SessionUser) {
