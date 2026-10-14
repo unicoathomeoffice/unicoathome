@@ -2,14 +2,18 @@ import { z } from 'zod'
 import { route, body, bad, forbidden, clientMeta } from '@/lib/api'
 import { getGmailConfig, getGmailStatus, gmailReady, gmailStatus, saveGmailConfig } from '@/lib/gmail'
 import { audit } from '@/lib/audit'
+import { canOpenSettings } from '@/lib/constants'
 
-const admins = { roles: ['SUPER_ADMIN', 'HC_ADMIN'] as ('SUPER_ADMIN' | 'HC_ADMIN')[] }
 const Input = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('smtp'), user: z.string().trim().email().max(254), appPassword: z.string().max(200).optional() }),
   z.object({ mode: z.literal('oauth2'), user: z.string().trim().email().max(254), clientId: z.string().trim().min(1).max(500), clientSecret: z.string().trim().max(2000).optional(), refreshToken: z.string().trim().max(8192).optional() }),
 ])
-export const GET = route(async () => ({ gmail: await getGmailStatus() }), admins)
+export const GET = route(async ({ user }) => {
+  if (!canOpenSettings(user)) throw forbidden()
+  return { gmail: await getGmailStatus() }
+})
 export const PATCH = route(async ({ req, user }) => {
+  if (!canOpenSettings(user)) throw forbidden()
   const origin = req.headers.get('origin')
   if (origin && origin !== new URL(req.url).origin) throw forbidden()
   const input = await body(req, Input)
@@ -30,4 +34,4 @@ export const PATCH = route(async ({ req, user }) => {
   await saveGmailConfig(config, user.id)
   await audit(user, 'settings.gmail_configure', 'settings', 'gmail', { after: { mode: config.mode, account: input.user }, label: 'Gmail configuration' }, clientMeta(req, user))
   return { gmail: gmailStatus(config) }
-}, admins)
+})
