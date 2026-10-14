@@ -11,6 +11,7 @@ import { Field, MetricsTable, Panel, Stepper, SubTitle, VitalTiles } from './ui'
 import { bytes, GENDER, lifecycleSteps, timingMetrics, vitalRows, who, whoInitials, type People, type Sla } from './lib'
 import { Expander, EmailPreview, ResendButton, AttachmentUploader, DeleteAttachment } from './widgets'
 import { PettyTag } from './actions'
+import { ComposeButton } from '@/components/comms/Compose'
 
 const card = 'min-w-0 rounded-card bg-white shadow-card'
 
@@ -733,13 +734,16 @@ export function VisitTab({
 const CH_ICON: Record<string, ReactNode> = { EMAIL: <Mail size={15} />, WHATSAPP: <MessageCircle size={15} />, PUSH: <Bell size={15} />, SMS: <Smartphone size={15} /> }
 const MSG_TONE: Record<string, Tone> = { PREPARED: 'slate', QUEUED: 'blue', SENT: 'green', SENT_CONFIRMED: 'green', DELIVERED: 'green', OPENED: 'green', FAILED: 'red', SKIPPED: 'amber' }
 
-export function MessagesTab({ msgs, chat, people, canResend }: { msgs: any[]; chat: any[]; people: People; canResend: boolean }) {
+export function MessagesTab({ msgs, chat, people, canResend, compose }: { msgs: any[]; chat: any[]; people: People; canResend: boolean; compose?: { requestId: string; contact: { name?: string; email?: string | null; phone?: string | null }; whatsappLive: boolean } }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[1.5fr_1fr]">
       <section className={cx(card, 'overflow-hidden')}>
-        <div className="px-5 pb-3 pt-5">
-          <div className="text-[15px] font-bold">Messages · {msgs.length}</div>
-          <div className="text-[13px] text-slate-500">Email, WhatsApp and push sent for this request. Click a row to preview.</div>
+        <div className="flex items-start gap-3 px-5 pb-3 pt-5">
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-bold">Messages · {msgs.length}</div>
+            <div className="text-[13px] text-slate-500">Email, WhatsApp and push sent for this request. Click a row to preview.</div>
+          </div>
+          {compose && canResend && <ComposeButton requestId={compose.requestId} contact={compose.contact} whatsappLive={compose.whatsappLive} />}
         </div>
         <div className="grid h-11 grid-cols-[110px_1.1fr_1.3fr_120px_24px] items-center gap-2 border-y border-slate-200 bg-slate-50 px-5 text-[11.5px] font-bold uppercase tracking-[.05em] text-slate-500">
           <div>Channel</div>

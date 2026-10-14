@@ -83,6 +83,9 @@ const en = {
   eLocBlocked: 'Location permission was blocked — allow it, or type the address',
   eLocFail: 'Could not get your location — type the address instead',
   eLocNone: 'This phone does not share its location — type the address instead',
+  accGood: (m: number) => `Accurate to ±${m} m`,
+  accPoor: (m: number) => `Only ±${m} m accurate — go near a window or outside and tap again, or drag the pin to your door`,
+  accBad: 'Could not get an accurate position on this device — type the address or drag the pin',
   // landing + patient portal
   navSignIn: 'Sign in',
   navCreate: 'Create account',
@@ -145,6 +148,21 @@ const en = {
   changePassword: 'Change password',
   passwordChanged: 'Password changed — other devices were signed out',
   mandatoryNote: 'Mobile and WhatsApp numbers are required so our team can reach you.',
+  or: 'or',
+  googleContinue: 'Continue with Google',
+  completeTitle: 'Almost done',
+  completeSub: 'Add your mobile and WhatsApp numbers so our team can reach you.',
+  setPassword: 'Set a password',
+  noPasswordYet: 'You signed up with Google. Set a password to also sign in with your mobile number.',
+  sDocs: 'Prescription / documents',
+  docsHint: 'Photo or PDF of the prescription, referral or reports (up to 3 files, 4 MB each)',
+  docsRequired: 'A prescription is required for:',
+  addPhoto: 'Add photo or PDF',
+  uploading: 'Uploading…',
+  remove: 'Remove',
+  eDocs: 'Please upload the prescription for this service',
+  eFileType: 'Only photos (JPG, PNG) or PDF files',
+  eFileBig: 'File is too large (max 4 MB)',
 }
 
 const bn: typeof en = {
@@ -226,6 +244,9 @@ const bn: typeof en = {
   eLocBlocked: 'লোকেশনের অনুমতি বন্ধ — অনুমতি দিন অথবা ঠিকানা টাইপ করুন',
   eLocFail: 'লোকেশন পাওয়া যায়নি — ঠিকানা টাইপ করুন',
   eLocNone: 'এই ফোন লোকেশন শেয়ার করে না — ঠিকানা টাইপ করুন',
+  accGood: (m) => `±${m} মিটার পর্যন্ত সঠিক`,
+  accPoor: (m) => `মাত্র ±${m} মিটার সঠিক — জানালার কাছে বা বাইরে গিয়ে আবার চাপুন, অথবা পিনটি টেনে দরজায় রাখুন`,
+  accBad: 'এই ডিভাইসে সঠিক অবস্থান পাওয়া যায়নি — ঠিকানা টাইপ করুন বা পিন টেনে রাখুন',
   // landing + patient portal
   navSignIn: 'লগইন',
   navCreate: 'অ্যাকাউন্ট খুলুন',
@@ -288,6 +309,21 @@ const bn: typeof en = {
   changePassword: 'পাসওয়ার্ড পরিবর্তন',
   passwordChanged: 'পাসওয়ার্ড পরিবর্তিত — অন্য ডিভাইসগুলো লগআউট হয়েছে',
   mandatoryNote: 'আমাদের টিম যেন আপনার সাথে যোগাযোগ করতে পারে, সেজন্য মোবাইল ও হোয়াটসঅ্যাপ নম্বর আবশ্যক।',
+  or: 'অথবা',
+  googleContinue: 'Google দিয়ে চালিয়ে যান',
+  completeTitle: 'প্রায় শেষ',
+  completeSub: 'আমাদের টিম যেন যোগাযোগ করতে পারে, সেজন্য মোবাইল ও হোয়াটসঅ্যাপ নম্বর দিন।',
+  setPassword: 'পাসওয়ার্ড সেট করুন',
+  noPasswordYet: 'আপনি Google দিয়ে সাইন আপ করেছেন। মোবাইল নম্বর দিয়েও লগইন করতে একটি পাসওয়ার্ড সেট করুন।',
+  sDocs: 'প্রেসক্রিপশন / কাগজপত্র',
+  docsHint: 'প্রেসক্রিপশন, রেফারেল বা রিপোর্টের ছবি অথবা PDF (সর্বোচ্চ ৩টি ফাইল, প্রতিটি ৪ MB)',
+  docsRequired: 'এই সেবার জন্য প্রেসক্রিপশন আবশ্যক:',
+  addPhoto: 'ছবি বা PDF যোগ করুন',
+  uploading: 'আপলোড হচ্ছে…',
+  remove: 'মুছুন',
+  eDocs: 'এই সেবার জন্য প্রেসক্রিপশন আপলোড করুন',
+  eFileType: 'শুধু ছবি (JPG, PNG) অথবা PDF ফাইল',
+  eFileBig: 'ফাইলটি খুব বড় (সর্বোচ্চ ৪ MB)',
 }
 
 export type Dict = typeof en

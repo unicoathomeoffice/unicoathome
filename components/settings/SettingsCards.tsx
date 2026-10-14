@@ -8,6 +8,7 @@ import { btnClass } from '@/components/ui'
 import { MsgStatus } from '@/components/comms/MessageBits'
 import { cx } from '@/lib/format'
 import { GmailConnection } from './GmailConnection'
+import { WhatsAppConnection, type WaStatus } from './WhatsAppConnection'
 import type { GmailStatus } from '@/lib/gmail-types'
 
 // W15 editable cards. Each saves one settings key with PATCH /api/v1/settings {key, value}.
@@ -241,29 +242,21 @@ export function GmailCard({
 }
 
 // ---------------------------------------------------------------- WhatsApp
-export function WhatsAppCard({ initial, envCountry }: { initial: { defaultCountry: string; mode: string }; envCountry: string }) {
+export function WhatsAppCard({ initial, envCountry, status, autoSend }: { initial: { defaultCountry: string; mode: string }; envCountry: string; status: WaStatus; autoSend: boolean }) {
   const [cc, setCc] = useState(initial.defaultCountry)
   const { save, busy } = useSave('whatsapp')
   return (
-    <SCard title="WhatsApp" sub="Deep link now · Cloud API in Phase 3">
-      <div className="flex items-center justify-between py-1 text-[13.5px]">
-        <span className="text-slate-500">Mode</span>
-        <span className="font-semibold">Deep link (wa.me)</span>
-      </div>
-      <div className="py-1 text-[12.5px] text-slate-500">Staff tap “WhatsApp” → the message opens pre-filled on their phone → they tap Send and confirm “I sent it”. Every message is logged.</div>
+    <SCard title="WhatsApp" sub="Hospital WhatsApp by QR · automatic messages">
+      <WhatsAppConnection initial={status} autoSend={autoSend} />
+      <div className="mt-3 border-t border-slate-100 pt-3 text-[12.5px] text-slate-500">When not connected, staff tap “WhatsApp” on a request → the message opens pre-filled on their phone → they tap Send. Every message is logged either way.</div>
       <label className="hc-label mt-3">Default country code</label>
       <div className="flex items-center gap-2">
         <span className="text-[15px] font-semibold text-slate-500">+</span>
         <input className="hc-input" inputMode="numeric" value={cc} onChange={(e) => setCc(e.target.value.replace(/\D/g, ''))} />
       </div>
       <div className="mt-1 text-[12px] text-slate-500">Server default (WA_DEFAULT_COUNTRY): +{envCountry}</div>
-      <div className="mt-4 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
-        <span className="text-[13.5px] font-semibold">Cloud API</span>
-        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-bold uppercase text-slate-600">Phase 3 · not connected</span>
-      </div>
-      <div className="mt-2 text-[12px] leading-[18px] text-slate-500">Requires Meta Business verification for Unico Hospitals PLC and a dedicated number. Token and phone ID will live in Vercel env vars.</div>
       <div className="mt-auto pt-4">
-        <SaveBtn busy={busy} disabled={cc === initial.defaultCountry || !cc} onClick={() => save({ defaultCountry: cc, mode: 'deeplink' }, 'WhatsApp settings saved')} />
+        <SaveBtn busy={busy} disabled={cc === initial.defaultCountry || !cc} onClick={() => save({ defaultCountry: cc }, 'WhatsApp settings saved')} />
       </div>
     </SCard>
   )

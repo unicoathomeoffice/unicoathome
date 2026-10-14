@@ -1,11 +1,11 @@
 import 'server-only'
 import { z } from 'zod'
-import { HomecareRequest, Patient, ServiceType } from '../models'
+import { Attachment, HomecareRequest, Patient, ServiceType, isOid } from '../models'
 import { getSettings } from '../settings'
 import { audit, type Meta } from '../audit'
 import { ApiError, bad } from '../api'
 import { background, notifyRoles } from '../messaging'
-import { createRequest, emailPatient } from './requests'
+import { createRequest, emailPatient, whatsappPatient } from './requests'
 import { slotOpen } from '../booking'
 import type { SessionUser } from '../auth'
 
@@ -38,6 +38,7 @@ export const PublicRequestInput = z.object({
   intake: z
     .object({ locationSource: z.enum(['gps', 'search', 'pin', 'typed']), accuracyM: z.number().int().min(0).max(100000).optional(), autoFields: z.array(z.enum(['road', 'area', 'landmark'])).max(3).default([]) })
     .optional(),
+  attachments: z.array(z.object({ id: z.string(), token: z.string().min(8).max(64) })).max(5).default([]), // from /public/uploads
   website: z.string().max(500).optional(), // honeypot — real people never fill it (the route fakes success)
 })
 export type PublicRequestInput = z.infer<typeof PublicRequestInput>
@@ -57,8 +58,15 @@ export async function createPublicRequest(input: PublicRequestInput, meta: Meta,
     if (!(await slotOpen(s.booking, input.date, input.slot))) throw new ApiError(409, 'SLOT_TAKEN', 'That time is no longer available. Please choose another slot.', { slot: 'No longer available' })
   } else if (!s.general.slots.includes(input.slot)) throw bad('Choose one of the listed time slots', { slot: 'Invalid' })
   const startTime = /^\d{2}:\d{2}/.test(input.slot) ? input.slot.slice(0, 5) : undefined
-  const active = await ServiceType.find({ code: { $in: input.serviceCodes }, isActive: { $ne: false } }).select('code').lean<any[]>()
+  const active = await ServiceType.find({ code: { $in: input.serviceCodes }, isActive: { $ne: false } }).select('code name requiresPrescription').lean<any[]>()
   if (!active.length) throw bad('Choose at least one service', { serviceCodes: 'Required' })
+  // uploads made before submit: verify ownership tokens
+  const uploads = input.attachments.length
+    ? await Attachment.find({ _id: { $in: input.attachments.filter((a) => isOid(a.id)).map((a) => a.id) }, deletedAt: null, requestId: null }).select('+pending.token').lean<any[]>()
+    : []
+  const linked = uploads.filter((u) => input.attachments.some((a) => a.id === String(u._id) && a.token === u.pending?.token))
+  const needRx = active.filter((t) => t.requiresPrescription)
+  if (needRx.length && !linked.length) throw new ApiError(400, 'PRESCRIPTION_REQUIRED', `Please upload the prescription for ${needRx.map((t) => t.name).join(', ')}`, { attachments: 'Prescription required' })
 
   const full = [`House ${input.house}`, `Flat ${input.flat}`, input.road].join(', ')
   const address = { area: input.area || undefined, full, house: input.house, flat: input.flat, landmark: input.landmark || undefined, lat: input.lat, lng: input.lng }
@@ -101,10 +109,12 @@ export async function createPublicRequest(input: PublicRequestInput, meta: Meta,
     if (e instanceof ApiError && e.code === 'DUPLICATE') throw new ApiError(409, 'DUPLICATE', `We already have this request (${e.fields?.requestNo ?? 'received earlier'}). Our coordinator will call you — no need to send it again.`)
     throw e
   }
+  if (linked.length) await Attachment.updateMany({ _id: { $in: linked.map((u) => u._id) } }, { $set: { ownerType: 'REQUEST', ownerId: r._id, requestId: r._id }, $unset: { pending: 1 } })
   if (input.intake) await HomecareRequest.updateOne({ _id: r._id }, { intake: { ...input.intake, locationSource: input.lat == null ? 'typed' : input.intake.locationSource } })
   await audit(WEBSITE, 'request.public_submit', 'request', r._id, { after: { requestNo: r.requestNo, ip: meta.ip }, label: r.requestNo }, meta)
   background(async () => {
     await emailPatient(r, 'patient_received', null)
+    await whatsappPatient(r, 'patient_received', null)
     await notifyRoles(['FRONT_DESK'], { type: 'REQUEST_CREATED', title: `Website request ${r.requestNo}`, body: `${input.name} · ${phone} · ${input.date} ${input.slot}`, requestId: r._id, url: `/requests/${r._id}`, priority: 'high' })
   })
   return { requestNo: r.requestNo as string, callWithinMin: s.sla.confirmRoutineMin as number }

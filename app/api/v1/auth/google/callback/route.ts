@@ -5,6 +5,8 @@ import { User } from '@/lib/models'
 import { COOKIE, createSession } from '@/lib/auth'
 import { googleProfile, OAUTH_COOKIE, signSignup, SIGNUP_COOKIE } from '@/lib/google-auth'
 import { audit } from '@/lib/audit'
+import { issuePatientToken, patientCookie } from '@/lib/patient-auth'
+import { patientByGoogle } from '@/lib/services/patients-portal'
 import { clientMeta } from '@/lib/api'
 
 const cookieOpts = { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' as const, path: '/' }
@@ -13,7 +15,7 @@ const cookieOpts = { httpOnly: true, secure: process.env.NODE_ENV === 'productio
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams
   const [state = '', intent = 'login', client = 'web'] = (req.cookies.get(OAUTH_COOKIE)?.value ?? '').split('.')
-  const loginPage = intent === 'register' ? '/join' : client === 'app' ? '/m/login' : '/login'
+  const loginPage = intent === 'patient' ? '/my/login' : intent === 'register' ? '/join' : client === 'app' ? '/m/login' : '/login'
   const go = (path: string) => {
     const res = NextResponse.redirect(new URL(path, req.url))
     res.cookies.delete(OAUTH_COOKIE)
@@ -28,6 +30,18 @@ export async function GET(req: NextRequest) {
   try {
     await db()
     const g = await googleProfile(p.get('code') ?? '', req)
+    if (intent === 'patient') {
+      const patient = await patientByGoogle(g)
+      if (patient) {
+        const { token, expiresAt } = await issuePatientToken(String(patient._id), Number(patient.passwordVersion ?? 0))
+        const res = go('/my')
+        res.cookies.set(patientCookie(token, expiresAt))
+        return res
+      }
+      const res = go('/my/complete') // new patient: still need mobile + WhatsApp
+      res.cookies.set(SIGNUP_COOKIE, await signSignup(g), { ...cookieOpts, maxAge: 1800 })
+      return res
+    }
     const user = await User.findOne({ email: g.email, deletedAt: null })
     const meta = { ...clientMeta(req), client }
 

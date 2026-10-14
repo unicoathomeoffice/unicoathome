@@ -32,7 +32,11 @@ lib/master.ts        generic master lists behind /api/v1/master/:kind
 lib/booking.ts       public online booking: slot grid from Settings → Online booking, live availability(), slotOpen()
 lib/maps.ts · lib/maps-usage.ts  keyless Google embeds; Google-vs-OpenStreetMap budget (daily cap, call ledger)
 lib/patient-auth.ts  patient portal sessions (cookie hc_patient, JWT aud 'patient'): getPatient(), requirePatient(), patientRoute()
-lib/google-auth.ts   staff "Sign in / register with Google" (uses the Gmail OAuth client)
+lib/google-auth.ts   staff + patient "Sign in / register with Google" (uses the Gmail OAuth client)
+lib/wa/              WhatsApp auto-send without a server: Baileys session in Mongo (auth-state), connect-on-demand
+                     + lease (client), queue/pump/pair/unpair (service). Settings → WhatsApp pairs by QR.
+components/client/AddressBlock.tsx  the one address UI (GPS with strict accuracy rule, search, house/flat, pin map)
+                     used by the public form, patient profile, staff web + app request forms
 lib/services/public.ts · patients-portal.ts  public booking form + patient account/profile/requests
 app/page.tsx + components/public   public landing (hero + booking form, EN/বাংলা via components/public/i18n.tsx)
 app/my/...           patient portal (dashboard, request timeline, profile) · app/join staff Google sign-up

@@ -1,9 +1,9 @@
 'use client'
 import { useState, type ReactNode } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, Check, Loader2, MapPin, Save } from 'lucide-react'
+import { AlertTriangle, Check, Loader2, Save } from 'lucide-react'
 import { api } from '@/components/client/api'
-import { AddressSearchInput, PinPicker } from '@/components/client/maps'
+import { AddressBlock, ADDRESS_LABELS_EN } from '@/components/client/AddressBlock'
 import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { useLang } from '@/components/public/i18n'
@@ -112,38 +112,15 @@ export function ProfileForm({ initial, zones }: { initial: ProfileData; zones: s
 
       <section className="rounded-2xl p-4 hc-soft sm:p-5">
         <h2 className="mb-3 text-[16px] font-bold">{t.addressSection}</h2>
-        <div className="flex flex-col gap-3.5">
-          <Field label={t.road} hint={t.roadHint} error={errors.road}>
-            <AddressSearchInput className={input} value={v.road} onChange={(road) => set('road', road)} onPlace={(p) => setV((x) => ({ ...x, road: p.full, lat: p.lat, lng: p.lng }))} placeholder={t.roadPh} />
-          </Field>
-          <div className="grid grid-cols-2 gap-3.5">
-            <Field label={t.house} error={errors.house}>
-              <input className={input} value={v.house} onChange={(e) => set('house', e.target.value)} placeholder={t.housePh} />
-            </Field>
-            <Field label={t.flat} error={errors.flat}>
-              <input className={input} value={v.flat} onChange={(e) => set('flat', e.target.value)} placeholder={t.flatPh} />
-            </Field>
-          </div>
-          <div className="grid gap-3.5 sm:grid-cols-2">
-            <Field label={t.area}>
-              <input className={input} value={v.area} onChange={(e) => set('area', e.target.value)} list="hc-zones-p" placeholder={t.areaPh} autoComplete="off" />
-              <datalist id="hc-zones-p">
-                {zones.map((z) => (
-                  <option key={z} value={z} />
-                ))}
-              </datalist>
-            </Field>
-            <Field label={t.landmark}>
-              <input className={input} value={v.landmark} onChange={(e) => set('landmark', e.target.value)} placeholder={t.landmarkPh} />
-            </Field>
-          </div>
-          <div>
-            <div className="mb-1.5 flex items-center gap-1.5 text-[13.5px] font-semibold text-slate-700">
-              <MapPin size={15} /> {t.onMap}
-            </div>
-            <PinPicker height={240} lat={v.lat} lng={v.lng} onChange={(p) => setV((x) => ({ ...x, lat: p?.lat ?? null, lng: p?.lng ?? null }))} labels={{ tap: t.pinTap, none: t.pinNone, set: t.pinSet, myLocation: t.myLocation, clear: t.clearPin }} />
-          </div>
-        </div>
+        <AddressBlock
+          value={{ road: v.road, house: v.house, flat: v.flat, area: v.area, landmark: v.landmark, lat: v.lat, lng: v.lng }}
+          onChange={(patch) => setV((x) => ({ ...x, ...patch }))}
+          zones={zones}
+          errors={errors}
+          idPrefix="p"
+          mapHeight={240}
+          labels={{ ...ADDRESS_LABELS_EN, useLocation: t.useLocation, locating: t.locating, located: t.located, autoTag: t.autoTag, road: t.road, roadHint: t.roadHint, roadPh: t.roadPh, house: t.house, housePh: t.housePh, flat: t.flat, flatPh: t.flatPh, area: t.area, areaPh: t.areaPh, landmark: t.landmark, landmarkPh: t.landmarkPh, onMap: t.onMap, mapHint: t.mapHint, pinTap: t.pinTap, pinNone: t.pinNone, pinSet: t.pinSet, myLocation: t.myLocation, clearPin: t.clearPin, accGood: t.accGood, accPoor: t.accPoor, accBad: t.accBad, eLocBlocked: t.eLocBlocked, eLocFail: t.eLocFail, eLocNone: t.eLocNone }}
+        />
       </section>
 
       {msg && <Msg ok={msg.ok}>{msg.text}</Msg>}
@@ -154,7 +131,7 @@ export function ProfileForm({ initial, zones }: { initial: ProfileData; zones: s
   )
 }
 
-export function PasswordForm() {
+export function PasswordForm({ hasPassword = true }: { hasPassword?: boolean }) {
   const { t } = useLang()
   const [v, setV] = useState({ currentPassword: '', newPassword: '' })
   const [errors, setErrors] = useState<Errors>({})
@@ -177,17 +154,21 @@ export function PasswordForm() {
   }
   return (
     <form onSubmit={submit} className="rounded-2xl p-4 hc-soft sm:p-5">
-      <h2 className="mb-3 text-[16px] font-bold">{t.changePassword}</h2>
+      <h2 className="mb-3 text-[16px] font-bold">{hasPassword ? t.changePassword : t.setPassword}</h2>
       <div className="flex flex-col gap-3.5">
-        <Field label={t.currentPassword} error={errors.currentPassword}>
-          <input className={input} type="password" value={v.currentPassword} onChange={(e) => (setV({ ...v, currentPassword: e.target.value }), setErrors({}))} autoComplete="current-password" required />
-        </Field>
+        {hasPassword ? (
+          <Field label={t.currentPassword} error={errors.currentPassword}>
+            <input className={input} type="password" value={v.currentPassword} onChange={(e) => (setV({ ...v, currentPassword: e.target.value }), setErrors({}))} autoComplete="current-password" required />
+          </Field>
+        ) : (
+          <p className="text-[13px] text-slate-500">{t.noPasswordYet}</p>
+        )}
         <Field label={t.newPassword} error={errors.newPassword}>
           <input className={input} type="password" value={v.newPassword} onChange={(e) => (setV({ ...v, newPassword: e.target.value }), setErrors({}))} autoComplete="new-password" minLength={6} required />
         </Field>
         {msg && <Msg ok={msg.ok}>{msg.text}</Msg>}
-        <button type="submit" disabled={busy || !v.currentPassword || v.newPassword.length < 6} className={btnClass('o', 'xl', 'w-full')}>
-          {busy && <Loader2 size={18} className="animate-spin" />} {t.changePassword}
+        <button type="submit" disabled={busy || (hasPassword && !v.currentPassword) || v.newPassword.length < 6} className={btnClass('o', 'xl', 'w-full')}>
+          {busy && <Loader2 size={18} className="animate-spin" />} {hasPassword ? t.changePassword : t.setPassword}
         </button>
       </div>
     </form>

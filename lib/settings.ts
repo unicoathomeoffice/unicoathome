@@ -52,7 +52,9 @@ export const DEFAULT_SETTINGS = {
     sendDepartmentReport: true,
     dailyDigest: true,
   },
-  whatsapp: { defaultCountry: process.env.WA_DEFAULT_COUNTRY ?? '880', mode: 'deeplink' as 'deeplink' | 'cloud' },
+  whatsapp: { defaultCountry: process.env.WA_DEFAULT_COUNTRY ?? '880', mode: 'deeplink' as 'deeplink' | 'cloud' | 'baileys', autoSend: true },
+  /** extra email addresses that get a copy of the patient's message per event (Settings → Notification rules) */
+  emailCopies: {} as Record<string, string[]>,
   features: { autoAssign: false, gpsRequiredCheckIn: false, otpConfirmation: true, transportModule: true, pettyCash: true },
   quietHours: { from: '22:00', to: '07:00' },
   /** E4 notification matrix: event → recipients → channels */

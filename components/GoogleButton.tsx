@@ -1,13 +1,13 @@
 import { cx } from '@/lib/format'
 
 /** Full-width "Continue with Google" link (server-safe). Starts /api/v1/auth/google. */
-export function GoogleButton({ intent, client = 'web', label, big }: { intent: 'login' | 'register'; client?: 'web' | 'app'; label?: string; big?: boolean }) {
+export function GoogleButton({ intent, client = 'web', label, big }: { intent: 'login' | 'register' | 'patient'; client?: 'web' | 'app'; label?: string; big?: boolean }) {
   return (
     <a
       href={`/api/v1/auth/google?intent=${intent}&client=${client}`}
       className={cx('flex w-full items-center justify-center gap-2.5 rounded-lg border-[1.5px] border-slate-300 bg-white font-semibold text-slate-800 hover:bg-slate-50', big ? 'h-[52px] text-[16px]' : 'h-11 text-[14.5px]')}
     >
-      <GoogleG /> {label ?? (intent === 'register' ? 'Continue with Google' : 'Sign in with Google')}
+      <GoogleG /> {label ?? (intent === 'login' ? 'Sign in with Google' : 'Continue with Google')}
     </a>
   )
 }

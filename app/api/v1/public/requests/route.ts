@@ -2,6 +2,8 @@ import { publicRoute, body, clientMeta, ApiError } from '@/lib/api'
 import { createPublicRequest, PublicRequestInput } from '@/lib/services/public'
 import { getPatient } from '@/lib/patient-auth'
 
+export const maxDuration = 60 // emails + WhatsApp are delivered after the response (after())
+
 // naive in-memory limiter per instance: 5 requests per IP per hour (the 2-hour duplicate guard covers repeats)
 const hits = new Map<string, number[]>()
 

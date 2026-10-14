@@ -35,7 +35,7 @@ export default async function MyProfile() {
       <SectionTitle k="myProfile" />
       <div className="grid gap-4 md:grid-cols-[1fr_340px] md:items-start">
         <ProfileForm initial={initial} zones={zones.map((z) => z.name)} />
-        <PasswordForm />
+        <PasswordForm hasPassword={p.hasPassword} />
       </div>
     </PortalShell>
   )

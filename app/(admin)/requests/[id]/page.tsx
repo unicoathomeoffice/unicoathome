@@ -14,6 +14,7 @@ import { LivePill } from '@/components/request-detail/widgets'
 import { AssignmentTab, AttachmentsTab, AuditTab, MessagesTab, OverviewTab, TimelineTab, VisitTab } from '@/components/request-detail/tabs'
 import { ACTIVE_VISIT, availableActions, collectUserIds, permsFor, type People } from '@/components/request-detail/lib'
 import type { AssignProps } from '@/components/assign/AssignDrawer'
+import { isPaired } from '@/lib/wa/auth-state'
 
 export const metadata = { title: 'Request detail' }
 
@@ -194,6 +195,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   ]
 
   const R = plain(r)
+  const contactP = tab === 'messages' ? await Patient.findById(r.patientId).select('name email phone whatsapp').lean<any>() : null
   return (
     <AdminPage title={r.requestNo}>
       {ACTIVE_VISIT.includes(status) && <AutoRefresh seconds={20} />}
@@ -228,7 +230,15 @@ export default async function RequestDetailPage({ params, searchParams }: { para
         {tab === 'timeline' && <TimelineTab r={R} people={people} sla={sla} />}
         {tab === 'assignment' && <AssignmentTab r={R} people={people} logs={plain(logs)} />}
         {tab === 'visit' && <VisitTab r={R} people={people} photos={plain(photos)} signature={plain(signature)} prescriptions={plain(prescriptions)} labs={plain(labs)} canDecide={perms.decide} reportHref={reportHref} />}
-        {tab === 'messages' && <MessagesTab msgs={plain(msgs)} chat={plain(chat)} people={people} canResend={canResendMessages(user)} />}
+        {tab === 'messages' && (
+          <MessagesTab
+            msgs={plain(msgs)}
+            chat={plain(chat)}
+            people={people}
+            canResend={canResendMessages(user)}
+            compose={{ requestId: id, contact: { name: contactP?.name ?? r.patientSnapshot?.name, email: contactP?.email, phone: contactP?.whatsapp ?? contactP?.phone ?? r.patientSnapshot?.phone }, whatsappLive: await isPaired() }}
+          />
+        )}
         {tab === 'attachments' && <AttachmentsTab requestId={id} atts={plain(atts)} people={people} canUpload={perms.edit} me={{ id: user.id, admin: isCoordinator(user) }} />}
         {tab === 'audit' && <AuditTab rows={plain(audits)} />}
       </div>

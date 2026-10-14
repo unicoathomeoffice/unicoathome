@@ -16,7 +16,9 @@ import {
 import { ApiError, bad, conflict, forbidden, notFound } from '../api'
 import { audit } from '../audit'
 import { can, FIELD_ROLES, TRANSITIONS, VITALS, type Status, hasRole, hasAnyRole } from '../constants'
-import { background, notifyRoles, notifyUsers, queueEmail, renderTemplate } from '../messaging'
+import { background, getTemplate, notifyRoles, notifyUsers, queueEmail, renderTemplate } from '../messaging'
+import { isPaired } from '../wa/auth-state'
+import { queueWhatsApp } from '../wa/service'
 import { getSettings, ruleAllows } from '../settings'
 import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, dayRange } from '../format'
 import type { SessionUser } from '../auth'
@@ -116,14 +118,40 @@ const PATIENT_EVENT: Record<string, string> = {
 
 export async function emailPatient(r: any, templateKey: string, user: SessionUser | null, staffId?: unknown) {
   const s = await getSettings()
-  if (!s.email.sendPatientEmails) return
-  if (PATIENT_EVENT[templateKey] && !ruleAllows(s.notificationRules, PATIENT_EVENT[templateKey], 'PATIENT', 'email')) return
+  const event = PATIENT_EVENT[templateKey] ?? (templateKey === 'patient_received' ? 'REQUEST_CREATED' : undefined)
   const p = await Patient.findById(r.patientId).select('email consent name').lean<any>()
-  if (!p?.email || p.consent?.email === false) return
-  const vars = await templateVars(r, staffId)
-  const t = await renderTemplate(templateKey, vars)
+  if (!p) return
+  const t = await renderTemplate(templateKey, await templateVars(r, staffId))
   if (!t.active) return
-  await queueEmail({ to: p.email, toName: p.name, subject: t.subject, text: t.text, templateKey, requestId: r._id, patientId: r.patientId, initiatedBy: user?.id })
+  const toPatient = s.email.sendPatientEmails && !!p.email && p.consent?.email !== false && !(event && !ruleAllows(s.notificationRules, event, 'PATIENT', 'email'))
+  if (toPatient) await queueEmail({ to: p.email, toName: p.name, subject: t.subject, text: t.text, templateKey, requestId: r._id, patientId: r.patientId, initiatedBy: user?.id })
+  // copies for managers / department (Settings → Notification rules → Extra email recipients)
+  const copies = (event && s.emailCopies?.[event]) || []
+  if (copies.length)
+    await queueEmail({
+      to: copies.join(','),
+      subject: `[Copy] ${t.subject}`,
+      text: `${t.text}\n\n— Copy of the ${toPatient ? 'message sent to' : 'message for'} ${p.name}${p.email ? ` (${p.email})` : ' (no email on file)'} · request ${r.requestNo}.`,
+      templateKey,
+      requestId: r._id,
+      patientId: r.patientId,
+      initiatedBy: user?.id,
+    })
+}
+
+/** WhatsApp the patient automatically (hospital WhatsApp paired in Settings). Falls back silently: staff still have the manual wa.me button. */
+export async function whatsappPatient(r: any, templateKey: string, user: SessionUser | null, staffId?: unknown) {
+  const s = await getSettings()
+  if (s.whatsapp.autoSend === false) return
+  const event = PATIENT_EVENT[templateKey] ?? (templateKey === 'patient_received' ? 'REQUEST_CREATED' : undefined)
+  if (event && !ruleAllows(s.notificationRules, event, 'PATIENT', 'whatsapp')) return
+  const p = await Patient.findById(r.patientId).select('phone whatsapp consent name').lean<any>()
+  if (!p || p.consent?.whatsapp === false) return
+  const def = await getTemplate(templateKey)
+  if (def.isActive === false || !def.channel.includes('WHATSAPP')) return
+  if (!(await isPaired())) return
+  const { text } = await renderTemplate(templateKey, await templateVars(r, staffId))
+  await queueWhatsApp({ to: p.whatsapp || p.phone, toName: p.name, text, templateKey, requestId: r._id, patientId: r.patientId, initiatedBy: user?.id })
 }
 
 // ============================================================== create
@@ -317,6 +345,7 @@ export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user:
   await audit(user, 'request.confirm', 'request', r._id, { before, after: { status: 'CONFIRMED', scheduledAt: r.scheduledAt, tests: r.tests, uhid: input.uhid }, label: r.requestNo }, meta)
   background(async () => {
     await emailPatient(r, 'patient_confirmed', user)
+    await whatsappPatient(r, 'patient_confirmed', user)
     await notifyRoles(['FRONT_DESK'], { type: 'CONFIRMED', title: `${r.requestNo} confirmed`, body: `${r.patientSnapshot.name} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: url(r._id) })
     if (r.transport?.needed)
       await notifyRoles(['TRANSPORT_SUPERVISOR'], { type: 'TRANSPORT', title: `Trip request ${r.requestNo}`, body: `${r.patientSnapshot.area ?? ''} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: '/m/trips' })
@@ -373,6 +402,7 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
     await notifyUsers(input.secondaryStaffIds, { type: 'ASSIGNED', as: 'STAFF', title: `Added to care team ${r.requestNo}`, body: `${r.patientSnapshot.name} · ${when}`, requestId: r._id, url: appUrl(r._id) })
     if (prevPrimary && prevPrimary !== input.primaryStaffId) await notifyUsers([prevPrimary], { type: 'CANCELLED', as: 'STAFF', title: `${r.requestNo} reassigned`, body: 'This visit was given to another staff member', requestId: r._id })
     await emailPatient(r, 'patient_assigned', user, input.primaryStaffId)
+    await whatsappPatient(r, 'patient_assigned', user, input.primaryStaffId)
   })
 }
 
@@ -393,6 +423,7 @@ export async function reschedule(r: any, input: z.infer<typeof RescheduleInput>,
   background(async () => {
     await notifyUsers(team, { type: 'RESCHEDULED', as: 'STAFF', title: `${r.requestNo} rescheduled`, body: `New time ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)} · needs re-assignment`, requestId: r._id, url: appUrl(r._id) })
     await emailPatient(r, 'patient_rescheduled', user)
+    await whatsappPatient(r, 'patient_rescheduled', user)
   })
 }
 
@@ -405,6 +436,7 @@ export async function cancel(r: any, input: z.infer<typeof CancelInput>, user: S
   background(async () => {
     await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? []), r.transport?.driverId], { type: 'CANCELLED', as: 'STAFF', title: `${r.requestNo} cancelled`, body: input.reason, requestId: r._id })
     await emailPatient(r, 'patient_cancelled', user)
+    await whatsappPatient(r, 'patient_cancelled', user)
   })
 }
 
@@ -647,6 +679,7 @@ export async function completeVisit(r: any, user: SessionUser, meta: Meta) {
   background(async () => {
     await notifyRoles(['HC_ADMIN'], { type: 'COMPLETED', title: `${r.requestNo} completed`, body: `${user.name} · ${r.patientSnapshot.name} · ${r.visit.durationMin} min · report ready`, requestId: r._id, url: url(r._id) })
     await emailPatient(r, 'patient_completed', user)
+    await whatsappPatient(r, 'patient_completed', user)
     const s = await getSettings()
     if (s.email.sendDepartmentReport && s.email.departmentCc.length && ruleAllows(s.notificationRules, 'COMPLETED', 'DEPARTMENT', 'email')) {
       const vars = await templateVars(r, r.assignment?.primaryStaffId)

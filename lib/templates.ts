@@ -39,7 +39,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
   {
     key: 'patient_received',
     name: 'Request received (website)',
-    channel: ['EMAIL'],
+    channel: ['EMAIL', 'WHATSAPP'],
     audience: 'Patient',
     subject: 'We received your home care request · {requestNo}',
     body: 'Dear {patientName}, thank you — we received your home care request ({requestNo}).\nService: {serviceType}\nPreferred time: {date}, {slot}\nAddress: {address}\nOur Home Care coordinator will call you shortly to confirm. Need help sooner? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',

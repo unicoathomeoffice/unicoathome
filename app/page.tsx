@@ -24,7 +24,7 @@ export default async function Home() {
     getUser().catch(() => null),
     getPatient().catch(() => null),
     getSettings(),
-    ServiceType.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('code name category').lean<any[]>(),
+    ServiceType.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('code name category requiresPrescription').lean<any[]>(),
     Zone.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('name').lean<any[]>(),
   ])
   const g = s.general
@@ -54,7 +54,7 @@ export default async function Home() {
       staff={{ href: user ? (user.platformAccess.includes('web') && user.client === 'web' ? '/dashboard' : '/m') : '/login', signedIn: !!user }}
       patient={patient ? { name: patient.name } : null}
       prefill={prefill}
-      services={services.map((t) => ({ code: t.code, name: t.name, category: t.category ?? '' }))}
+      services={services.map((t) => ({ code: t.code, name: t.name, category: t.category ?? '', requiresPrescription: !!t.requiresPrescription }))}
       zones={zones.map((z) => z.name)}
       booking={{ enabled: !!b, days }}
       legacySlots={g.slots}

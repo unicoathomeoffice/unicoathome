@@ -16,6 +16,7 @@ export type ServiceDoc = {
   requiredSkills?: string[]
   defaultDurationMin?: number
   fee?: number
+  requiresPrescription?: boolean
   checklist?: { key: string; label: string; mandatory?: boolean; sortOrder?: number }[]
   vitalsRequired?: string[]
   staffMix?: { role: string; count: number }[]
@@ -37,6 +38,7 @@ type Form = {
   mix: { role: string; count: string }[]
   items: Item[]
   isActive: boolean
+  requiresPrescription: boolean
 }
 
 const CATEGORIES = ['Doctor', 'Nursing', 'Lab', 'Physio', 'Diagnostics', 'Other']
@@ -63,6 +65,7 @@ function toForm(s?: ServiceDoc): Form {
     mix: (s?.staffMix ?? [{ role: 'NURSE', count: 1 }]).map((m) => ({ role: m.role, count: String(m.count) })),
     items: [...(s?.checklist ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)).map((c) => ({ uid: uidSeq++, key: c.key, label: c.label, mandatory: c.mandatory !== false })),
     isActive: s?.isActive !== false,
+    requiresPrescription: s?.requiresPrescription === true,
   }
 }
 
@@ -121,6 +124,7 @@ export function ServicesEditor({ services, canEdit }: { services: ServiceDoc[]; 
       staffMix: f.mix.filter((m) => m.role).map((m) => ({ role: m.role, count: Number(m.count || 1) })),
       checklist,
       isActive: f.isActive,
+      requiresPrescription: f.requiresPrescription,
       ...(f.id ? {} : { sortOrder: services.length }),
     }
     setBusy(true)
@@ -242,6 +246,13 @@ export function ServicesEditor({ services, canEdit }: { services: ServiceDoc[]; 
               <div className="flex h-10 items-center gap-3 text-[13px] text-slate-500">
                 <Toggle on={f.isActive} onChange={(isActive) => upd({ isActive })} disabled={!canEdit} label="Service active" />
                 {f.isActive ? 'Shown in request forms' : 'Hidden from new requests'}
+              </div>
+            </div>
+            <div className="sm:col-span-2">
+              <span className="hc-label">Prescription required (online booking)</span>
+              <div className="flex h-10 items-center gap-3 text-[13px] text-slate-500">
+                <Toggle on={f.requiresPrescription} onChange={(requiresPrescription) => upd({ requiresPrescription })} disabled={!canEdit} label="Prescription required" />
+                {f.requiresPrescription ? 'Patients must upload a prescription photo/PDF to book this online' : 'No upload needed to book this online'}
               </div>
             </div>
           </div>

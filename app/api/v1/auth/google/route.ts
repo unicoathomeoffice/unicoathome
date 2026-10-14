@@ -9,9 +9,9 @@ import { callbackUri, googleClient, OAUTH_COOKIE } from '@/lib/google-auth'
  */
 export async function GET(req: NextRequest) {
   const p = req.nextUrl.searchParams
-  const intent = p.get('intent') === 'register' ? 'register' : 'login'
+  const intent = p.get('intent') === 'register' ? 'register' : p.get('intent') === 'patient' ? 'patient' : 'login'
   const client = p.get('client') === 'app' ? 'app' : 'web'
-  const back = intent === 'register' ? '/join' : client === 'app' ? '/m/login' : '/login'
+  const back = intent === 'patient' ? '/my/login' : intent === 'register' ? '/join' : client === 'app' ? '/m/login' : '/login'
   await db()
   const g = await googleClient()
   if (!g) return NextResponse.redirect(new URL(`${back}?error=${encodeURIComponent('Google sign-in is not set up yet. Ask the administrator.')}`, req.url))

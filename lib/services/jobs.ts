@@ -1,10 +1,11 @@
 import 'server-only'
-import { HomecareRequest, AssignmentLog, Notification, User } from '../models'
+import { HomecareRequest, AssignmentLog, Notification, User, Attachment } from '../models'
 import { notifyRoles, notifyUsers, queueEmail } from '../messaging'
 import { getSettings, ruleAllows } from '../settings'
 import { audit } from '../audit'
 import { dayRange, isoDay, date as fmtDate } from '../format'
 import { rankCandidates } from './requests'
+import { deleteBlob } from '../storage'
 
 const g = globalThis as unknown as { _hcLastSweep?: number }
 
@@ -13,6 +14,16 @@ const g = globalThis as unknown as { _hcLastSweep?: number }
  * overdue alerts (not checked in 15 min after schedule). Cheap; safe to call often.
  * Runs from the cron route and opportunistically (max once a minute per instance) from boards.
  */
+/** Public-form uploads that never became part of a request (abandoned bookings): delete after 24 h. */
+export async function cleanupPendingUploads() {
+  const rows = await Attachment.find({ requestId: null, 'pending.at': { $lt: new Date(Date.now() - 86400_000) }, deletedAt: null }).select('+blobUrl').lean<any[]>()
+  for (const a of rows) {
+    if (a.blobUrl) await deleteBlob(a.blobUrl)
+    await Attachment.deleteOne({ _id: a._id })
+  }
+  return rows.length
+}
+
 export async function sweep(force = false) {
   if (!force && g._hcLastSweep && Date.now() - g._hcLastSweep < 60_000) return { skipped: true }
   g._hcLastSweep = Date.now()

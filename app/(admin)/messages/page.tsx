@@ -11,7 +11,8 @@ import { ActionButton } from '@/components/client'
 import { UrlSearch, UrlSelect } from '@/components/comms/UrlFilters'
 import { CHANNEL_LABEL, ChannelIcon, EmailFrame, MSG_STATUS, MsgStatus, PushCard, WaBubble, when } from '@/components/comms/MessageBits'
 import { cx, dayRange, isoDay, phone as fmtPhone, time } from '@/lib/format'
-import { canViewMessages, canResendMessages } from '@/lib/constants'
+import { canViewMessages, canResendMessages, can } from '@/lib/constants'
+import { BroadcastButton } from '@/components/comms/Compose'
 
 export const metadata: Metadata = { title: 'Messages' }
 
@@ -87,10 +88,12 @@ export default async function MessagesPage({ searchParams }: { searchParams: SP 
   }
   const es = Object.fromEntries(emailToday.map((x: any) => [x._id, x.n])) as Record<string, number>
   const canResend = canResendMessages(user)
+  const canBroadcast = can(user, 'requests.manage')
+  const staff = canBroadcast ? (await User.find({ status: 'ACTIVE', deletedAt: null }).select('name role').sort({ name: 1 }).lean<any[]>()).map((u) => ({ id: String(u._id), name: u.name, role: u.role })) : []
   const COLS = '96px minmax(150px,1.5fr) minmax(130px,1.2fr) 128px 104px 116px'
 
   return (
-    <AdminPage title={channel === 'EMAIL' ? 'Email log' : 'Messages log'}>
+    <AdminPage title={channel === 'EMAIL' ? 'Email log' : 'Messages log'} actions={canBroadcast ? <BroadcastButton people={staff} /> : undefined}>
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2.5">
           <Tabs

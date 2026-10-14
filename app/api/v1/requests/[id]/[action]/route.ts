@@ -4,6 +4,8 @@ import { can, type Permission } from '@/lib/constants'
 import * as svc from '@/lib/services/requests'
 import type { SessionUser } from '@/lib/auth'
 
+export const maxDuration = 60 // emails + WhatsApp are delivered after the response (after())
+
 type Ctx = { r: any; user: SessionUser; meta: ReturnType<typeof clientMeta>; req: any }
 type Action = { perm?: Permission; schema?: z.ZodTypeAny; run: (c: Ctx, input: any) => Promise<unknown> }
 

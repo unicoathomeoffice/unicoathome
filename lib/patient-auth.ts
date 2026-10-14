@@ -24,6 +24,8 @@ export type PatientSession = {
   gender?: string
   address?: { full?: string; house?: string; flat?: string; area?: string; landmark?: string; lat?: number | null; lng?: number | null }
   initials: string
+  hasPassword: boolean
+  google: boolean
 }
 
 export async function issuePatientToken(patientId: string, passwordVersion: number) {
@@ -50,9 +52,9 @@ export const getPatient = cache(async function getPatient(): Promise<PatientSess
   }
   if (!sub) return null
   await db()
-  const p = await Patient.findOne({ _id: sub, deletedAt: null, passwordHash: { $exists: true } }).select('name phone whatsapp email ageYears gender address passwordVersion').lean<any>()
+  const p = await Patient.findOne({ _id: sub, deletedAt: null, $or: [{ passwordHash: { $exists: true } }, { googleSub: { $exists: true } }] }).select('name phone whatsapp email ageYears gender address passwordVersion passwordHash googleSub').lean<any>()
   if (!p || Number(p.passwordVersion ?? 0) !== pv) return null
-  return { id: String(p._id), name: p.name, phone: p.phone, whatsapp: p.whatsapp ?? p.phone, email: p.email, ageYears: p.ageYears, gender: p.gender, address: p.address, initials: initials(p.name) }
+  return { id: String(p._id), name: p.name, phone: p.phone, whatsapp: p.whatsapp ?? p.phone, email: p.email, ageYears: p.ageYears, gender: p.gender, address: p.address, initials: initials(p.name), hasPassword: !!p.passwordHash, google: !!p.googleSub }
 })
 
 /** For server components under /my: signed-in patient or redirect to the patient login. */

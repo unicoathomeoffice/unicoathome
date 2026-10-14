@@ -54,6 +54,30 @@ export async function registerPatient(input: z.infer<typeof RegisterInput>, meta
   return p
 }
 
+/** "Continue with Google" for a known patient: match by Google id, else by the account's email. Null = not registered yet. */
+export async function patientByGoogle(g: { sub: string; email: string }) {
+  const p = (await Patient.findOne({ googleSub: g.sub, deletedAt: null })) ?? (await Patient.findOne({ email: g.email, deletedAt: null, $or: [{ passwordHash: { $exists: true } }, { googleSub: { $exists: true } }] }))
+  if (!p) return null
+  if (p.googleSub !== g.sub) p.googleSub = g.sub
+  p.set('account.lastLoginAt', new Date())
+  await p.save()
+  return p
+}
+
+/** New account via Google: name/email from Google, mobile + WhatsApp from the completion form, no password. */
+export async function registerPatientWithGoogle(input: { name: string; phone: string; whatsapp: string; google: { sub: string; email: string; name: string } }, meta: Meta) {
+  const phone = bdMobile(input.phone)!
+  const whatsapp = bdMobile(input.whatsapp)!
+  if (await Patient.exists({ phone, deletedAt: null, $or: [{ passwordHash: { $exists: true } }, { googleSub: { $exists: true } }] })) throw new ApiError(409, 'EXISTS', 'An account already uses this mobile number. Please sign in with your password.', { phone: 'Already registered' })
+  let p = await Patient.findOne({ phone, deletedAt: null }).sort({ updatedAt: -1 })
+  const fields = { name: input.name, whatsapp, email: input.google.email, googleSub: input.google.sub, passwordVersion: 0, account: { createdAt: new Date(), lastLoginAt: new Date() } }
+  if (p) p.set(fields)
+  else p = new Patient({ phone, source: 'WEBSITE', ...fields })
+  await p.save()
+  await audit(PORTAL, 'patient.register', 'patient', p._id, { after: { name: p.name, phone, via: 'google' }, label: p.name }, meta)
+  return p
+}
+
 export async function loginPatient(input: z.infer<typeof LoginInput>, meta: Meta) {
   const phone = bdMobile(input.phone)!
   const p = await Patient.findOne({ phone, deletedAt: null, passwordHash: { $exists: true } }).select('+passwordHash passwordVersion name')
@@ -93,7 +117,8 @@ export async function updatePatientProfile(session: PatientSession, input: z.inf
   }
   let signOutOthers = false
   if (input.newPassword) {
-    if (!input.currentPassword || !(await verifyPassword(input.currentPassword, p.passwordHash))) throw bad('Current password is incorrect', { currentPassword: 'Incorrect' })
+    // Google-only accounts set their first password without a current one
+    if (p.passwordHash && (!input.currentPassword || !(await verifyPassword(input.currentPassword, p.passwordHash)))) throw bad('Current password is incorrect', { currentPassword: 'Incorrect' })
     p.passwordHash = await hashPassword(input.newPassword)
     p.passwordVersion = Number(p.passwordVersion ?? 0) + 1
     signOutOthers = true

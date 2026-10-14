@@ -46,6 +46,7 @@ const ServiceTypeSchema = new Schema<any>(
     requiredSkills: [String],
     defaultDurationMin: { type: Number, default: 45 },
     fee: { type: Number, default: 0 },
+    requiresPrescription: { type: Boolean, default: false }, // public booking must attach a prescription (e.g. injections)
     checklist: [{ _id: false, key: String, label: String, mandatory: { type: Boolean, default: true }, sortOrder: Number }],
     vitalsRequired: [String],
     staffMix: [{ _id: false, role: String, count: Number }],
@@ -138,6 +139,7 @@ const PatientSchema = new Schema<any>(
     whatsapp: String,
     passwordHash: { type: String, select: false },
     passwordVersion: Number,
+    googleSub: { type: String, index: { sparse: true } }, // "Continue with Google" accounts (may have no password)
     account: { createdAt: Date, lastLoginAt: Date },
     tags: [String],
     notes: String,
@@ -325,6 +327,8 @@ const AttachmentSchema = new Schema<any>(
     data: { type: Buffer, select: false }, // inline fallback when Blob is not configured
     caption: String,
     uploadedBy: { type: ObjectId, ref: 'User' },
+    // public booking form: uploaded before the request exists; the token links it on submit, the sweep deletes leftovers
+    pending: { _id: false, token: { type: String, select: false }, ip: String, at: Date },
     at: { type: Date, default: Date.now },
     deletedAt: Date,
   },
@@ -564,6 +568,10 @@ export const IntegrationSecret = model('IntegrationSecret', IntegrationSecretSch
 const ApiUsageSchema = new Schema<any>({ day: { type: String, required: true }, provider: { type: String, required: true }, kind: { type: String, required: true }, n: { type: Number, default: 0 } }, opts)
 ApiUsageSchema.index({ day: 1, provider: 1, kind: 1 }, { unique: true })
 export const ApiUsage = model('ApiUsage', ApiUsageSchema, 'api_usage')
+
+// WhatsApp (Baileys) session + lease + meta, see lib/wa (strict off: creds/keys/lock rows have different shapes)
+const WaAuthSchema = new Schema<any>({ _id: String, value: String, owner: String, until: Date }, { strict: false, timestamps: true })
+export const WaAuth = model('WaAuth', WaAuthSchema, 'wa_auth')
 
 export { Types }
 export const oid = (id: string | Types.ObjectId) => (typeof id === 'string' ? new Types.ObjectId(id) : id)

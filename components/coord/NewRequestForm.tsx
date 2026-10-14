@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Calendar, Camera, Check, ChevronLeft, Clock, Loader2, Search, X, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { api, useToast, Segmented, uploadFile } from '@/components/client'
+import { AddressBlock, ADDRESS_LABELS_EN, composeFull, type AddressValue } from '@/components/client/AddressBlock'
 import { ApiClientError } from '@/components/client/api'
 import { SLOTS, ZONES, STATUS_COLORS, STATUS_LABEL, type Status } from '@/lib/constants'
 import { cx, isoDay, day as fmtDay, taka } from '@/lib/format'
@@ -82,6 +83,18 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
   const [address, setAddress] = useState('')
   const [area, setArea] = useState('')
   const [landmark, setLandmark] = useState('')
+  const [house, setHouse] = useState('')
+  const [flat, setFlat] = useState('')
+  const [latLng, setLatLng] = useState<{ lat: number | null; lng: number | null }>({ lat: null, lng: null })
+  const addrValue = { road: address, house, flat, area, landmark, lat: latLng.lat, lng: latLng.lng }
+  const setAddr = (patch: Partial<AddressValue>) => {
+    if (patch.road !== undefined) setAddress(patch.road)
+    if (patch.house !== undefined) setHouse(patch.house)
+    if (patch.flat !== undefined) setFlat(patch.flat)
+    if (patch.area !== undefined) setArea(patch.area)
+    if (patch.landmark !== undefined) setLandmark(patch.landmark)
+    if (patch.lat !== undefined || patch.lng !== undefined) setLatLng((x) => ({ lat: patch.lat !== undefined ? patch.lat : x.lat, lng: patch.lng !== undefined ? patch.lng : x.lng }))
+  }
   const [requester, setRequester] = useState<'SELF' | 'RELATIVE' | 'STAFF'>(me.isField ? 'STAFF' : 'SELF')
   const [reqName, setReqName] = useState('')
   const [reqRelation, setReqRelation] = useState('')
@@ -178,7 +191,7 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
               phone: phone.trim(),
               ageYears: age ? Number(age) : undefined,
               gender: gender || undefined,
-              address: { full: address.trim(), area: area || guessArea(address) || undefined, landmark: landmark.trim() || undefined },
+              address: { full: composeFull({ road: address, house, flat }), house: house.trim() || undefined, flat: flat.trim() || undefined, area: area || guessArea(address) || undefined, landmark: landmark.trim() || undefined, lat: latLng.lat ?? undefined, lng: latLng.lng ?? undefined },
             },
         requester: requester === 'RELATIVE' ? { type: 'RELATIVE', name: reqName || undefined, relation: reqRelation || undefined, phone: reqPhone || undefined } : requester === 'STAFF' ? { type: 'STAFF', name: me.name } : { type: 'SELF' },
         serviceCodes: codes,
@@ -476,8 +489,7 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
             </div>
             <div>
               <FLabel req>Address</FLabel>
-              <input className="hc-input hc-input-lg" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="House, road, area" />
-              {guessArea(address) && <div className="mt-1 text-[12px] text-slate-500">Zone: {guessArea(address)}</div>}
+              <AddressBlock value={addrValue} onChange={setAddr} zones={[...ZONES]} autoDetect idPrefix="nq" mapHeight={220} labels={{ ...ADDRESS_LABELS_EN, road: 'Road, block & area', useLocation: 'Use my location (at the patient’s home)' }} />
             </div>
           </>
         )}
@@ -602,23 +614,7 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
                 </div>
               </div>
               <SLabel>Address</SLabel>
-              <div>
-                <FLabel>Area / thana</FLabel>
-                <select className="hc-input hc-input-lg" value={area || guessArea(address) || ''} onChange={(e) => setArea(e.target.value)}>
-                  <option value="">Select area</option>
-                  {ZONES.map((z) => (
-                    <option key={z}>{z}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <FLabel req>Full address</FLabel>
-                <input className="hc-input hc-input-lg" placeholder="House, road, block" value={address} onChange={(e) => setAddress(e.target.value)} />
-              </div>
-              <div>
-                <FLabel>Landmark</FLabel>
-                <input className="hc-input hc-input-lg" placeholder="Optional" value={landmark} onChange={(e) => setLandmark(e.target.value)} />
-              </div>
+              <AddressBlock value={addrValue} onChange={setAddr} zones={[...ZONES]} autoDetect idPrefix="nf" mapHeight={240} labels={{ ...ADDRESS_LABELS_EN, road: 'Road, block & area', useLocation: 'Use my location (at the patient’s home)' }} />
             </>
           )}
           <SLabel>Requester</SLabel>

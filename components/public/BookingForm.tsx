@@ -1,19 +1,22 @@
 'use client'
 // Public "book a home visit" form — phone first: one column, 48px+ targets, 16px inputs (no iOS zoom), sticky send bar.
 // English / বাংলা via useLang(); slots come live from Settings → Online booking and grey out as visits are confirmed.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Check, CheckCircle2, Crosshair, Loader2, MapPin, Phone, Send } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, FileText, ImagePlus, Loader2, Phone, Send, X } from 'lucide-react'
 import { api } from '@/components/client/api'
-import { AddressSearchInput, PinPicker, reportUsage, reverseGeocode } from '@/components/client/maps'
+import { compressImage } from '@/components/client'
+import { AddressBlock, type AddressMeta, type AddressValue } from '@/components/client/AddressBlock'
 import { btnClass, telUrl } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { useLang, type Lang } from './i18n'
 
-type Service = { code: string; name: string; category: string }
+type Service = { code: string; name: string; category: string; requiresPrescription?: boolean }
 type Errors = Record<string, string>
 type SlotState = 'open' | 'full' | 'past' | 'blocked' | 'closed'
 export type BookingDay = { date: string; weekday: number; closed: boolean; slots: { start: string; end: string; label: string; booked: number; capacity: number; state: SlotState }[] }
+type Doc = { uid: number; name: string; kind: 'image' | 'pdf'; preview?: string; busy: boolean; id?: string; token?: string; err?: string }
+let docSeq = 1
 
 const dhakaDay = (offset: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date(Date.now() + offset * 86400_000))
 const loc = (lang: Lang) => (lang === 'bn' ? 'bn-BD' : 'en-GB')
@@ -39,20 +42,23 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
   const [errors, setErrors] = useState<Errors>({})
   const [formErr, setFormErr] = useState('')
   const [busy, setBusy] = useState(false)
-  const [locating, setLocating] = useState(false)
   const [done, setDone] = useState<{ requestNo: string; callWithinMin: number } | null>(null)
-  // which boxes were filled for the patient (shown with a tag, and sent so the admin can tell typed from detected)
-  const [auto, setAuto] = useState<string[]>([])
-  const [source, setSource] = useState<{ kind: 'typed' | 'gps' | 'search' | 'pin'; accuracyM?: number }>({ kind: 'typed' })
-  const addressRef = useRef<HTMLDivElement>(null)
-  const autoTried = useRef(false)
+  const [docs, setDocs] = useState<Doc[]>([])
+  const [addrMeta, setAddrMeta] = useState<AddressMeta>({ source: 'typed', autoFields: [] })
+  const rxNeeded = services.filter((s) => s.requiresPrescription && f.serviceCodes.includes(s.code))
   const plainDays = useMemo(() => Array.from({ length: 14 }, (_, i) => dhakaDay(i)), [])
   const set = <K extends keyof typeof blank>(k: K, v: (typeof blank)[K]) => {
     setF((x) => ({ ...x, [k]: v }))
     if (errors[k]) setErrors(({ [k]: _, ...rest }) => rest)
-    setAuto((a) => (a.includes(k) ? a.filter((x) => x !== k) : a)) // edited by hand → no longer auto-filled
   }
-  const tag = (k: string) => (auto.includes(k) ? t.autoTag : undefined)
+  const setAddr = (patch: Partial<AddressValue>) => {
+    setF((x) => ({ ...x, ...patch }))
+    setErrors((e) => {
+      const n = { ...e }
+      for (const k of Object.keys(patch)) delete n[k]
+      return n
+    })
+  }
 
   // ---- live availability: refresh every 2 min and when the tab comes back into view
   const refresh = useCallback(async () => {
@@ -75,56 +81,32 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
     return () => (clearInterval(id), document.removeEventListener('visibilitychange', onVis))
   }, [booking.enabled, refresh])
 
-  // ---- auto-detect location when the Address section comes into view (or at once if already allowed)
-  useEffect(() => {
-    if (!('geolocation' in navigator) || !addressRef.current) return
-    const go = () => {
-      if (autoTried.current) return
-      autoTried.current = true
-      useMyLocation(true)
+  async function addFiles(list: FileList | null) {
+    if (!list) return
+    const room = 3 - docs.length
+    for (const file of Array.from(list).slice(0, Math.max(0, room))) {
+      const isPdf = file.type === 'application/pdf'
+      const uid = docSeq++
+      if (!isPdf && !/^image\//.test(file.type)) {
+        setDocs((d) => [...d, { uid, name: file.name, kind: 'image', busy: false, err: t.eFileType }])
+        continue
+      }
+      if (file.size > 25 * 1024 * 1024) {
+        setDocs((d) => [...d, { uid, name: file.name, kind: isPdf ? 'pdf' : 'image', busy: false, err: t.eFileBig }])
+        continue
+      }
+      const preview = isPdf ? undefined : URL.createObjectURL(file)
+      setDocs((d) => [...d, { uid, name: file.name, kind: isPdf ? 'pdf' : 'image', preview, busy: true }])
+      try {
+        const form = new FormData()
+        form.append('file', isPdf ? file : await compressImage(file, false))
+        const r = await api<{ id: string; token: string }>('/public/uploads', { form })
+        setDocs((d) => d.map((x) => (x.uid === uid ? { ...x, busy: false, id: r.id, token: r.token } : x)))
+        setErrors(({ attachments: _, ...rest }) => rest)
+      } catch (e: any) {
+        setDocs((d) => d.map((x) => (x.uid === uid ? { ...x, busy: false, err: e.message } : x)))
+      }
     }
-    navigator.permissions
-      ?.query({ name: 'geolocation' as PermissionName })
-      .then((st) => (st.state === 'granted' ? go() : null))
-      .catch(() => {})
-    const io = new IntersectionObserver((e) => e.some((x) => x.isIntersecting) && go(), { threshold: 0.35 })
-    io.observe(addressRef.current)
-    return () => io.disconnect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  function useMyLocation(silent = false) {
-    if (!('geolocation' in navigator)) return silent ? undefined : setErrors((e) => ({ ...e, road: t.eLocNone }))
-    setLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      async (p) => {
-        reportUsage('device', 'gps')
-        const lat = Math.round(p.coords.latitude * 1e6) / 1e6
-        const lng = Math.round(p.coords.longitude * 1e6) / 1e6
-        const place = await reverseGeocode(lat, lng)
-        const zone = place?.area ? zones.find((z) => z.toLowerCase().includes(place.area.toLowerCase()) || place.area.toLowerCase().includes(z.toLowerCase())) : undefined
-        const filled: string[] = []
-        setF((x) => {
-          // only fill boxes that are empty or were auto-filled before — never overwrite what the patient typed
-          const may = (k: string, cur: string) => !cur.trim() || auto.includes(k)
-          const next = { ...x, lat, lng }
-          if (place?.road && may('road', x.road)) (next.road = place.road), filled.push('road')
-          if ((zone || place?.area) && may('area', x.area)) (next.area = zone || place!.area), filled.push('area')
-          if (place?.landmark && may('landmark', x.landmark)) (next.landmark = place.landmark), filled.push('landmark')
-          return next
-        })
-        setAuto((a) => [...new Set([...a, ...filled])])
-        setSource({ kind: 'gps', accuracyM: Math.round(p.coords.accuracy) })
-        setErrors(({ road: _, ...rest }) => rest)
-        setLocating(false)
-      },
-      (e) => {
-        setLocating(false)
-        if (silent) return // silent when we asked on our own — the button and typing still work
-        setErrors((x) => ({ ...x, road: e.code === 1 ? t.eLocBlocked : t.eLocFail }))
-      },
-      { enableHighAccuracy: true, timeout: 15000 },
-    )
   }
 
   function validate() {
@@ -139,6 +121,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
     if (f.road.trim().length < 3) e.road = t.eRoad
     if (!f.serviceCodes.length) e.serviceCodes = t.eService
     if (!f.slot) e.slot = t.eSlot
+    if (rxNeeded.length && !docs.some((d) => d.id)) e.attachments = t.eDocs
     setErrors(e)
     const first = Object.keys(e)[0]
     if (first) document.getElementById(`f-${first}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -160,13 +143,18 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
           area: f.area || undefined,
           landmark: f.landmark || undefined,
           notes: f.notes || undefined,
-          intake: { locationSource: f.lat == null ? 'typed' : source.kind, accuracyM: source.kind === 'gps' ? source.accuracyM : undefined, autoFields: auto },
+          intake: { locationSource: f.lat == null ? 'typed' : addrMeta.source, accuracyM: addrMeta.source === 'gps' ? addrMeta.accuracyM : undefined, autoFields: addrMeta.autoFields },
+          attachments: docs.filter((d) => d.id && d.token).map((d) => ({ id: d.id, token: d.token })),
         },
       })
       setDone(r)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e: any) {
-      if (e.code === 'SLOT_TAKEN') {
+      if (e.code === 'PRESCRIPTION_REQUIRED') {
+        setErrors({ attachments: t.eDocs })
+        setFormErr(e.message)
+        document.getElementById('f-attachments')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      } else if (e.code === 'SLOT_TAKEN') {
         setErrors({ slot: t.eTaken })
         setFormErr(t.eTaken)
         await refresh()
@@ -201,7 +189,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
               <Phone size={18} /> {t.call} {hotline}
             </a>
           )}
-          <button type="button" onClick={() => (setF({ ...blank, ...prefill, date: booking.enabled ? firstOpen(days) : dhakaDay(0) }), setAuto([]), setSource({ kind: 'typed' }), setDone(null), refresh())} className={btnClass('p', 'xl', 'w-full')}>
+          <button type="button" onClick={() => (setF({ ...blank, ...prefill, date: booking.enabled ? firstOpen(days) : dhakaDay(0) }), setDocs([]), setDone(null), refresh())} className={btnClass('p', 'xl', 'w-full')}>
             {t.another}
           </button>
         </div>
@@ -255,54 +243,45 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         </Field>
       </Section>
 
-      <Section n={2} title={t.sAddress} innerRef={addressRef}>
-        <button type="button" onClick={() => useMyLocation()} disabled={locating} className={cx('flex h-[52px] w-full items-center justify-center gap-2 rounded-lg border-[1.5px] px-3 text-[15px] font-semibold', f.lat != null ? 'border-[#86EFAC] bg-[#F0FDF4] text-[#15803D]' : 'border-primary/40 bg-primary-50 text-primary-700')}>
-          {locating ? <Loader2 size={18} className="animate-spin" /> : f.lat != null ? <Check size={18} /> : <Crosshair size={18} />}
-          {locating ? t.locating : f.lat != null ? t.located : t.useLocation}
-        </button>
-        <Field id="road" label={t.road} hint={t.roadHint} error={errors.road} tag={tag('road')}>
-          <div id="f-road">
-            <AddressSearchInput
-              className={input}
-              value={f.road}
-              onChange={(v) => set('road', v)}
-              onPlace={(p) => (setF((x) => ({ ...x, road: p.full, lat: p.lat, lng: p.lng })), setAuto((a) => [...new Set([...a, 'road'])]), setSource({ kind: 'search' }), setErrors(({ road: _, ...r }) => r))}
-              placeholder={t.roadPh}
-            />
-          </div>
-        </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field id="house" label={t.house} error={errors.house}>
-            <input id="f-house" className={input} value={f.house} onChange={(e) => set('house', e.target.value)} placeholder={t.housePh} />
-          </Field>
-          <Field id="flat" label={t.flat} error={errors.flat}>
-            <input id="f-flat" className={input} value={f.flat} onChange={(e) => set('flat', e.target.value)} placeholder={t.flatPh} />
-          </Field>
-        </div>
-        <Field id="area" label={t.area} tag={tag('area')}>
-          <input id="f-area" className={input} value={f.area} onChange={(e) => set('area', e.target.value)} list="hc-zones" placeholder={t.areaPh} autoComplete="off" />
-          <datalist id="hc-zones">
-            {zones.map((z) => (
-              <option key={z} value={z} />
-            ))}
-          </datalist>
-        </Field>
-        <Field id="landmark" label={t.landmark} tag={tag('landmark')}>
-          <input id="f-landmark" className={input} value={f.landmark} onChange={(e) => set('landmark', e.target.value)} placeholder={t.landmarkPh} />
-        </Field>
-        <div>
-          <div className="mb-1.5 flex items-center gap-1.5 text-[13.5px] font-semibold text-slate-700">
-            <MapPin size={15} /> {t.onMap}
-          </div>
-          <PinPicker
-            height={260}
-            lat={f.lat}
-            lng={f.lng}
-            onChange={(p) => (setF((x) => ({ ...x, lat: p?.lat ?? null, lng: p?.lng ?? null })), setSource(p ? { kind: 'pin' } : { kind: 'typed' }))}
-            labels={{ tap: t.pinTap, none: t.pinNone, set: t.pinSet, myLocation: t.myLocation, clear: t.clearPin }}
-          />
-          <div className="mt-1 text-[12.5px] text-slate-500">{t.mapHint}</div>
-        </div>
+      <Section n={2} title={t.sAddress}>
+        <AddressBlock
+          value={{ road: f.road, house: f.house, flat: f.flat, area: f.area, landmark: f.landmark, lat: f.lat, lng: f.lng }}
+          onChange={setAddr}
+          onMeta={setAddrMeta}
+          zones={zones}
+          errors={errors}
+          autoDetect
+          labels={{
+            useLocation: t.useLocation,
+            locating: t.locating,
+            located: t.located,
+            autoTag: t.autoTag,
+            road: t.road,
+            roadHint: t.roadHint,
+            roadPh: t.roadPh,
+            house: t.house,
+            housePh: t.housePh,
+            flat: t.flat,
+            flatPh: t.flatPh,
+            area: t.area,
+            areaPh: t.areaPh,
+            landmark: t.landmark,
+            landmarkPh: t.landmarkPh,
+            onMap: t.onMap,
+            mapHint: t.mapHint,
+            pinTap: t.pinTap,
+            pinNone: t.pinNone,
+            pinSet: t.pinSet,
+            myLocation: t.myLocation,
+            clearPin: t.clearPin,
+            accGood: t.accGood,
+            accPoor: t.accPoor,
+            accBad: t.accBad,
+            eLocBlocked: t.eLocBlocked,
+            eLocFail: t.eLocFail,
+            eLocNone: t.eLocNone,
+          }}
+        />
       </Section>
 
       <Section n={3} title={t.sService}>
@@ -373,7 +352,51 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         <p className="text-[13px] text-slate-500">{t.confirmByPhone}</p>
       </Section>
 
-      <Section n={5} title={t.sMore}>
+      <Section n={5} title={t.sDocs}>
+        <div id="f-attachments" className={cx('rounded-xl border-[1.5px] border-dashed p-3', errors.attachments ? 'border-[#DC2626] bg-[#FEF2F2]' : rxNeeded.length ? 'border-[#F59E0B] bg-[#FFFBEB]' : 'border-slate-300 bg-slate-50')}>
+          {rxNeeded.length > 0 && (
+            <div className="mb-2 text-[13.5px] font-semibold text-[#B45309]">
+              {t.docsRequired} {rxNeeded.map((s) => s.name).join(', ')}
+            </div>
+          )}
+          <p className="text-[12.5px] text-slate-500">{t.docsHint}</p>
+          {docs.length > 0 && (
+            <ul className="mt-3 flex flex-col gap-2">
+              {docs.map((d) => (
+                <li key={d.uid} className="flex items-center gap-3 rounded-lg bg-white p-2 ring-1 ring-slate-200">
+                  {d.preview ? (
+                    <img src={d.preview} alt="" className="size-12 flex-none rounded-md object-cover" />
+                  ) : (
+                    <span className="flex size-12 flex-none items-center justify-center rounded-md bg-slate-100 text-slate-500">
+                      <FileText size={22} />
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13.5px] font-semibold">{d.name}</span>
+                    <span className={cx('block text-[12px]', d.err ? 'text-[#B91C1C]' : d.busy ? 'text-slate-500' : 'text-[#15803D]')}>{d.err ? d.err : d.busy ? t.uploading : '✓'}</span>
+                  </span>
+                  {d.busy ? (
+                    <Loader2 size={18} className="animate-spin text-slate-400" />
+                  ) : (
+                    <button type="button" onClick={() => setDocs((x) => x.filter((y) => y.uid !== d.uid))} className="flex size-9 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-[#B91C1C]" aria-label={t.remove}>
+                      <X size={17} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {docs.length < 3 && (
+            <label className="mt-3 flex h-12 cursor-pointer items-center justify-center gap-2 rounded-lg border-[1.5px] border-slate-300 bg-white text-[14.5px] font-semibold text-primary-700 hover:bg-primary-50">
+              <ImagePlus size={18} /> {t.addPhoto}
+              <input type="file" accept="image/*,application/pdf" multiple className="sr-only" onChange={(e) => (addFiles(e.target.files), (e.target.value = ''))} />
+            </label>
+          )}
+        </div>
+        {errors.attachments && <Err>{errors.attachments}</Err>}
+      </Section>
+
+      <Section n={6} title={t.sMore}>
         <textarea id="f-notes" className="hc-input !text-[16px]" rows={4} maxLength={1000} value={f.notes} onChange={(e) => set('notes', e.target.value)} placeholder={t.notesPh} />
       </Section>
 
@@ -400,9 +423,9 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
   )
 }
 
-function Section({ n, title, children, innerRef }: { n: number; title: string; children: ReactNode; innerRef?: React.Ref<HTMLDivElement> }) {
+function Section({ n, title, children }: { n: number; title: string; children: ReactNode }) {
   return (
-    <section ref={innerRef} className="rounded-card bg-white p-4 shadow-card sm:p-5">
+    <section className="rounded-card bg-white p-4 shadow-card sm:p-5">
       <h2 className="mb-3.5 flex items-center gap-2.5 text-[16px] font-bold text-slate-900">
         <span className="flex size-7 flex-none items-center justify-center rounded-full bg-primary-50 text-[13px] text-primary-700">{n}</span>
         {title}
@@ -412,12 +435,11 @@ function Section({ n, title, children, innerRef }: { n: number; title: string; c
   )
 }
 
-function Field({ id, label, hint, error, tag, children }: { id: string; label: string; hint?: string; error?: string; tag?: string; children: ReactNode }) {
+function Field({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string; children: ReactNode }) {
   return (
-    <div className={cx(error && '[&_.hc-input]:border-[#DC2626]', tag && !error && '[&_.hc-input]:border-[#86EFAC] [&_.hc-input]:bg-[#F0FDF4]')}>
-      <label htmlFor={`f-${id}`} className="hc-label flex items-center gap-2 !text-[13.5px]">
+    <div className={cx(error && '[&_.hc-input]:border-[#DC2626]')}>
+      <label htmlFor={`f-${id}`} className="hc-label !text-[13.5px]">
         {label}
-        {tag && <span className="rounded-full bg-[#DCFCE7] px-2 py-px text-[11px] font-semibold text-[#15803D]">✓ {tag}</span>}
       </label>
       {children}
       {error ? <Err>{error}</Err> : hint && <div className="mt-1 text-[12.5px] text-slate-500">{hint}</div>}

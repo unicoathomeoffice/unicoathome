@@ -245,7 +245,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<{ road: 
 
 // ---------------------------------------------------------------- pin picker
 /** What PinPicker needs from a map engine: move the pin, hide it, and report clicks/drags. */
-type Engine = { show: (p: { lat: number; lng: number }, zoomIn: boolean) => void; hide: () => void; destroy: () => void }
+type Engine = { show: (p: { lat: number; lng: number }, zoomIn: boolean) => void; hide: () => void; destroy: () => void; accuracy: (p: { lat: number; lng: number } | null, m: number | null) => void }
 type Pt = { lat: number; lng: number }
 
 async function googleEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt) => void): Promise<Engine> {
@@ -265,6 +265,7 @@ async function googleEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt)
     const p = point(e.latLng)
     if (p) onPick(p)
   })
+  let circle: any = null
   return {
     show: (p, zoomIn) => {
       marker.position = p
@@ -274,6 +275,10 @@ async function googleEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt)
     },
     hide: () => (marker.map = null),
     destroy: () => {},
+    accuracy: (p, m) => {
+      if (circle) circle.setMap(null)
+      circle = p && m ? new maps.Circle({ map, center: p, radius: m, strokeColor: '#0090CA', strokeWeight: 1, fillColor: '#0090CA', fillOpacity: 0.12, clickable: false }) : null
+    },
   }
 }
 
@@ -295,6 +300,7 @@ async function leafletEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt
   if (start) marker.addTo(map)
   marker.on('dragend', () => onPick(marker.getLatLng()))
   map.on('click', (e: any) => onPick(e.latlng))
+  let circle: any = null
   return {
     show: (p, zoomIn) => {
       marker.setLatLng(p)
@@ -303,6 +309,10 @@ async function leafletEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt
     },
     hide: () => marker.remove(),
     destroy: () => map.remove(),
+    accuracy: (p, m) => {
+      circle?.remove()
+      circle = p && m ? L.circle(p, { radius: m, color: '#0090CA', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(map) : null
+    },
   }
 }
 
@@ -310,7 +320,7 @@ async function leafletEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt
 type PinLabels = { tap: string; none: string; set: string; myLocation: string; clear: string }
 const PIN_EN: PinLabels = { tap: 'Tap the map to drop a pin', none: 'No pin yet — staff will navigate by address', set: 'Pinned', myLocation: 'My location', clear: 'Clear pin' }
 
-export function PinPicker({ lat, lng, onChange, height = 260, labels = PIN_EN }: { lat?: number | null; lng?: number | null; onChange: (p: Pt | null) => void; height?: number; labels?: PinLabels }) {
+export function PinPicker({ lat, lng, onChange, height = 260, labels = PIN_EN, accuracyM = null }: { lat?: number | null; lng?: number | null; onChange: (p: Pt | null) => void; height?: number; labels?: PinLabels; /** GPS accuracy radius to draw around the pin */ accuracyM?: number | null }) {
   const el = useRef<HTMLDivElement>(null)
   const engine = useRef<Engine | null>(null)
   const change = useRef(onChange)
@@ -349,7 +359,8 @@ export function PinPicker({ lat, lng, onChange, height = 260, labels = PIN_EN }:
     if (!engine.current) return
     if (has) engine.current.show({ lat: lat!, lng: lng! }, true)
     else engine.current.hide()
-  }, [lat, lng, has])
+    engine.current.accuracy(has ? { lat: lat!, lng: lng! } : null, accuracyM ?? null)
+  }, [lat, lng, has, accuracyM, osm])
 
   function locate() {
     if (!('geolocation' in navigator)) return setErr('This device does not share location')

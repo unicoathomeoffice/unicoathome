@@ -59,6 +59,7 @@ export const MASTER: Record<string, Master> = {
       requiredSkills: z.array(z.string()).default([]),
       defaultDurationMin: z.coerce.number().int().positive().default(45),
       fee: z.coerce.number().nonnegative().default(0),
+      requiresPrescription: z.boolean().default(false),
       checklist: z.array(checklistItem).default([]),
       vitalsRequired: z.array(z.string()).default([]),
       staffMix: z.array(z.object({ role: z.string(), count: z.coerce.number().int().min(1) })).default([]),
