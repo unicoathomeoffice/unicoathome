@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Copy, Loader2, Save } from 'lucide-react'
 import { api, useToast } from '@/components/client'
@@ -23,6 +23,7 @@ export function GmailConnection({ gmail, onSaved }: { gmail: GmailStatus; onSave
     : oauthUser !== gmail.oauth2.user || clientId !== gmail.oauth2.clientId || !!clientSecret || !!refreshToken)
 
   const params = useSearchParams()
+  const secretRef = useRef<HTMLInputElement>(null) // read on click: Chrome hides autofilled passwords from React until a user gesture
   const [redirectUri, setRedirectUri] = useState('/api/v1/settings/gmail/oauth')
   useEffect(() => setRedirectUri(`${window.location.origin}/api/v1/settings/gmail/oauth`), [])
 
@@ -40,7 +41,7 @@ export function GmailConnection({ gmail, onSaved }: { gmail: GmailStatus; onSave
   async function connect() {
     setBusy(true)
     try {
-      const { url } = await api<{ url: string }>('/settings/gmail/oauth', { method: 'POST', body: { clientId: clientId.trim(), clientSecret: clientSecret.trim() || undefined } })
+      const { url } = await api<{ url: string }>('/settings/gmail/oauth', { method: 'POST', body: { clientId: clientId.trim(), clientSecret: (clientSecret || secretRef.current?.value || '').trim() || undefined } })
       window.location.href = url
     } catch (e: any) {
       toast(e.message ?? 'Could not start Google sign-in', 'err')
@@ -83,9 +84,9 @@ export function GmailConnection({ gmail, onSaved }: { gmail: GmailStatus; onSave
           <p className="text-xs leading-5 text-slate-500">Enable 2-Step Verification, then create an <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer" className="text-primary underline">App Password in your Google account</a>. Use that password here.</p>
         </> : <>
           <label className="block"><span className="hc-label">OAuth client ID</span><input className="hc-input" required value={clientId} onChange={(e) => setClientId(e.target.value)} autoComplete="off" placeholder="…apps.googleusercontent.com" disabled={busy} /></label>
-          <label className="block"><span className="hc-label">OAuth client secret</span><input type="password" className="hc-input" required={!gmail.oauth2.hasClientSecret} value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} autoComplete="new-password" placeholder={gmail.oauth2.hasClientSecret ? 'Saved — leave blank to keep' : 'Client secret'} disabled={busy} /></label>
+          <label className="block"><span className="hc-label">OAuth client secret</span><input ref={secretRef} type="password" className="hc-input" required={!gmail.oauth2.hasClientSecret} value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} autoComplete="new-password" placeholder={gmail.oauth2.hasClientSecret ? 'Saved — leave blank to keep' : 'Client secret'} disabled={busy} /></label>
           <div className="rounded-[10px] border border-slate-200 bg-slate-50 p-3">
-            <button type="button" onClick={connect} disabled={busy || !clientId.trim() || (!clientSecret && !gmail.oauth2.hasClientSecret)} className={cx(btnClass('o', 'md'), 'w-full bg-white')}>
+            <button type="button" onClick={connect} disabled={busy || !clientId.trim()} className={cx(btnClass('o', 'md'), 'w-full bg-white')}>
               {busy ? <Loader2 size={16} className="animate-spin" /> : <GoogleG />} {gmail.oauth2.hasRefreshToken ? 'Reconnect with Google' : 'Connect with Google'}
             </button>
             <p className="mt-2 text-xs leading-5 text-slate-500">
