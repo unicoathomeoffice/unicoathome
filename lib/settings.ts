@@ -28,6 +28,13 @@ export const DEFAULT_SETTINGS = {
     blocked: [] as string[], // 'YYYY-MM-DD HH:MM' slots blocked by hand
     holdNew: false, // unconfirmed (new) requests also occupy their slot
   },
+  /** Google Maps cost control (free tier). Public pages fall back to OpenStreetMap when a cap is reached. */
+  maps: {
+    useGoogle: true, // when false, everything runs on free OpenStreetMap even if a key exists
+    monthlyFree: 10000, // Google's free calls per month (per API)
+    reservePct: 10, // keep this share of the monthly allowance unused as a safety margin
+    dailyCap: 'auto' as 'auto' | number, // 'auto' = (monthlyFree − reserve) ÷ days in month
+  },
   sla: {
     confirmRoutineMin: 15,
     confirmUrgentMin: 5,

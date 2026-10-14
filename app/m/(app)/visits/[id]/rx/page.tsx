@@ -3,7 +3,7 @@ import { loadVisit } from '@/components/field/data'
 import { RxScreen } from '@/components/field/rx'
 import { Designation, LabResult, Prescription, User } from '@/lib/models'
 import { isTeamMember } from '@/lib/services/requests'
-import { can } from '@/lib/constants'
+import { can, hasRole } from '@/lib/constants'
 import { plain } from '@/lib/db'
 
 export const metadata = { title: 'Prescription & results' }
@@ -22,14 +22,14 @@ export default async function RxPage({ params, searchParams }: { params: Promise
   }
   const have = new Set(rows.map((x) => x.test))
   const labs = [...plain(rows), ...(r.tests ?? []).filter((t: string) => !have.has(t)).map((t: string) => ({ _id: null, test: t, status: 'NOT_SENT' }))]
-  const canEdit = user.role === 'DOCTOR' && isTeamMember(user, r)
+  const canEdit = hasRole(user, 'DOCTOR') && isTeamMember(user, r)
   return (
     <MScreen pad={false}>
       <RxScreen
         id={id}
         title="Prescription & results"
         sub={`${r.patientSnapshot?.name} · ${r.requestNo}`}
-        tab={sp.tab === 'labs' || (!rx && user.role !== 'DOCTOR' && labs.length) ? 'labs' : 'rx'}
+        tab={sp.tab === 'labs' || (!rx && !hasRole(user, 'DOCTOR') && labs.length) ? 'labs' : 'rx'}
         rx={plain(rx)}
         doctor={doctor}
         me={{ name: user.name, employeeId: user.employeeId, designation: user.designation }}

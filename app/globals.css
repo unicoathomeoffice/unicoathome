@@ -82,3 +82,42 @@ textarea.hc-input {
     background: #fff;
   }
 }
+
+/* public pages: thin coloured scrollbar for the booking panel */
+.hc-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 144, 202, 0.45) transparent;
+}
+.hc-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.hc-scroll::-webkit-scrollbar-thumb {
+  background: rgba(0, 144, 202, 0.45);
+  border-radius: 8px;
+}
+.hc-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* soft "neumorphic" surface used on the public landing + patient portal */
+.hc-soft {
+  background: #fff;
+  box-shadow:
+    10px 10px 28px rgba(31, 56, 100, 0.08),
+    -8px -8px 22px rgba(255, 255, 255, 0.9);
+}
+.hc-glass {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+@keyframes hcfloat {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(0, -18px, 0) scale(1.04); }
+}
+.hc-blob {
+  animation: hcfloat 9s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hc-blob { animation: none; }
+}

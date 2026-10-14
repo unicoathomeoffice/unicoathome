@@ -20,7 +20,15 @@ function dropGoogle() {
   window.dispatchEvent(new Event(FALLBACK_EVENT))
 }
 
-/** Ask the server (cached) whether Google actually works before touching it; false → OpenStreetMap. */
+/** Tell the server about a map / geocoding call (Settings → Maps & API usage counts them and caps Google). */
+export function reportUsage(provider: 'google' | 'osm' | 'device', kind: 'places_autocomplete' | 'places_details' | 'maps_js' | 'photon_search' | 'photon_reverse' | 'osm_map' | 'gps') {
+  try {
+    const data = new Blob([JSON.stringify({ provider, kind })], { type: 'application/json' })
+    if (!navigator.sendBeacon?.('/api/v1/public/maps-usage', data)) fetch('/api/v1/public/maps-usage', { method: 'POST', body: data, keepalive: true }).catch(() => {})
+  } catch {}
+}
+
+/** Ask the server (cached) whether Google may be used right now (key, billing, daily budget); false → OpenStreetMap. */
 let status: Promise<boolean> | null = null
 export function googleUsable(): Promise<boolean> {
   if (googleOff) return Promise.resolve(false)
@@ -71,6 +79,7 @@ async function googleSuggest(input: string): Promise<Suggestion[]> {
   const maps = await loadGoogleMaps()
   const { AutocompleteSuggestion, AutocompleteSessionToken } = await maps.importLibrary('places')
   googleToken ??= new AutocompleteSessionToken()
+  reportUsage('google', 'places_autocomplete')
   const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({ input, sessionToken: googleToken, includedRegionCodes: ['bd'], locationBias: { center: DHAKA, radius: 30000 }, language: 'en' })
   return suggestions
     .map((s: any) => s.placePrediction)
@@ -81,6 +90,7 @@ async function googleSuggest(input: string): Promise<Suggestion[]> {
       sub: p.secondaryText?.text ?? '',
       pick: async () => {
         const place = p.toPlace()
+        reportUsage('google', 'places_details')
         await place.fetchFields({ fields: ['location', 'formattedAddress', 'displayName'] }) // ends the billing session
         googleToken = null
         const at = point(place.location)
@@ -92,6 +102,7 @@ async function googleSuggest(input: string): Promise<Suggestion[]> {
 
 async function photonSuggest(input: string, signal: AbortSignal): Promise<Suggestion[]> {
   const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(input)}&limit=6&lang=en&lat=${DHAKA.lat}&lon=${DHAKA.lng}&bbox=${BD_BBOX}`
+  reportUsage('osm', 'photon_search')
   const res = await fetch(url, { signal })
   if (!res.ok) return []
   const { features = [] } = await res.json()
@@ -214,6 +225,7 @@ export function AddressSearchInput({ value, onChange, onPlace, className, placeh
  *  landmark = the nearest named place (a shop, hospital, school…), road = street + area, area = neighbourhood. */
 export async function reverseGeocode(lat: number, lng: number): Promise<{ road: string; area: string; landmark: string; full: string } | null> {
   try {
+    reportUsage('osm', 'photon_reverse')
     const res = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en&limit=1`)
     if (!res.ok) return null
     const p = (await res.json()).features?.[0]?.properties
@@ -242,6 +254,7 @@ async function googleEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt)
   el.style.cssText = 'width:100%;height:100%'
   host.replaceChildren(el)
   const [{ Map }, { AdvancedMarkerElement }] = await Promise.all([maps.importLibrary('maps'), maps.importLibrary('marker')])
+  reportUsage('google', 'maps_js')
   const map = new Map(el, { center: start ?? DHAKA, zoom: start ? 17 : 12, mapId: MAP_ID, disableDefaultUI: true, zoomControl: true, fullscreenControl: true, gestureHandling: 'greedy', clickableIcons: false })
   const marker = new AdvancedMarkerElement({ map: start ? map : null, position: start ?? DHAKA, gmpDraggable: true, title: 'Patient location' })
   marker.addListener('dragend', () => {
@@ -269,6 +282,7 @@ async function leafletEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt
   const el = document.createElement('div')
   el.style.cssText = 'width:100%;height:100%'
   host.replaceChildren(el)
+  reportUsage('osm', 'osm_map')
   const map = L.map(el, { zoomControl: true, attributionControl: true }).setView(start ?? DHAKA, start ? 17 : 12)
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(map)
   const icon = L.divIcon({

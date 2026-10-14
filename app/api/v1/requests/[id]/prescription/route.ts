@@ -6,6 +6,7 @@ import { background, notifyRoles, prepareWhatsApp } from '@/lib/messaging'
 import { audit } from '@/lib/audit'
 import { plain } from '@/lib/db'
 import type { SessionUser } from '@/lib/auth'
+import { hasRole } from '@/lib/constants'
 
 const Rx = z.object({
   dx: z.string().max(2000).optional(),
@@ -15,7 +16,7 @@ const Rx = z.object({
 
 /** Doctors on the care team write the e-Rx; coordinators may read. */
 function canWrite(user: SessionUser, r: any) {
-  return user.role === 'DOCTOR' && isTeamMember(user, r)
+  return hasRole(user, 'DOCTOR') && isTeamMember(user, r)
 }
 
 async function doctorInfo(id: unknown) {

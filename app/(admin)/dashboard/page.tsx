@@ -9,6 +9,8 @@ import { AdminPage } from '@/components/admin/AdminPage'
 import { Avatar, Bars, Card, HBars, Kpi } from '@/components/ui'
 import { AutoRefresh, Countdown, Elapsed } from '@/components/client'
 import { cx } from '@/lib/format'
+import { googleBudget } from '@/lib/maps-usage'
+import { getSettings } from '@/lib/settings'
 
 export const metadata = { title: 'Dashboard · Unico HomeCare' }
 
@@ -22,6 +24,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     try { await sweep() } catch (e) { console.error('sweep failed', e) }
   })
   const d = await dashboardData()
+  const maps = await googleBudget((await getSettings()).maps)
   const canAssign = can(user, 'requests.assign')
 
   const toggle = (
@@ -62,13 +65,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       color: STATUS_COLORS.ASSIGNED[1],
       href: '/requests?status=ASSIGNED',
     },
+    {
+      label: 'Maps API',
+      n: `${maps.used.today}/${maps.dailyCap}`,
+      sub: maps.reason === 'ok' ? `Google today · ${maps.remainingToday} left` : maps.reason === 'daily-cap' ? 'cap reached · free maps' : maps.reason === 'monthly-cap' ? 'month used · free maps' : 'free OpenStreetMap',
+      color: maps.reason === 'ok' ? '#0072A3' : maps.reason === 'daily-cap' || maps.reason === 'monthly-cap' ? '#B45309' : '#64748B',
+      href: '/settings/maps',
+    },
   ]
 
   return (
     <AdminPage title="Dashboard" actions={toggle}>
       <AutoRefresh seconds={30} />
       <div className={cx('flex min-h-full flex-col', compact ? 'gap-3' : 'gap-5')}>
-        <div className={cx('grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7', compact ? 'gap-3' : 'gap-5')}>
+        <div className={cx('grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8', compact ? 'gap-3' : 'gap-5')}>
           {tiles.map((t) => (
             <Kpi key={t.label} label={t.label} n={t.n} color={t.color} sub={compact ? undefined : t.sub} dense={compact} href={t.href} />
           ))}

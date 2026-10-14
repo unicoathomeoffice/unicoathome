@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { ZodError, type ZodType } from 'zod'
 import { db } from './db'
 import { getUser, type SessionUser } from './auth'
-import { can, type Permission, type Role } from './constants'
+import { can, type Permission, type Role, hasAnyRole } from './constants'
 
 export class ApiError extends Error {
   constructor(
@@ -29,7 +29,7 @@ export function json(data: unknown, init?: number | ResponseInit) {
   return NextResponse.json(data, typeof init === 'number' ? { status: init } : init)
 }
 
-function toResponse(e: unknown) {
+export function toResponse(e: unknown) {
   if (e instanceof ApiError) return json({ error: { code: e.code, message: e.message, fields: e.fields } }, e.status)
   if (e instanceof ZodError) {
     const fields: Record<string, string> = {}
@@ -53,7 +53,7 @@ export function route<P = Record<string, string>>(fn: Handler<P>, opt: { perm?: 
       const user = await getUser()
       if (!user) throw new ApiError(401, 'UNAUTHENTICATED', 'Please sign in again')
       if (opt.perm && !can(user, opt.perm)) throw forbidden()
-      if (opt.roles && !opt.roles.includes(user.role)) throw forbidden()
+      if (opt.roles && !hasAnyRole(user, opt.roles)) throw forbidden()
       const out = await fn({ req, user, params: (await ctx?.params) ?? ({} as P) })
       if (out instanceof Response) return out
       return json(out ?? { ok: true })

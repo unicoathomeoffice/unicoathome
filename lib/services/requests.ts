@@ -15,7 +15,7 @@ import {
 } from '../models'
 import { ApiError, bad, conflict, forbidden, notFound } from '../api'
 import { audit } from '../audit'
-import { can, FIELD_ROLES, TRANSITIONS, VITALS, type Status } from '../constants'
+import { can, FIELD_ROLES, TRANSITIONS, VITALS, type Status, hasRole, hasAnyRole } from '../constants'
 import { background, notifyRoles, notifyUsers, queueEmail, renderTemplate } from '../messaging'
 import { getSettings, ruleAllows } from '../settings'
 import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, dayRange } from '../format'
@@ -43,8 +43,8 @@ export function canView(user: SessionUser, r: any) {
   if (can(user, 'requests.readAll')) return true
   if (isTeamMember(user, r)) return true
   if (String(r.createdBy) === user.id) return true
-  if (user.role === 'DRIVER' && String(r.transport?.driverId) === user.id) return true
-  if (user.role === 'TRANSPORT_SUPERVISOR' && r.transport?.needed) return true
+  if (hasRole(user, 'DRIVER') && String(r.transport?.driverId) === user.id) return true
+  if (hasRole(user, 'TRANSPORT_SUPERVISOR') && r.transport?.needed) return true
   return false
 }
 
@@ -240,7 +240,7 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
       area: patient.address?.area,
       address: [patient.address?.full, patient.address?.area].filter(Boolean).join(', '),
     },
-    requester: input.requester ?? (FIELD_ROLES.includes(user.role) ? { type: 'STAFF', name: user.name } : { type: 'SELF' }),
+    requester: input.requester ?? (hasAnyRole(user, FIELD_ROLES) ? { type: 'STAFF', name: user.name } : { type: 'SELF' }),
     services,
     tests: input.tests,
     priority: input.priority,
@@ -791,7 +791,7 @@ export async function rankCandidates(r: any, limit = 20, roleFilter?: string[]):
   const serviceIds = (r.services ?? []).map((s: any) => s.serviceTypeId).filter(Boolean)
   const [types, staff, todays] = await Promise.all([
     serviceIds.length ? ServiceType.find({ _id: { $in: serviceIds } }).select('requiredSkills').lean<any[]>() : [],
-    User.find({ role: { $in: roleFilter ?? ['DOCTOR', 'NURSE', 'ALLIED'] }, status: 'ACTIVE', deletedAt: null })
+    User.find({ $or: [{ role: { $in: roleFilter ?? ['DOCTOR', 'NURSE', 'ALLIED'] } }, { roles: { $in: roleFilter ?? ['DOCTOR', 'NURSE', 'ALLIED'] } }], status: 'ACTIVE', deletedAt: null })
       .select('name role designationId employeeId availability skills zones').lean<any[]>(),
     HomecareRequest.find({
       _id: { $ne: r._id }, scheduledAt: { $gte: start, $lt: end },

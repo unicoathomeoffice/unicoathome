@@ -26,6 +26,7 @@ export type StaffUser = {
   whatsapp?: string
   email?: string
   role: Role
+  roles?: Role[]
   departmentId?: string
   designationId?: string
   skills?: string[]
@@ -80,6 +81,7 @@ function initial(u?: StaffUser) {
     whatsapp: u?.whatsapp && u.whatsapp !== u.phone ? u.whatsapp : '',
     email: u?.email ?? '',
     role,
+    roles: (u?.roles ?? []).filter((r) => r !== role) as Role[],
     customRoleId: (u as any)?.customRoleId ?? '',
     departmentId: u?.departmentId ?? '',
     designationId: u?.designationId ?? '',
@@ -153,6 +155,7 @@ export function UserDrawer({ user, options, canManage, onClose, presetRole }: { 
       whatsapp: v.whatsapp.trim() || v.phone.trim(),
       email: v.email.trim(),
       role: v.role,
+      roles: v.roles.filter((r) => r !== v.role),
       customRoleId: v.customRoleId,
       departmentId: v.departmentId,
       designationId: v.designationId,
@@ -298,6 +301,13 @@ export function UserDrawer({ user, options, canManage, onClose, presetRole }: { 
               </option>
             ))}
           </select>
+        </Field>
+        <Field label="Also acts as (optional)" hint="Extra roles: permissions, notifications and assignment candidates include all of them">
+          <ChipPicker
+            options={ROLES.filter((r) => r !== v.role && r !== 'SUPER_ADMIN').map((r) => ({ value: r, label: ROLE_LABEL[r] }))}
+            value={v.roles}
+            onChange={(roles) => setV((x) => ({ ...x, roles: roles as Role[] }))}
+          />
         </Field>
         {!!options.customRoles?.length && (
           <Field label="Custom role (optional)" error={err('customRoleId')} hint="Overrides the base role's permissions">

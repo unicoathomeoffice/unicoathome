@@ -9,13 +9,14 @@ import { DriverVehicleForm } from '@/components/transport/actions'
 import { requireTransport } from '@/components/transport/data'
 import { User, Vehicle, HomecareRequest } from '@/lib/models'
 import { date, ago } from '@/lib/format'
+import { hasRole } from '@/lib/constants'
 
 export const metadata = { title: 'My vehicle' }
 
 /** Driver tab "Vehicle": their car, supervisor, and odometer / fuel updates (PATCH /api/v1/vehicles/mine). */
 export default async function VehiclePage() {
   const user = await requireTransport()
-  if (user.role !== 'DRIVER') redirect('/m/fleet')
+  if (!hasRole(user, 'DRIVER')) redirect('/m/fleet')
   const me = await User.findById(user.id).select('vehicleId supervisorId licenceNo licenceExpiry').lean<any>()
   const v = (await Vehicle.findOne({ driverId: user.id }).lean<any>()) ?? (me?.vehicleId ? await Vehicle.findById(me.vehicleId).lean<any>() : null)
   const sup = v?.supervisorId || me?.supervisorId ? await User.findById(v?.supervisorId ?? me?.supervisorId).select('name phone').lean<any>() : null

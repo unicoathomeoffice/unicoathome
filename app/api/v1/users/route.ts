@@ -45,6 +45,7 @@ export const POST = route(
     const direct = can(user, 'users.manage')
     const u = await User.create({
       ...input,
+      roles: input.roles.filter((r) => r !== input.role),
       email: clean(input.email),
       departmentId: clean(input.departmentId),
       designationId: clean(input.designationId),

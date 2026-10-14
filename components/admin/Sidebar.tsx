@@ -35,6 +35,7 @@ const SETTINGS_SUB: { href: string; label: string; perm: Perm }[] = [
   { href: '/settings/approvals', label: 'Approvals', perm: 'approvals.decide' },
   { href: '/settings/templates', label: 'Templates', perm: 'templates.manage' },
   { href: '/settings/notifications', label: 'Notification rules', perm: SETTINGS_HUB },
+  { href: '/settings/maps', label: 'Maps & API usage', perm: SETTINGS_HUB },
   { href: '/audit', label: 'Audit log', perm: 'audit.view' },
 ]
 

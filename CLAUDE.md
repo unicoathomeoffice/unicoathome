@@ -29,6 +29,13 @@ lib/messaging.ts     queueEmail (Gmail SMTP, logged), prepareWhatsApp (wa.me dee
 lib/templates.ts     default message templates + emailShell()
 lib/settings.ts      getSettings()/saveSetting() — non-secret config with defaults
 lib/master.ts        generic master lists behind /api/v1/master/:kind
+lib/booking.ts       public online booking: slot grid from Settings → Online booking, live availability(), slotOpen()
+lib/maps.ts · lib/maps-usage.ts  keyless Google embeds; Google-vs-OpenStreetMap budget (daily cap, call ledger)
+lib/patient-auth.ts  patient portal sessions (cookie hc_patient, JWT aud 'patient'): getPatient(), requirePatient(), patientRoute()
+lib/google-auth.ts   staff "Sign in / register with Google" (uses the Gmail OAuth client)
+lib/services/public.ts · patients-portal.ts  public booking form + patient account/profile/requests
+app/page.tsx + components/public   public landing (hero + booking form, EN/বাংলা via components/public/i18n.tsx)
+app/my/...           patient portal (dashboard, request timeline, profile) · app/join staff Google sign-up
 lib/format.ts        time(), day(), date(), dateTime(), relDay(), ago(), dur(), taka(), phone(), cx() — all Asia/Dhaka
 components/ui        server-safe primitives: StatusChip, PriorityBadge, SlaPill, Tag, Avatar, Card, CardHeader, Label, Kpi,
                      Bars, HBars, Progress, btnClass, LinkButton, IconLink, Tabs, Chips, Table/Tr, Empty, KV, ToggleView, MapBox, MapPin, mapsUrl, telUrl

@@ -46,7 +46,7 @@ export type PublicRequestInput = z.infer<typeof PublicRequestInput>
 const WEBSITE = { id: undefined, name: 'Website', role: 'PUBLIC', permissions: ['requests.create'], client: 'web' } as unknown as SessionUser
 
 /** Public home-care request: registers (or updates) the patient by phone + name and opens a NEW request. */
-export async function createPublicRequest(input: PublicRequestInput, meta: Meta) {
+export async function createPublicRequest(input: PublicRequestInput, meta: Meta, patientId?: string) {
   const s = await getSettings()
   const phone = bdMobile(input.phone)!
   const today = dhakaToday()
@@ -64,8 +64,10 @@ export async function createPublicRequest(input: PublicRequestInput, meta: Meta)
   const address = { area: input.area || undefined, full, house: input.house, flat: input.flat, landmark: input.landmark || undefined, lat: input.lat, lng: input.lng }
   const email = input.email || undefined
 
-  // same person already known? keep one record and move it to the new address
-  const existing = await Patient.findOne({ phone, name: new RegExp(`^${input.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), deletedAt: null })
+  // signed-in patient → their own record; otherwise same person already known? keep one record and move it to the new address
+  const existing = patientId
+    ? await Patient.findOne({ _id: patientId, deletedAt: null })
+    : await Patient.findOne({ phone, name: new RegExp(`^${input.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'), deletedAt: null })
   if (existing) {
     if (existing.address?.full !== full) {
       const last = existing.addressHistory[existing.addressHistory.length - 1]
@@ -73,7 +75,7 @@ export async function createPublicRequest(input: PublicRequestInput, meta: Meta)
       existing.addressHistory.push({ full, area: address.area, from: new Date() })
     }
     existing.set('address', { ...(existing.toObject().address ?? {}), ...address, district: 'Dhaka', lat: input.lat ?? null, lng: input.lng ?? null })
-    existing.set({ ageYears: input.ageYears, gender: input.gender, ...(email ? { email } : {}) })
+    existing.set({ ageYears: input.ageYears, gender: input.gender, ...(email ? { email } : {}), ...(patientId ? { name: input.name, phone } : {}) })
     await existing.save()
   }
 

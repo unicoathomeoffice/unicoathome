@@ -52,6 +52,11 @@ export const PATCH = route(
   async ({ req, user }) => {
     const input = await body(req, Patch)
     if (!(input.key === 'booking' ? can(user, 'requests.manage') : canOpenSettings(user))) throw forbidden()
+    if (input.key === 'maps') {
+      const r = z.object({ useGoogle: z.boolean(), monthlyFree: z.number().int().min(100).max(1_000_000), reservePct: z.number().int().min(0).max(50), dailyCap: z.union([z.literal('auto'), z.number().int().min(1).max(100_000)]) }).partial().strict().safeParse(input.value)
+      if (!r.success) throw bad(`Maps: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`)
+      input.value = r.data
+    }
     if (input.key === 'booking') {
       const r = BookingPatch.safeParse(input.value)
       if (!r.success) throw bad(`Booking: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`)

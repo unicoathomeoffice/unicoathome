@@ -158,6 +158,13 @@ export default async function StaffPage({ searchParams }: { searchParams: SP }) 
                 <span className="inline-flex h-[22px] items-center rounded-md bg-slate-100 px-1.5 font-mono text-[10.5px] font-bold text-slate-700" title={ROLE_LABEL[u.role as Role]}>
                   {u.role}
                 </span>
+                {(u.roles ?? [])
+                  .filter((r: Role) => r !== u.role)
+                  .map((r: Role) => (
+                    <span key={r} className="ml-1 inline-flex h-[22px] items-center rounded-md bg-primary-50 px-1.5 font-mono text-[10.5px] font-bold text-primary-700" title={`Also acts as ${ROLE_LABEL[r]}`}>
+                      +{r}
+                    </span>
+                  ))}
               </span>
               <span className="whitespace-nowrap text-[13px]">{(u.platformAccess ?? []).map((a: string) => (a === 'web' ? 'Web' : 'App')).join(' · ') || '—'}</span>
               <span className="flex items-center gap-1.5 whitespace-nowrap text-[13px]">

@@ -10,7 +10,7 @@ import { requireAppUser } from '@/lib/auth'
 import { db, plain } from '@/lib/db'
 import { Department, HomecareRequest, Session, User } from '@/lib/models'
 import { getSettings } from '@/lib/settings'
-import { ROLE_LABEL } from '@/lib/constants'
+import { ROLE_LABEL, hasAnyRole, FIELD_ROLES } from '@/lib/constants'
 import { dayRange, isoDay, phone } from '@/lib/format'
 
 export const metadata = { title: 'Profile' }
@@ -23,7 +23,7 @@ export default async function Profile() {
   await db()
   const u = await User.findById(user.id).lean<any>()
   const monthStart = dayRange(`${isoDay().slice(0, 7)}-01`).start
-  const field = ['DOCTOR', 'NURSE', 'ALLIED'].includes(user.role)
+  const field = hasAnyRole(user, FIELD_ROLES)
   const [dept, sessions, month, rated, settings] = await Promise.all([
     u?.departmentId ? Department.findById(u.departmentId).select('name').lean<any>() : null,
     Session.find({ userId: user.id, revokedAt: null, expiresAt: { $gt: new Date() } }).sort({ lastSeenAt: -1 }).lean<any[]>(),

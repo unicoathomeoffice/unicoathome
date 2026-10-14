@@ -2,6 +2,7 @@ import { MScreen } from '@/components/mobile'
 import { loadVisit } from '@/components/field/data'
 import { NotesEditor } from '@/components/field/notes'
 import { User } from '@/lib/models'
+import { hasRole } from '@/lib/constants'
 
 export const metadata = { title: 'Notes & medications' }
 
@@ -26,7 +27,7 @@ export default async function Notes({ params }: { params: Promise<{ id: string }
         editable={team && ['IN_PROGRESS', 'COMPLETED'].includes(r.status) && r.status !== 'CLOSED'}
         title="Notes & medications"
         sub={`${r.patientSnapshot?.name} · ${r.requestNo}`}
-        defaultTab={user.role === 'DOCTOR' ? 'clinical' : 'nursing'}
+        defaultTab={hasRole(user, 'DOCTOR') ? 'clinical' : 'nursing'}
         initial={{ nursing: v.notes?.nursing ?? '', clinical: v.notes?.clinical ?? '', remarks: v.remarks ?? '', consumables: v.consumables ?? [], updatedAt: v.notes?.updatedAt }}
         meds={meds.map((m) => ({ ...m, byName: name(m.by) }))}
       />

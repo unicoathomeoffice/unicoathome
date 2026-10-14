@@ -67,6 +67,7 @@ const UserSchema = new Schema<any>(
     email: { type: String, lowercase: true, trim: true },
     passwordHash: { type: String, select: false },
     role: { type: String, enum: ROLES, required: true },
+    roles: [{ type: String, enum: ROLES }], // extra roles the person also acts as (e.g. NURSE + HC_ADMIN); permissions are the union
     customRoleId: { type: ObjectId, ref: 'CustomRole' }, // optional A2 custom role: overrides the base role's permissions
     departmentId: { type: ObjectId, ref: 'Department' },
     designationId: { type: ObjectId, ref: 'Designation' },
@@ -133,6 +134,11 @@ const PatientSchema = new Schema<any>(
     conditions: [String],
     consent: { whatsapp: { type: Boolean, default: true }, email: { type: Boolean, default: true }, at: Date, by: { type: ObjectId, ref: 'User' } },
     email: String,
+    // patient portal account (/my): phone is the login id; passwordVersion invalidates old sessions
+    whatsapp: String,
+    passwordHash: { type: String, select: false },
+    passwordVersion: Number,
+    account: { createdAt: Date, lastLoginAt: Date },
     tags: [String],
     notes: String,
     balance: { type: Number, default: 0 },
@@ -553,6 +559,11 @@ const IntegrationSecretSchema = new Schema<any>({
   _id: String, encrypted: { type: String, required: true, select: false }, updatedBy: { type: ObjectId, ref: 'User' },
 }, opts)
 export const IntegrationSecret = model('IntegrationSecret', IntegrationSecretSchema, 'integration_secrets')
+
+// map / geocoding provider call ledger (lib/maps-usage.ts): one row per day × provider × kind
+const ApiUsageSchema = new Schema<any>({ day: { type: String, required: true }, provider: { type: String, required: true }, kind: { type: String, required: true }, n: { type: Number, default: 0 } }, opts)
+ApiUsageSchema.index({ day: 1, provider: 1, kind: 1 }, { unique: true })
+export const ApiUsage = model('ApiUsage', ApiUsageSchema, 'api_usage')
 
 export { Types }
 export const oid = (id: string | Types.ObjectId) => (typeof id === 'string' ? new Types.ObjectId(id) : id)

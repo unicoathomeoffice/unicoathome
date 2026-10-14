@@ -3,13 +3,13 @@ import { redirect } from 'next/navigation'
 import { requireAppUser, type SessionUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { HomecareRequest, User, Vehicle } from '@/lib/models'
-import { can } from '@/lib/constants'
+import { can, hasRole } from '@/lib/constants'
 import { dayRange, isoDay, time } from '@/lib/format'
 
 /** Trips / fleet screens: car supervisor, drivers and coordinators (transport.manage). */
 export async function requireTransport(driverOk = true): Promise<SessionUser> {
   const u = await requireAppUser()
-  if (!(can(u, 'transport.manage') || (driverOk && u.role === 'DRIVER'))) redirect('/m?denied=1')
+  if (!(can(u, 'transport.manage') || (driverOk && hasRole(u, 'DRIVER')))) redirect('/m?denied=1')
   await db()
   return u
 }

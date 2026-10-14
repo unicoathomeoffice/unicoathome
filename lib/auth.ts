@@ -23,6 +23,8 @@ export type SessionUser = {
   employeeId: string
   name: string
   role: Role
+  /** every role held: primary first, then the "also acts as" roles */
+  roles: Role[]
   /** set when the user has a custom role (A2): the exact permission list that replaces the base role matrix */
   permissions?: string[] | null
   customRole?: string
@@ -109,6 +111,7 @@ export const getUser = cache(async function getUser(): Promise<SessionUser | nul
     employeeId: user.employeeId,
     name: user.name ?? '',
     role: user.role,
+    roles: [user.role, ...((user.roles ?? []) as Role[]).filter((r: Role) => r !== user.role)],
     permissions: custom ? custom.permissions ?? [] : null,
     customRole: custom?.name,
     designation: designation?.title,

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Link from 'next/link'
 import { AlertTriangle, Check, CheckCircle2, Crosshair, Loader2, MapPin, Phone, Send } from 'lucide-react'
 import { api } from '@/components/client/api'
-import { AddressSearchInput, PinPicker, reverseGeocode } from '@/components/client/maps'
+import { AddressSearchInput, PinPicker, reportUsage, reverseGeocode } from '@/components/client/maps'
 import { btnClass, telUrl } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { useLang, type Lang } from './i18n'
@@ -28,13 +28,14 @@ const legacySlot = (s: string, lang: Lang) => {
 }
 
 const input = 'hc-input hc-input-lg !text-[16px]'
+export type BookingPrefill = Partial<Pick<typeof blank, 'name' | 'phone' | 'ageYears' | 'gender' | 'email' | 'house' | 'flat' | 'road' | 'area' | 'landmark' | 'lat' | 'lng'>>
 const blank = { name: '', phone: '', ageYears: '', gender: '' as '' | 'M' | 'F' | 'O', email: '', house: '', flat: '', road: '', area: '', landmark: '', lat: null as number | null, lng: null as number | null, serviceCodes: [] as string[], date: '', slot: '', notes: '', website: '' }
 
-export function BookingForm({ services, zones, booking, legacySlots, hotline, hours }: { services: Service[]; zones: string[]; booking: { enabled: boolean; days: BookingDay[] }; legacySlots: string[]; hotline: string; hours: string }) {
+export function BookingForm({ services, zones, booking, legacySlots, hotline, hours, prefill, signedIn }: { services: Service[]; zones: string[]; booking: { enabled: boolean; days: BookingDay[] }; legacySlots: string[]; hotline: string; hours: string; prefill?: BookingPrefill; signedIn?: boolean }) {
   const { t, lang } = useLang()
   const [days, setDays] = useState<BookingDay[]>(booking.days)
   const firstOpen = (list: BookingDay[]) => list.find((d) => d.slots.some((s) => s.state === 'open'))?.date ?? list[0]?.date ?? dhakaDay(0)
-  const [f, setF] = useState(() => ({ ...blank, date: booking.enabled ? firstOpen(booking.days) : dhakaDay(0) }))
+  const [f, setF] = useState(() => ({ ...blank, ...prefill, date: booking.enabled ? firstOpen(booking.days) : dhakaDay(0) }))
   const [errors, setErrors] = useState<Errors>({})
   const [formErr, setFormErr] = useState('')
   const [busy, setBusy] = useState(false)
@@ -97,6 +98,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
     setLocating(true)
     navigator.geolocation.getCurrentPosition(
       async (p) => {
+        reportUsage('device', 'gps')
         const lat = Math.round(p.coords.latitude * 1e6) / 1e6
         const lng = Math.round(p.coords.longitude * 1e6) / 1e6
         const place = await reverseGeocode(lat, lng)
@@ -190,10 +192,16 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
           {f.email && ` ${t.emailed}`}
         </p>
         <div className="mt-5 grid gap-2.5 sm:grid-cols-2">
-          <a href={telUrl(hotline)} className={btnClass('o', 'xl', 'w-full')}>
-            <Phone size={18} /> {t.call} {hotline}
-          </a>
-          <button type="button" onClick={() => (setF({ ...blank, date: booking.enabled ? firstOpen(days) : dhakaDay(0) }), setAuto([]), setSource({ kind: 'typed' }), setDone(null), refresh())} className={btnClass('p', 'xl', 'w-full')}>
+          {signedIn ? (
+            <Link href="/my" className={btnClass('o', 'xl', 'w-full')}>
+              {t.ctaMy}
+            </Link>
+          ) : (
+            <a href={telUrl(hotline)} className={btnClass('o', 'xl', 'w-full')}>
+              <Phone size={18} /> {t.call} {hotline}
+            </a>
+          )}
+          <button type="button" onClick={() => (setF({ ...blank, ...prefill, date: booking.enabled ? firstOpen(days) : dhakaDay(0) }), setAuto([]), setSource({ kind: 'typed' }), setDone(null), refresh())} className={btnClass('p', 'xl', 'w-full')}>
             {t.another}
           </button>
         </div>

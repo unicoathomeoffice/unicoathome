@@ -1,6 +1,6 @@
 import { route, body, clientMeta, qp } from '@/lib/api'
 import { HomecareRequest } from '@/lib/models'
-import { can, STATUSES } from '@/lib/constants'
+import { can, STATUSES, hasRole } from '@/lib/constants'
 import { createRequest, CreateRequestInput, withPeople, slaInfo } from '@/lib/services/requests'
 import { dayRange } from '@/lib/format'
 import { getSettings } from '@/lib/settings'
@@ -26,7 +26,7 @@ export const GET = route(async ({ req, user }) => {
   }
   if (!can(user, 'requests.readAll') || p.get('mine') === '1') {
     const mine = [{ 'assignment.primaryStaffId': user.id }, { 'assignment.secondaryStaffIds': user.id }, { createdBy: user.id }, { 'transport.driverId': user.id }]
-    f.$and = [...(f.$and ?? []), { $or: user.role === 'TRANSPORT_SUPERVISOR' && p.get('mine') !== '1' ? [...mine, { 'transport.needed': true }] : mine }]
+    f.$and = [...(f.$and ?? []), { $or: hasRole(user, 'TRANSPORT_SUPERVISOR') && p.get('mine') !== '1' ? [...mine, { 'transport.needed': true }] : mine }]
   }
   const limit = Math.min(Number(p.get('limit') ?? 200), 500)
   const rows = await HomecareRequest.find(f)

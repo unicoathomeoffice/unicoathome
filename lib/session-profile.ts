@@ -8,7 +8,7 @@ export async function sessionProfile(userId: string) {
   const [user] = await User.aggregate([
     { $match: { _id: new Types.ObjectId(userId) } },
     { $project: {
-      employeeId: 1, name: 1, role: 1, status: 1, deletedAt: 1,
+      employeeId: 1, name: 1, role: 1, roles: 1, status: 1, deletedAt: 1,
       phone: 1, email: 1, platformAccess: 1, availability: 1,
       zones: 1, skills: 1, photoUrl: 1, designationId: 1, customRoleId: 1,
     } },

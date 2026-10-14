@@ -1,31 +1,39 @@
 import { NextResponse, type NextRequest } from 'next/server'
+import { db } from '@/lib/db'
+import { getSettings } from '@/lib/settings'
+import { googleBudget } from '@/lib/maps-usage'
 
-// Is Google Maps usable right now (key valid, APIs enabled, billing active)? Google's JS map shows its own
-// "can't load Google Maps" dialog instead of failing detectably, so pages ask here first and use OpenStreetMap
-// otherwise. One tiny Places call per instance every 6 h; the CDN caches the answer too.
-let cached: { at: number; google: boolean } | null = null
+// May this page use Google Maps right now? Combines: admin switch, key present, today's / this month's
+// budget (Settings → Maps & API usage) and a cached probe that the key actually works (billing active).
+// Google's JS map shows its own "can't load" dialog instead of failing detectably, so pages ask here first
+// and use OpenStreetMap otherwise. The probe is one tiny Places call per instance every 6 h.
+let probe: { at: number; ok: boolean } | null = null
 const TTL = 6 * 3600_000
 
 export async function GET(req: NextRequest) {
-  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
-  if (!key) return reply(false)
-  if (!cached || Date.now() - cached.at > TTL) {
-    let google = false
-    try {
-      const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
-        method: 'POST',
-        cache: 'no-store',
-        signal: AbortSignal.timeout(8000),
-        headers: { 'content-type': 'application/json', 'x-goog-api-key': key, referer: `${req.nextUrl.origin}/` }, // the key is restricted to this site
-        body: JSON.stringify({ input: 'Dhaka', includedRegionCodes: ['bd'] }),
-      })
-      google = res.ok
-    } catch {
-      google = false
+  await db()
+  const s = await getSettings()
+  const budget = await googleBudget(s.maps)
+  let reason: string = budget.reason
+  let google = budget.allowed
+  if (google) {
+    if (!probe || Date.now() - probe.at > TTL) {
+      let ok = false
+      try {
+        const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+          method: 'POST',
+          cache: 'no-store',
+          signal: AbortSignal.timeout(8000),
+          headers: { 'content-type': 'application/json', 'x-goog-api-key': process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!, referer: `${req.nextUrl.origin}/` },
+          body: JSON.stringify({ input: 'Dhaka', includedRegionCodes: ['bd'] }),
+        })
+        ok = res.ok
+      } catch {
+        ok = false
+      }
+      probe = { at: Date.now(), ok }
     }
-    cached = { at: Date.now(), google }
+    if (!probe.ok) (google = false), (reason = 'billing')
   }
-  return reply(cached.google)
+  return NextResponse.json({ google, reason, remainingToday: budget.remainingToday, dailyCap: budget.dailyCap }, { headers: { 'cache-control': 'private, max-age=120' } })
 }
-
-const reply = (google: boolean) => NextResponse.json({ google }, { headers: { 'cache-control': 'public, max-age=600, s-maxage=21600, stale-while-revalidate=86400' } })

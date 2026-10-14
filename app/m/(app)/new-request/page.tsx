@@ -4,7 +4,7 @@ import { requireAppUser } from '@/lib/auth'
 import { db, plain } from '@/lib/db'
 import { HomecareRequest, Patient, ServiceType, isOid } from '@/lib/models'
 import { canView } from '@/lib/services/requests'
-import { can, DESK_ROLES, FIELD_ROLES, ROLE_LABEL } from '@/lib/constants'
+import { can, DESK_ROLES, FIELD_ROLES, ROLE_LABEL, hasAnyRole } from '@/lib/constants'
 import { dhakaParts } from '@/components/coord/data'
 
 export const metadata = { title: 'New request' }
@@ -40,7 +40,7 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
           employeeId: user.employeeId,
           roleLabel: ROLE_LABEL[user.role],
           isDesk,
-          isField: FIELD_ROLES.includes(user.role),
+          isField: hasAnyRole(user, FIELD_ROLES),
           canConfirm: can(user, 'requests.manage'),
         }}
         services={plain(services)}

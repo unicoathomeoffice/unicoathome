@@ -61,20 +61,31 @@ export const PERMISSIONS = {
 } as const satisfies Record<string, readonly Role[]>
 export type Permission = keyof typeof PERMISSIONS
 
-/** Something that holds permissions: a role code, or a signed-in user (whose custom role, if any, overrides the base role). */
-export type Actor = Role | string | undefined | null | { role: string; permissions?: string[] | null }
+/**
+ * Something that holds permissions: a role code, or a signed-in user. A user may hold several roles
+ * (`roles` = primary role + "also acts as" roles, e.g. a nurse who is also a coordinator) and an optional
+ * custom role whose permission list replaces the role matrix entirely.
+ */
+export type Actor = Role | string | undefined | null | { role: string; roles?: string[] | null; permissions?: string[] | null }
+
+/** Every role the actor holds (primary first). */
+export function rolesOf(who: Actor): string[] {
+  if (!who) return []
+  if (typeof who === 'string') return [who]
+  return [who.role, ...(who.roles ?? []).filter((r) => r !== who.role)]
+}
+export const hasRole = (who: Actor, role: Role | string) => rolesOf(who).includes(role)
+export const hasAnyRole = (who: Actor, roles: readonly (Role | string)[]) => rolesOf(who).some((r) => roles.includes(r))
 
 /**
- * Permission check. Pass the signed-in user (preferred) so a custom role (A2) is honoured;
+ * Permission check. Pass the signed-in user (preferred) so extra roles and a custom role (A2) are honoured;
  * passing a bare role code checks the fixed role matrix only.
  */
 export function can(who: Actor, perm: Permission): boolean {
   if (!who) return false
-  if (typeof who === 'object') {
-    if (Array.isArray(who.permissions)) return who.permissions.includes(perm)
-    who = who.role
-  }
-  return (PERMISSIONS[perm] as readonly string[]).includes(who)
+  if (typeof who === 'object' && Array.isArray(who.permissions)) return who.permissions.includes(perm)
+  const allowed = PERMISSIONS[perm] as readonly string[]
+  return rolesOf(who).some((r) => allowed.includes(r))
 }
 
 /** Every permission the actor holds — handed to client components (sidebar) that can't call can() on the session. */

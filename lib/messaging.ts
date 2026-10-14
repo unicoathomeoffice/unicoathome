@@ -181,7 +181,7 @@ export async function notifyRoles(roles: Role[], n: NotifyInput, exceptUserId?: 
   const { notificationRules } = await getSettings()
   roles = roles.filter((r) => ruleAllows(notificationRules, n.type, r, 'inapp'))
   if (!roles.length) return
-  const users = await User.find({ role: { $in: roles }, status: 'ACTIVE', deletedAt: null }).select('_id').lean<any[]>()
+  const users = await User.find({ $or: [{ role: { $in: roles } }, { roles: { $in: roles } }], status: 'ACTIVE', deletedAt: null }).select('_id').lean<any[]>()
   await notifyUsers(
     users.map((u) => u._id).filter((id) => String(id) !== exceptUserId),
     n,

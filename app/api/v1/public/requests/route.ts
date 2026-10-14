@@ -1,5 +1,6 @@
 import { publicRoute, body, clientMeta, ApiError } from '@/lib/api'
 import { createPublicRequest, PublicRequestInput } from '@/lib/services/public'
+import { getPatient } from '@/lib/patient-auth'
 
 // naive in-memory limiter per instance: 5 requests per IP per hour (the 2-hour duplicate guard covers repeats)
 const hits = new Map<string, number[]>()
@@ -13,5 +14,6 @@ export const POST = publicRoute(async ({ req }) => {
   const input = await body(req, PublicRequestInput)
   if (input.website) return { ok: true, requestNo: 'HC-RECEIVED', callWithinMin: 15 } // honeypot: pretend success to bots
   hits.set(meta.ip, [...recent, now])
-  return { ok: true, ...(await createPublicRequest(input, meta)) }
+  const patient = await getPatient()
+  return { ok: true, ...(await createPublicRequest(input, { ...meta, client: patient ? 'portal' : 'website' }, patient?.id)) }
 })

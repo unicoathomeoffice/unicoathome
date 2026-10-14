@@ -36,10 +36,11 @@ export const PATCH = route<{ id: string }>(
     const { forceSignOut, resetPassword, password, ...parsed } = await body(req, Patch)
     // zod 4 applies .default() inside .partial() — keep only keys the client actually sent
     const input = Object.fromEntries(Object.entries(parsed).filter(([k]) => k in sent)) as typeof parsed
-    const pick = (o: any) => ({ name: o.name, phone: o.phone, email: o.email, role: o.role, status: o.status, platformAccess: o.platformAccess, designationId: String(o.designationId ?? ''), customRoleId: String(o.customRoleId ?? ''), skills: o.skills, zones: o.zones, shift: o.shift, availability: o.availability })
+    const pick = (o: any) => ({ name: o.name, phone: o.phone, email: o.email, role: o.role, roles: o.roles, status: o.status, platformAccess: o.platformAccess, designationId: String(o.designationId ?? ''), customRoleId: String(o.customRoleId ?? ''), skills: o.skills, zones: o.zones, shift: o.shift, availability: o.availability })
     const before = pick(u.toObject())
     if (input.phone && input.phone !== u.phone && (await User.exists({ phone: input.phone, _id: { $ne: u._id } }))) throw bad('Phone already belongs to another user')
     for (const k of ['departmentId', 'designationId', 'vehicleId', 'supervisorId', 'email', 'customRoleId'] as const) if (k in input && !input[k]) (input as any)[k] = undefined
+    if (input.roles) input.roles = input.roles.filter((r) => r !== (input.role ?? u.role))
     u.set({ ...input, licenceExpiry: input.licenceExpiry ? new Date(input.licenceExpiry) : u.licenceExpiry })
     let temporaryPassword: string | undefined
     if (password) u.passwordHash = await hashPassword(password)
