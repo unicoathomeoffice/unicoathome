@@ -1,8 +1,8 @@
 'use client'
 // One address block for every form (public booking, patient profile, staff new-request web + app):
-// GPS with a strict accuracy rule, address search, house / flat, area, landmark, always-visible pin map.
+// GPS that keeps improving live, address search, house / flat, area, landmark, always-visible pin map.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, Crosshair, Loader2, MapPin } from 'lucide-react'
+import { Check, Crosshair, Loader2, MapPin, Square } from 'lucide-react'
 import { AddressSearchInput, PinPicker, reportUsage, reverseGeocode } from './maps'
 import { cx } from '@/lib/format'
 
@@ -13,6 +13,8 @@ export type AddressLabels = typeof EN
 const EN = {
   useLocation: 'Use my current location',
   locating: 'Finding your location…',
+  improving: 'Improving accuracy',
+  stop: 'Stop',
   located: 'Location added — tap to update',
   autoTag: 'Auto-filled',
   road: 'Road, block & area',
@@ -41,37 +43,21 @@ const EN = {
   eLocNone: 'This device does not share its location — type the address instead',
 }
 
-// strict accuracy rule: refine for up to 20 s; auto-fill text only when the fix is within 60 m; ignore fixes worse than 300 m
-const TARGET_M = 25
-const MAX_WAIT_MS = 20_000
-const FILL_MAX_M = 60
-const PIN_MAX_M = 300
+// Strict accuracy rules. The phone's first fix is often coarse (cell / Wi-Fi) and GPS sharpens over the next
+// 10–60 s, so we keep watching and move the pin every time a better fix arrives:
+const DONE_M = 12 // stop early once this good
+const FILL_MAX_M = 60 // auto-fill road / area / landmark only from fixes at least this good
+const PIN_MAX_M = 300 // never drop a pin from a fix worse than this
+const MAX_WATCH_MS = 60_000
+const FIRST_FIX_MS = 25_000 // give up if nothing usable by then
+const REGEOCODE_M = 25 // re-run address lookup when the position moved more than this
 
-/** Keep watching the GPS until a fix within TARGET_M arrives (or time runs out) and return the best one. */
-function bestFix(onUpdate: (acc: number) => void): Promise<GeolocationPosition> {
-  return new Promise((resolve, reject) => {
-    let best: GeolocationPosition | null = null
-    let lastErr: GeolocationPositionError | null = null
-    let id = 0
-    const finish = () => {
-      navigator.geolocation.clearWatch(id)
-      clearTimeout(timer)
-      best ? resolve(best) : reject(lastErr ?? new Error('no fix'))
-    }
-    const timer = setTimeout(finish, MAX_WAIT_MS)
-    id = navigator.geolocation.watchPosition(
-      (p) => {
-        if (!best || p.coords.accuracy < best.coords.accuracy) best = p
-        onUpdate(Math.round(best.coords.accuracy))
-        if (p.coords.accuracy <= TARGET_M) finish()
-      },
-      (e) => {
-        lastErr = e
-        if (e.code === 1 || !best) finish()
-      },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: MAX_WAIT_MS },
-    )
-  })
+const metres = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const R = 6371000
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(x))
 }
 
 export function AddressBlock({
@@ -85,7 +71,6 @@ export function AddressBlock({
   size = 'lg',
   mapHeight = 260,
   idPrefix = 'f',
-  requireHouse = true,
   children,
 }: {
   value: AddressValue
@@ -105,13 +90,18 @@ export function AddressBlock({
 }) {
   const [auto, setAuto] = useState<string[]>([])
   const [meta, setMetaState] = useState<AddressMeta>({ source: 'typed', autoFields: [] })
-  const [locating, setLocating] = useState<null | number>(null) // live accuracy while refining
+  const [tracking, setTracking] = useState<null | number>(null) // live accuracy while the GPS sharpens
   const [acc, setAcc] = useState<number | null>(null)
   const [locMsg, setLocMsg] = useState<{ tone: 'ok' | 'warn' | 'err'; text: string } | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const tried = useRef(false)
   const vRef = useRef(v)
   vRef.current = v
+  const autoRef = useRef(auto)
+  autoRef.current = auto
+  const watch = useRef<{ id: number; timers: number[] } | null>(null)
+  const best = useRef<{ lat: number; lng: number; acc: number } | null>(null)
+  const geocodedAt = useRef<{ lat: number; lng: number } | null>(null)
   const input = cx('hc-input', size === 'lg' && 'hc-input-lg !text-[16px]')
   const has = v.lat != null && v.lng != null
 
@@ -121,51 +111,87 @@ export function AddressBlock({
   }
   const set = (k: keyof AddressValue, val: AddressValue[keyof AddressValue]) => {
     onChange({ [k]: val })
-    if (auto.includes(k)) {
-      const next = auto.filter((x) => x !== k)
+    if (autoRef.current.includes(k)) {
+      const next = autoRef.current.filter((x) => x !== k)
       setAuto(next)
       setMeta({ ...meta, autoFields: next })
     }
   }
   const tag = (k: string) => (auto.includes(k) ? L.autoTag : undefined)
 
-  async function locate(silent = false) {
+  function stopTracking() {
+    if (!watch.current) return
+    navigator.geolocation.clearWatch(watch.current.id)
+    watch.current.timers.forEach(clearTimeout)
+    watch.current = null
+    setTracking(null)
+  }
+  useEffect(() => () => stopTracking(), [])
+
+  /** fill road / area / landmark from the position (only boxes that are empty or were auto-filled before) */
+  async function fillFrom(p: { lat: number; lng: number }) {
+    geocodedAt.current = p
+    const place = await reverseGeocode(p.lat, p.lng)
+    if (!place || !watch.current) return // user stopped meanwhile
+    const cur = vRef.current
+    const may = (k: keyof AddressValue) => !String(cur[k] ?? '').trim() || autoRef.current.includes(k)
+    const zone = place.area ? zones.find((z) => z.toLowerCase().includes(place.area.toLowerCase()) || place.area.toLowerCase().includes(z.toLowerCase())) : undefined
+    const patch: Partial<AddressValue> = {}
+    const filled: string[] = []
+    if (place.road && may('road')) (patch.road = place.road), filled.push('road')
+    if ((zone || place.area) && may('area')) (patch.area = zone || place.area), filled.push('area')
+    if (place.landmark && may('landmark')) (patch.landmark = place.landmark), filled.push('landmark')
+    if (Object.keys(patch).length) onChange(patch)
+    const next = [...new Set([...autoRef.current, ...filled])]
+    setAuto(next)
+    setMeta({ source: 'gps', accuracyM: best.current?.acc, autoFields: next })
+  }
+
+  /** Start (or restart) live tracking: every better fix moves the pin; stops at DONE_M, after MAX_WATCH_MS, or when the user takes over. */
+  function locate(silent = false) {
     if (!('geolocation' in navigator)) return silent ? undefined : setLocMsg({ tone: 'err', text: L.eLocNone })
-    setLocating(0)
+    stopTracking()
+    best.current = null
+    geocodedAt.current = null
     setLocMsg(null)
-    try {
-      const p = await bestFix((a) => setLocating(a))
-      reportUsage('device', 'gps')
-      const accuracy = Math.round(p.coords.accuracy)
-      setAcc(accuracy)
-      if (accuracy > PIN_MAX_M) {
-        setLocMsg({ tone: 'err', text: L.accBad })
+    setTracking(0)
+    const started = Date.now()
+    const finish = () => {
+      const b = best.current
+      stopTracking()
+      if (!b) {
+        if (!silent) setLocMsg({ tone: 'err', text: L.eLocFail })
         return
       }
-      const lat = Math.round(p.coords.latitude * 1e6) / 1e6
-      const lng = Math.round(p.coords.longitude * 1e6) / 1e6
-      const patch: Partial<AddressValue> = { lat, lng }
-      let filled: string[] = []
-      if (accuracy <= FILL_MAX_M) {
-        const place = await reverseGeocode(lat, lng)
-        const cur = vRef.current
-        const may = (k: keyof AddressValue) => !String(cur[k] ?? '').trim() || auto.includes(k)
-        const zone = place?.area ? zones.find((z) => z.toLowerCase().includes(place.area.toLowerCase()) || place.area.toLowerCase().includes(z.toLowerCase())) : undefined
-        if (place?.road && may('road')) (patch.road = place.road), filled.push('road')
-        if ((zone || place?.area) && may('area')) (patch.area = zone || place!.area), filled.push('area')
-        if (place?.landmark && may('landmark')) (patch.landmark = place.landmark), filled.push('landmark')
-        setLocMsg({ tone: 'ok', text: L.accGood(accuracy) })
-      } else setLocMsg({ tone: 'warn', text: L.accPoor(accuracy) })
-      onChange(patch)
-      filled = [...new Set([...auto, ...filled])]
-      setAuto(filled)
-      setMeta({ source: 'gps', accuracyM: accuracy, autoFields: filled })
-    } catch (e: any) {
-      if (silent) return
-      setLocMsg({ tone: 'err', text: e?.code === 1 ? L.eLocBlocked : L.eLocFail })
-    } finally {
-      setLocating(null)
+      setLocMsg(b.acc <= FILL_MAX_M ? { tone: 'ok', text: L.accGood(b.acc) } : b.acc <= PIN_MAX_M ? { tone: 'warn', text: L.accPoor(b.acc) } : { tone: 'err', text: L.accBad })
     }
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        const accuracy = Math.round(pos.coords.accuracy)
+        setTracking(accuracy)
+        if (best.current && accuracy >= best.current.acc) return // not better than what we have
+        const p = { lat: Math.round(pos.coords.latitude * 1e6) / 1e6, lng: Math.round(pos.coords.longitude * 1e6) / 1e6, acc: accuracy }
+        if (!best.current) reportUsage('device', 'gps')
+        best.current = p
+        setAcc(accuracy)
+        if (accuracy <= PIN_MAX_M) {
+          onChange({ lat: p.lat, lng: p.lng })
+          setMeta({ source: 'gps', accuracyM: accuracy, autoFields: autoRef.current })
+          if (accuracy <= FILL_MAX_M && (!geocodedAt.current || metres(geocodedAt.current, p) > REGEOCODE_M)) fillFrom(p)
+        }
+        if (accuracy <= DONE_M) finish()
+      },
+      (e) => {
+        if (e.code === 1) {
+          stopTracking()
+          if (!silent) setLocMsg({ tone: 'err', text: L.eLocBlocked })
+        } else if (!best.current && Date.now() - started > FIRST_FIX_MS) finish()
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: FIRST_FIX_MS },
+    )
+    const t1 = window.setTimeout(() => !best.current && finish(), FIRST_FIX_MS)
+    const t2 = window.setTimeout(finish, MAX_WATCH_MS)
+    watch.current = { id, timers: [t1, t2] }
   }
 
   // auto-detect once the block is on screen (phones/tablets only)
@@ -201,17 +227,25 @@ export function AddressBlock({
     )
   }
 
+  const gpsPinned = has && meta.source === 'gps'
   return (
     <div ref={root} className="flex flex-col gap-3.5">
-      <button
-        type="button"
-        onClick={() => locate()}
-        disabled={locating != null}
-        className={cx('flex w-full items-center justify-center gap-2 rounded-lg border-[1.5px] px-3 font-semibold', size === 'lg' ? 'h-[52px] text-[15px]' : 'h-10 text-[13.5px]', has && meta.source === 'gps' ? 'border-[#86EFAC] bg-[#F0FDF4] text-[#15803D]' : 'border-primary/40 bg-primary-50 text-primary-700')}
-      >
-        {locating != null ? <Loader2 size={18} className="animate-spin" /> : has && meta.source === 'gps' ? <Check size={18} /> : <Crosshair size={18} />}
-        {locating != null ? `${L.locating}${locating ? ` ±${locating} m` : ''}` : has && meta.source === 'gps' ? L.located : L.useLocation}
-      </button>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => locate()}
+          disabled={tracking != null}
+          className={cx('flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border-[1.5px] px-3 font-semibold', size === 'lg' ? 'h-[52px] text-[15px]' : 'h-10 text-[13.5px]', gpsPinned ? 'border-[#86EFAC] bg-[#F0FDF4] text-[#15803D]' : 'border-primary/40 bg-primary-50 text-primary-700')}
+        >
+          {tracking != null ? <Loader2 size={18} className="flex-none animate-spin" /> : gpsPinned ? <Check size={18} className="flex-none" /> : <Crosshair size={18} className="flex-none" />}
+          <span className="truncate">{tracking != null ? (best.current ? `${L.improving} · ±${tracking || best.current.acc} m` : L.locating) : gpsPinned ? L.located : L.useLocation}</span>
+        </button>
+        {tracking != null && (
+          <button type="button" onClick={() => (watch.current ? (best.current ? (stopTracking(), setLocMsg(best.current.acc <= FILL_MAX_M ? { tone: 'ok', text: L.accGood(best.current.acc) } : { tone: 'warn', text: L.accPoor(best.current.acc) })) : stopTracking()) : null)} className={cx('flex flex-none items-center gap-1.5 rounded-lg border-[1.5px] border-slate-300 px-3 font-semibold text-slate-600', size === 'lg' ? 'h-[52px] text-[14px]' : 'h-10 text-[13px]')}>
+            <Square size={14} /> {L.stop}
+          </button>
+        )}
+      </div>
       {locMsg && <div className={cx('rounded-lg px-3 py-2 text-[13px]', locMsg.tone === 'ok' ? 'bg-[#DCFCE7] text-[#15803D]' : locMsg.tone === 'warn' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#B91C1C]')}>{locMsg.text}</div>}
 
       <Field k="road" label={L.road} hint={L.roadHint}>
@@ -221,8 +255,9 @@ export function AddressBlock({
             value={v.road}
             onChange={(road) => set('road', road)}
             onPlace={(p) => {
+              stopTracking()
               onChange({ road: p.full, lat: p.lat, lng: p.lng })
-              const next = [...new Set([...auto, 'road'])]
+              const next = [...new Set([...autoRef.current, 'road'])]
               setAuto(next)
               setAcc(null)
               setLocMsg(null)
@@ -233,7 +268,7 @@ export function AddressBlock({
         </div>
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field k="house" label={requireHouse ? L.house : `${L.house}`}>
+        <Field k="house" label={L.house}>
           <input id={`${idPrefix}-house`} className={input} value={v.house} onChange={(e) => set('house', e.target.value)} placeholder={L.housePh} />
         </Field>
         <Field k="flat" label={L.flat}>
@@ -263,7 +298,10 @@ export function AddressBlock({
           lat={v.lat}
           lng={v.lng}
           accuracyM={meta.source === 'gps' ? acc : null}
+          hideLocate
           onChange={(p) => {
+            // the user took over (drag / tap / clear): stop following the GPS
+            stopTracking()
             onChange({ lat: p?.lat ?? null, lng: p?.lng ?? null })
             setAcc(null)
             setLocMsg(null)

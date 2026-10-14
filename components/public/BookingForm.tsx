@@ -254,6 +254,8 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
           labels={{
             useLocation: t.useLocation,
             locating: t.locating,
+            improving: t.improving,
+            stop: t.stop,
             located: t.located,
             autoTag: t.autoTag,
             road: t.road,

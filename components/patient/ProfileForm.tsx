@@ -119,7 +119,7 @@ export function ProfileForm({ initial, zones }: { initial: ProfileData; zones: s
           errors={errors}
           idPrefix="p"
           mapHeight={240}
-          labels={{ ...ADDRESS_LABELS_EN, useLocation: t.useLocation, locating: t.locating, located: t.located, autoTag: t.autoTag, road: t.road, roadHint: t.roadHint, roadPh: t.roadPh, house: t.house, housePh: t.housePh, flat: t.flat, flatPh: t.flatPh, area: t.area, areaPh: t.areaPh, landmark: t.landmark, landmarkPh: t.landmarkPh, onMap: t.onMap, mapHint: t.mapHint, pinTap: t.pinTap, pinNone: t.pinNone, pinSet: t.pinSet, myLocation: t.myLocation, clearPin: t.clearPin, accGood: t.accGood, accPoor: t.accPoor, accBad: t.accBad, eLocBlocked: t.eLocBlocked, eLocFail: t.eLocFail, eLocNone: t.eLocNone }}
+          labels={{ ...ADDRESS_LABELS_EN, useLocation: t.useLocation, locating: t.locating, improving: t.improving, stop: t.stop, located: t.located, autoTag: t.autoTag, road: t.road, roadHint: t.roadHint, roadPh: t.roadPh, house: t.house, housePh: t.housePh, flat: t.flat, flatPh: t.flatPh, area: t.area, areaPh: t.areaPh, landmark: t.landmark, landmarkPh: t.landmarkPh, onMap: t.onMap, mapHint: t.mapHint, pinTap: t.pinTap, pinNone: t.pinNone, pinSet: t.pinSet, myLocation: t.myLocation, clearPin: t.clearPin, accGood: t.accGood, accPoor: t.accPoor, accBad: t.accBad, eLocBlocked: t.eLocBlocked, eLocFail: t.eLocFail, eLocNone: t.eLocNone }}
         />
       </section>
 

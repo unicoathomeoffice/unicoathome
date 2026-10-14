@@ -320,7 +320,7 @@ async function leafletEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt
 type PinLabels = { tap: string; none: string; set: string; myLocation: string; clear: string }
 const PIN_EN: PinLabels = { tap: 'Tap the map to drop a pin', none: 'No pin yet — staff will navigate by address', set: 'Pinned', myLocation: 'My location', clear: 'Clear pin' }
 
-export function PinPicker({ lat, lng, onChange, height = 260, labels = PIN_EN, accuracyM = null }: { lat?: number | null; lng?: number | null; onChange: (p: Pt | null) => void; height?: number; labels?: PinLabels; /** GPS accuracy radius to draw around the pin */ accuracyM?: number | null }) {
+export function PinPicker({ lat, lng, onChange, height = 260, labels = PIN_EN, accuracyM = null, hideLocate = false }: { hideLocate?: boolean; lat?: number | null; lng?: number | null; onChange: (p: Pt | null) => void; height?: number; labels?: PinLabels; /** GPS accuracy radius to draw around the pin */ accuracyM?: number | null }) {
   const el = useRef<HTMLDivElement>(null)
   const engine = useRef<Engine | null>(null)
   const change = useRef(onChange)
@@ -390,9 +390,11 @@ export function PinPicker({ lat, lng, onChange, height = 260, labels = PIN_EN, a
           <MapPin size={14} /> {has ? `${labels.set} ${lat!.toFixed(5)}, ${lng!.toFixed(5)}` : labels.none}
         </span>
         <span className="flex-1" />
-        <button type="button" onClick={locate} disabled={locating} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 font-semibold text-slate-700 hover:bg-slate-50">
-          {locating ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />} {labels.myLocation}
-        </button>
+        {!hideLocate && (
+          <button type="button" onClick={locate} disabled={locating} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 font-semibold text-slate-700 hover:bg-slate-50">
+            {locating ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />} {labels.myLocation}
+          </button>
+        )}
         {has && (
           <button type="button" onClick={() => change.current(null)} className="inline-flex h-8 items-center gap-1 rounded-lg px-2 font-semibold text-slate-500 hover:text-[#B91C1C]">
             <X size={14} /> {labels.clear}
