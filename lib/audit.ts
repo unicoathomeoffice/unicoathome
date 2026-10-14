@@ -2,7 +2,7 @@ import 'server-only'
 import { AuditLog } from './models'
 import type { SessionUser } from './auth'
 
-type Meta = { ip?: string; userAgent?: string; client?: string }
+export type Meta = { ip?: string; userAgent?: string; client?: string }
 
 /** Append-only audit trail. Never update or delete audit rows. */
 export async function audit(

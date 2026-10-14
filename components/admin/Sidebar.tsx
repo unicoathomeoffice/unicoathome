@@ -31,6 +31,7 @@ const SETTINGS_SUB: { href: string; label: string; perm: Perm }[] = [
   { href: '/settings/roles', label: 'Roles & permissions', perm: 'users.manage' },
   { href: '/settings/fleet', label: 'Fleet & drivers', perm: 'transport.manage' },
   { href: '/settings/zones', label: 'Zones, slots & rules', perm: 'requests.manage' },
+  { href: '/settings/booking', label: 'Online booking', perm: 'requests.manage' },
   { href: '/settings/approvals', label: 'Approvals', perm: 'approvals.decide' },
   { href: '/settings/templates', label: 'Templates', perm: 'templates.manage' },
   { href: '/settings/notifications', label: 'Notification rules', perm: SETTINGS_HUB },

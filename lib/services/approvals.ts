@@ -4,7 +4,7 @@ import { Approval, HomecareRequest, User, Session, isOid } from '../models'
 import { APPROVAL_TYPES, ROLE_LABEL, can, type Role } from '../constants'
 import { bad, conflict, forbidden, notFound } from '../api'
 import { audit } from '../audit'
-import { notifyRoles, notifyUsers } from '../messaging'
+import { background, notifyRoles, notifyUsers, queueEmail, renderTemplate } from '../messaging'
 import { cancel, decidePettyCash, reschedule } from './requests'
 import type { SessionUser } from '../auth'
 
@@ -107,6 +107,7 @@ export async function decideApproval(id: string, input: DecideInput, user: Sessi
       await u.save()
       if (!approve) await Session.updateMany({ userId: u._id, revokedAt: null }, { revokedAt: new Date() })
       await audit(user, approve ? 'user.active' : 'user.suspended', 'user', u._id, { before: { status: before }, after: { status: u.status }, label: u.name }, meta)
+      if (approve && before === 'PENDING') background(() => emailStaffApproved(u))
       if (approve) followUp = `/staff?q=${encodeURIComponent(u.employeeId)}`
       break
     }
@@ -179,6 +180,19 @@ export async function decideApproval(id: string, input: DecideInput, user: Sessi
     })
   }
   return { ok: true, status: a.status as string, followUp }
+}
+
+/** "Your account is approved" email with the right sign-in link (web or field app). */
+export async function emailStaffApproved(u: any) {
+  if (!u.email) return
+  const base = (process.env.APP_BASE_URL ?? '').replace(/\/$/, '')
+  const t = await renderTemplate('staff_approved', { staffName: u.name, designation: ROLE_LABEL[u.role as Role] ?? u.role, loginLink: `${base}${u.platformAccess?.includes('web') ? '/login' : '/m/login'}` })
+  if (t.active) await queueEmail({ to: u.email, toName: u.name, subject: t.subject, text: t.text, templateKey: 'staff_approved', cta: { label: 'Sign in', url: `${base}${u.platformAccess?.includes('web') ? '/login' : '/m/login'}` } })
+}
+
+/** Keep the Approvals queue in step when an admin activates / suspends a pending user straight from Staff. */
+export async function settleNewUserApproval(userId: unknown, approved: boolean, user: SessionUser) {
+  await Approval.updateMany({ type: 'NEW_USER', userId, status: 'PENDING' }, { status: approved ? 'APPROVED' : 'REJECTED', decidedBy: user.id, decidedAt: new Date(), decisionNote: 'Decided in Staff & users' })
 }
 
 export function describeRole(role?: string) {

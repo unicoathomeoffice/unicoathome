@@ -1,7 +1,7 @@
-// Maps, free by default. No key needed: pin picker = OpenStreetMap (Leaflet), address search = Photon (OSM),
-// map previews = keyless Google embed. Optional upgrade: set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY (a Google Cloud browser
-// key restricted to this site and to Maps Embed API (free, unlimited), Maps JavaScript API and Places API (New),
-// 10,000 free calls a month each) and search, pin picker and the route map switch to Google.
+// Maps, free by default. Previews and routes = keyless Google embeds (no billing). Pin picker = OpenStreetMap
+// (Leaflet), address search = Photon (OSM). Optional: NEXT_PUBLIC_GOOGLE_MAPS_API_KEY (browser key for Maps JavaScript
+// API + Places API (New), 10,000 free calls/month each) switches search and the pin picker to Google — and they fall
+// back to OpenStreetMap automatically whenever Google refuses (e.g. billing not active).
 
 export const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? ''
 
@@ -11,18 +11,22 @@ export const DHAKA = { lat: 23.8103, lng: 90.4125 }
 export type Place = { lat?: number | null; lng?: number | null; address?: string | null }
 const hasPoint = (p: Place) => p.lat != null && p.lng != null
 
-/** URL for an <iframe> map of one place (pin on coordinates when known, else the address). */
-export function embedUrl(p: Place, zoom = 16) {
-  const q = hasPoint(p) ? `${p.lat},${p.lng}` : `${p.address ?? ''}, Dhaka, Bangladesh`
-  return MAPS_KEY
-    ? `https://www.google.com/maps/embed/v1/place?key=${MAPS_KEY}&q=${encodeURIComponent(q)}&zoom=${zoom}`
-    : `https://maps.google.com/maps?q=${encodeURIComponent(q)}&z=${zoom}&output=embed`
+/** Google Maps turn-by-turn directions to a place (opens the app on phones). */
+export function directionsUrl(p: Place) {
+  const d = hasPoint(p) ? `${p.lat},${p.lng}` : `${p.address ?? ''}, Dhaka`
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(d)}&travelmode=driving`
 }
 
-/** Embedded driving route through several stops (needs the key — returns null without one). */
+/** URL for an <iframe> map of one place (pin on coordinates when known, else the address). Keyless Google embed:
+ *  free and needs no billing, so previews keep working whatever state the Google Cloud project is in. */
+export function embedUrl(p: Place, zoom = 16) {
+  const q = hasPoint(p) ? `${p.lat},${p.lng}` : `${p.address ?? ''}, Dhaka, Bangladesh`
+  return `https://maps.google.com/maps?q=${encodeURIComponent(q)}&z=${zoom}&output=embed`
+}
+
+/** Embedded driving route through several stops (keyless Google embed, up to ~20 stops). */
 export function embedRouteUrl(stops: Place[]) {
-  if (!MAPS_KEY || stops.length < 2) return null
-  const s = stops.map((p) => (hasPoint(p) ? `${p.lat},${p.lng}` : `${p.address ?? ''}, Dhaka`))
-  const mid = s.slice(1, -1).slice(0, 20).map(encodeURIComponent).join('|')
-  return `https://www.google.com/maps/embed/v1/directions?key=${MAPS_KEY}&mode=driving&origin=${encodeURIComponent(s[0])}&destination=${encodeURIComponent(s[s.length - 1])}${mid ? `&waypoints=${mid}` : ''}`
+  if (stops.length < 2) return null
+  const s = stops.slice(0, 20).map((p) => encodeURIComponent(hasPoint(p) ? `${p.lat},${p.lng}` : `${p.address ?? ''}, Dhaka`))
+  return `https://maps.google.com/maps?saddr=${s[0]}&daddr=${s.slice(1).join('+to:')}&dirflg=d&output=embed`
 }

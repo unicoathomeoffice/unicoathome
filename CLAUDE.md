@@ -7,7 +7,7 @@ web admin (coordinators, front desk, admins), a phone-first field app under `/m`
 
 - **Spec**: `ui/design/uploads/UNICO_HOME_CARE_MODULE_PLAN.md` (lifecycle, roles, data model, SLAs).
 - **Designs**: `ui/design/*.dc.html` — static HTML mockups with inline styles; each screen is a `<div data-screen-label="W04">` (web 1440×900) or `M05` (mobile 390×844). Section labels (`1a`, `2c`…) describe each screen. Port layout, spacing, colours and copy faithfully, but wire them to real data.
-- **English only.** Ignore every Bangla (BN) field, label, font or language toggle in the spec/designs.
+- **English only** for all staff screens, templates and data fields. Ignore every Bangla (BN) field, label, font or language toggle in the spec/designs. Exception: the public patient booking page `/` is bilingual EN | বাংলা (components/public/i18n.tsx).
 
 ## Commands
 - `npm run dev` · `npm run build` · `npm run typecheck` (must pass) · `npm run seed -- --reset` (wipes + reseeds demo data)

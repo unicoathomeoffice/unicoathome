@@ -30,6 +30,9 @@ export const DESK_ROLES: Role[] = ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK']
 export const FIELD_ROLES: Role[] = ['DOCTOR', 'NURSE', 'ALLIED']
 export const WEB_DEFAULT_ROLES: Role[] = ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER']
 
+/** Roles a person may ask for on the Google sign-up page (/join) — the admin can change it when approving. Never SUPER_ADMIN. */
+export const SIGNUP_ROLES = ['DOCTOR', 'NURSE', 'ALLIED', 'FRONT_DESK', 'HC_ADMIN', 'DRIVER', 'TRANSPORT_SUPERVISOR', 'VIEWER'] as const satisfies readonly Role[]
+
 export function defaultPlatformAccess(role: Role): ('web' | 'app')[] {
   if (role === 'VIEWER') return ['web']
   return WEB_DEFAULT_ROLES.includes(role) ? ['web', 'app'] : ['app']

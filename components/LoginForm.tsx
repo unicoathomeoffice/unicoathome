@@ -5,9 +5,12 @@ import { AlertTriangle, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { api } from '@/components/client/api'
 import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
+import { GoogleButton } from '@/components/GoogleButton'
 
 export function LoginForm({ client }: { client: 'web' | 'app' }) {
-  const next = useSearchParams().get('next')
+  const params = useSearchParams()
+  const next = params.get('next')
+  const googleError = params.get('error') // set by the Google sign-in callback
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
@@ -32,6 +35,19 @@ export function LoginForm({ client }: { client: 'web' | 'app' }) {
 
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
+      {googleError && !err && (
+        <div role="alert" className="flex items-start gap-2 rounded-lg bg-[#FEE2E2] px-3.5 py-3 text-[13px] text-[#B91C1C]">
+          <AlertTriangle size={16} className="mt-px flex-none" />
+          <div>
+            {googleError}
+            {/register at \/join/i.test(googleError) && (
+              <a href="/join" className="mt-1 block font-semibold underline">
+                Register with Google →
+              </a>
+            )}
+          </div>
+        </div>
+      )}
       {err && (
         <div className="flex items-start gap-2 rounded-lg bg-[#FEE2E2] px-3.5 py-3 text-[13px] text-[#B91C1C]">
           <AlertTriangle size={16} className="mt-px flex-none" />
@@ -72,6 +88,16 @@ export function LoginForm({ client }: { client: 'web' | 'app' }) {
         {busy && <Loader2 size={18} className="animate-spin" />}
         Sign in
       </button>
+      <div className="flex items-center gap-3 text-[12px] font-semibold uppercase tracking-[.06em] text-slate-400">
+        <span className="h-px flex-1 bg-slate-200" /> or <span className="h-px flex-1 bg-slate-200" />
+      </div>
+      <GoogleButton intent="login" client={client} big={big} />
+      <div className="text-center text-[13px] text-slate-500">
+        New staff?{' '}
+        <a href="/join" className="font-semibold text-primary">
+          Register with Google
+        </a>
+      </div>
     </form>
   )
 }

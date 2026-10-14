@@ -5,6 +5,8 @@ import { hashPassword } from '@/lib/auth'
 import { audit, diff } from '@/lib/audit'
 import { plain } from '@/lib/db'
 import { UserInput } from '@/lib/schemas'
+import { emailStaffApproved, settleNewUserApproval } from '@/lib/services/approvals'
+import { background } from '@/lib/messaging'
 
 export const GET = route<{ id: string }>(
   async ({ params }) => {
@@ -48,6 +50,10 @@ export const PATCH = route<{ id: string }>(
     }
     await u.save()
     if (input.role === 'DRIVER' && input.vehicleId) await Vehicle.updateOne({ _id: input.vehicleId }, { driverId: u._id })
+    if (before.status === 'PENDING' && input.status && input.status !== 'PENDING') {
+      await settleNewUserApproval(u._id, input.status === 'ACTIVE', user)
+      if (input.status === 'ACTIVE') background(() => emailStaffApproved(u))
+    }
     if (forceSignOut || input.status === 'SUSPENDED' || resetPassword) await Session.updateMany({ userId: u._id, revokedAt: null }, { revokedAt: new Date() })
     await audit(user, input.status && input.status !== before.status ? `user.${input.status.toLowerCase()}` : 'user.update', 'user', u._id, { ...diff(before, pick(u.toObject())), label: u.name }, clientMeta(req, user))
     if (forceSignOut) await audit(user, 'user.force_sign_out', 'user', u._id, { label: u.name }, clientMeta(req, user))

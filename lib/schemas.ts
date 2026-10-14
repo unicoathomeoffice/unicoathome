@@ -11,7 +11,7 @@ export const PatientInput = z.object({
   ageYears: z.coerce.number().int().min(0).max(120).optional(),
   dob: z.string().optional(),
   bloodGroup: z.string().optional(),
-  address: z.object({ area: z.string().optional(), thana: z.string().optional(), full: z.string().min(3), landmark: z.string().optional(), lat: z.number().nullable().optional(), lng: z.number().nullable().optional() }), // null clears the map pin
+  address: z.object({ area: z.string().optional(), thana: z.string().optional(), full: z.string().min(3), house: z.string().max(60).optional(), flat: z.string().max(60).optional(), landmark: z.string().optional(), lat: z.number().nullable().optional(), lng: z.number().nullable().optional() }), // null clears the map pin
   guardian: z.object({ name: z.string().optional(), relation: z.string().optional(), phone: z.string().optional() }).optional(),
   allergies: z.array(z.string()).optional(),
   conditions: z.array(z.string()).optional(),

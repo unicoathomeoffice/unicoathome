@@ -7,7 +7,7 @@ import { plain } from '@/lib/db'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { Avatar, Empty, Table, Tag, Tr } from '@/components/ui'
 import { FilterSelect, SearchBox } from '@/components/people/filters'
-import { AddUserButton, ImportCsvButton, UserOpenButton, UserRowMenu } from '@/components/people/StaffClient'
+import { AddUserButton, ImportCsvButton, UserOpenButton, UserRowMenu, SignupLinkButton } from '@/components/people/StaffClient'
 import type { StaffOptions, StaffUser } from '@/components/people/UserDrawer'
 import { cx, dayNum, phone as fmtPhone, relDay, time } from '@/lib/format'
 
@@ -74,6 +74,7 @@ export default async function StaffPage({ searchParams }: { searchParams: SP }) 
       title="Staff & users"
       actions={
         <div className="hidden items-center gap-2 md:flex">
+          {canManage && <SignupLinkButton />}
           <ImportCsvButton options={options} canManage={canManage} />
           <AddUserButton options={options} canManage={canManage} />
         </div>
@@ -87,6 +88,7 @@ export default async function StaffPage({ searchParams }: { searchParams: SP }) 
         <FilterSelect label="Availability" param="availability" options={AVAILABILITY.map((a) => ({ value: a, label: AVAILABILITY_LABEL[a] }))} />
         <div className="flex-1" />
         <div className="flex items-center gap-2 md:hidden">
+          {canManage && <SignupLinkButton />}
           <ImportCsvButton options={options} canManage={canManage} />
           <AddUserButton options={options} canManage={canManage} />
         </div>

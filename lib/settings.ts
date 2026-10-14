@@ -13,6 +13,21 @@ export const DEFAULT_SETTINGS = {
     workingHours: { from: '08:00', to: '20:00' },
     slots: [...SLOTS] as string[],
   },
+  /** Public online booking (home page): slot grid, capacity and closures — managed in Settings → Online booking */
+  booking: {
+    enabled: true,
+    from: '09:00',
+    to: '17:00',
+    slotMin: 60, // visit slot length
+    bufferMin: 0, // travel / gap after each slot
+    capacity: 1, // visits that can run in the same slot (teams)
+    leadMin: 120, // minimum notice before a slot starts
+    daysAhead: 14,
+    closedWeekdays: [] as number[], // 0 = Sunday … 6 = Saturday
+    closedDates: [] as string[], // YYYY-MM-DD holidays
+    blocked: [] as string[], // 'YYYY-MM-DD HH:MM' slots blocked by hand
+    holdNew: false, // unconfirmed (new) requests also occupy their slot
+  },
   sla: {
     confirmRoutineMin: 15,
     confirmUrgentMin: 5,

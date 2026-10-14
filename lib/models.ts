@@ -126,7 +126,7 @@ const PatientSchema = new Schema<any>(
     dob: Date,
     ageYears: Number,
     bloodGroup: String,
-    address: { area: String, thana: String, district: { type: String, default: 'Dhaka' }, full: String, landmark: String, lat: Number, lng: Number },
+    address: { area: String, thana: String, district: { type: String, default: 'Dhaka' }, full: String, house: String, flat: String, landmark: String, lat: Number, lng: Number },
     addressHistory: [{ _id: false, full: String, area: String, from: Date, to: Date }],
     guardian: { name: String, relation: String, phone: String },
     allergies: [String],
@@ -273,6 +273,8 @@ const RequestSchema = new Schema<any>(
     feedback: { rating: Number, comment: String, at: Date },
     carePlanId: { type: ObjectId, ref: 'CarePlan' },
     source: { type: String, enum: REQUEST_SOURCES, default: 'PHONE' },
+    // public booking form: how the address/location was given (GPS, map search, hand-placed pin or typed)
+    intake: { _id: false, locationSource: { type: String, enum: ['gps', 'search', 'pin', 'typed'] }, accuracyM: Number, autoFields: [String] },
     remarks: String,
     createdBy: { type: ObjectId, ref: 'User' },
     version: { type: Number, default: 0 },

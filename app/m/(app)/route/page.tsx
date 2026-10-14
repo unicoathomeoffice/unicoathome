@@ -3,7 +3,7 @@ import { Navigation, Route as RouteIcon } from 'lucide-react'
 import { MScreen } from '@/components/mobile'
 import { AutoRefresh } from '@/components/client'
 import { StatusChip, Chips, Empty, MapEmbed, MapPin, mapsUrl } from '@/components/ui'
-import { MAPS_KEY, embedRouteUrl } from '@/lib/maps'
+import { embedRouteUrl } from '@/lib/maps'
 import { shortName } from '@/components/coord/ui'
 import { pointOf, roadKm, driveMin, project, directionsUrl } from '@/components/transport/geo'
 import { requireAppUser } from '@/lib/auth'
@@ -53,10 +53,10 @@ export default async function DayRoute({ searchParams }: { searchParams: Promise
   const open = stops.filter((s) => !DONE.includes(s.r.status))
   // travel lines only make sense for one person's route
   const single = !admin || !!staffFilter
-  // real Google route through the remaining stops (free Embed API) when a key is configured
+  // real Google route through the remaining stops (keyless embed)
   const openPts = open.map((s) => ({ address: s.r.patientSnapshot?.address, lat: s.lat, lng: s.lng }))
   const routeSrc = single ? embedRouteUrl(openPts) : null
-  const oneStop = single && MAPS_KEY && openPts.length === 1 ? openPts[0] : null
+  const oneStop = single && openPts.length === 1 ? openPts[0] : null
 
   return (
     <MScreen

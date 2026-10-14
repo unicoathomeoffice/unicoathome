@@ -11,6 +11,30 @@ import { cx } from '@/lib/format'
 const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID' // Google advanced markers need a map id
 const BD_BBOX = '88.0,20.5,92.7,26.7' // Bangladesh, for Photon
 
+// Google is used only while it works: any refusal (key, billing, quota) switches this page to OpenStreetMap.
+let googleOff = !MAPS_KEY
+const FALLBACK_EVENT = 'hc:maps-fallback'
+function dropGoogle() {
+  if (googleOff) return
+  googleOff = true
+  window.dispatchEvent(new Event(FALLBACK_EVENT))
+}
+
+/** Ask the server (cached) whether Google actually works before touching it; false → OpenStreetMap. */
+let status: Promise<boolean> | null = null
+export function googleUsable(): Promise<boolean> {
+  if (googleOff) return Promise.resolve(false)
+  status ??= fetch('/api/v1/public/maps-status')
+    .then((r) => r.json())
+    .then((j) => !!j.google)
+    .catch(() => false)
+    .then((ok) => {
+      if (!ok) googleOff = true
+      return ok
+    })
+  return status
+}
+
 let loading: Promise<any> | null = null
 /** Load the Google Maps JS API once per page. Rejects when no key is configured or the key is refused. */
 export function loadGoogleMaps(): Promise<any> {
@@ -19,7 +43,10 @@ export function loadGoogleMaps(): Promise<any> {
   if (w.google?.maps?.importLibrary) return Promise.resolve(w.google.maps)
   loading ??= new Promise((resolve, reject) => {
     w.__hcMapsReady = () => resolve(w.google.maps)
-    w.gm_authFailure = () => reject(new Error('Google Maps key was refused — check its restrictions'))
+    w.gm_authFailure = () => {
+      dropGoogle()
+      reject(new Error('Google Maps key was refused'))
+    }
     const s = document.createElement('script')
     s.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}&v=weekly&loading=async&language=en&region=BD&callback=__hcMapsReady`
     s.async = true
@@ -88,6 +115,7 @@ export function AddressSearchInput({ value, onChange, onPlace, className, placeh
   const [busy, setBusy] = useState(false)
   const [active, setActive] = useState(-1)
   const typed = useRef(false) // only search on keystrokes, never on programmatic value changes
+  const [provider, setProvider] = useState<'google' | 'osm'>('osm')
 
   useEffect(() => {
     if (!typed.current || value.trim().length < 3) {
@@ -97,7 +125,16 @@ export function AddressSearchInput({ value, onChange, onPlace, className, placeh
     const ctrl = new AbortController()
     const t = setTimeout(async () => {
       try {
-        const found = MAPS_KEY ? await googleSuggest(value) : await photonSuggest(value, ctrl.signal)
+        let found: Suggestion[]
+        if (!(await googleUsable())) found = await photonSuggest(value, ctrl.signal)
+        else
+          try {
+            found = await googleSuggest(value)
+          } catch {
+            dropGoogle()
+            found = await photonSuggest(value, ctrl.signal)
+          }
+        setProvider(googleOff ? 'osm' : 'google')
         if (ctrl.signal.aborted) return
         setItems(found)
         setActive(-1)
@@ -166,11 +203,32 @@ export function AddressSearchInput({ value, onChange, onPlace, className, placeh
               </span>
             </button>
           ))}
-          <div className="border-t border-slate-100 px-3 py-1 text-right text-[10.5px] text-slate-400">{MAPS_KEY ? 'powered by Google' : 'Search © OpenStreetMap contributors · Photon'}</div>
+          <div className="border-t border-slate-100 px-3 py-1 text-right text-[10.5px] text-slate-400">{provider === 'google' ? 'powered by Google' : 'Search © OpenStreetMap contributors · Photon'}</div>
         </div>
       )}
     </div>
   )
+}
+
+/** GPS point → readable address parts (Photon / OpenStreetMap, free). Null when nothing useful is found.
+ *  landmark = the nearest named place (a shop, hospital, school…), road = street + area, area = neighbourhood. */
+export async function reverseGeocode(lat: number, lng: number): Promise<{ road: string; area: string; landmark: string; full: string } | null> {
+  try {
+    const res = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=en&limit=1`)
+    if (!res.ok) return null
+    const p = (await res.json()).features?.[0]?.properties
+    if (!p) return null
+    const isStreet = p.osm_key === 'highway' || p.type === 'street'
+    const street = [p.housenumber, p.street ?? (isStreet ? p.name : undefined)].filter(Boolean).join(' ')
+    const area = String(p.district ?? p.locality ?? p.suburb ?? p.county ?? '')
+    const city = String(p.city ?? p.state ?? '')
+    const landmark = !isStreet && p.name && p.osm_key !== 'place' && p.osm_key !== 'boundary' ? String(p.name) : ''
+    const uniq = (xs: string[]) => xs.filter((x, i) => x && xs.findIndex((y) => y.toLowerCase() === x.toLowerCase()) === i)
+    const road = uniq([street, area, city]).join(', ')
+    return { road, area, landmark, full: uniq([landmark, street, area, city]).join(', ') }
+  } catch {
+    return null
+  }
 }
 
 // ---------------------------------------------------------------- pin picker
@@ -178,8 +236,11 @@ export function AddressSearchInput({ value, onChange, onPlace, className, placeh
 type Engine = { show: (p: { lat: number; lng: number }, zoomIn: boolean) => void; hide: () => void; destroy: () => void }
 type Pt = { lat: number; lng: number }
 
-async function googleEngine(el: HTMLElement, start: Pt | null, onPick: (p: Pt) => void): Promise<Engine> {
+async function googleEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt) => void): Promise<Engine> {
   const maps = await loadGoogleMaps()
+  const el = document.createElement('div')
+  el.style.cssText = 'width:100%;height:100%'
+  host.replaceChildren(el)
   const [{ Map }, { AdvancedMarkerElement }] = await Promise.all([maps.importLibrary('maps'), maps.importLibrary('marker')])
   const map = new Map(el, { center: start ?? DHAKA, zoom: start ? 17 : 12, mapId: MAP_ID, disableDefaultUI: true, zoomControl: true, fullscreenControl: true, gestureHandling: 'greedy', clickableIcons: false })
   const marker = new AdvancedMarkerElement({ map: start ? map : null, position: start ?? DHAKA, gmpDraggable: true, title: 'Patient location' })
@@ -203,8 +264,11 @@ async function googleEngine(el: HTMLElement, start: Pt | null, onPick: (p: Pt) =
   }
 }
 
-async function leafletEngine(el: HTMLElement, start: Pt | null, onPick: (p: Pt) => void): Promise<Engine> {
+async function leafletEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt) => void): Promise<Engine> {
   const L = (await import('leaflet')).default
+  const el = document.createElement('div')
+  el.style.cssText = 'width:100%;height:100%'
+  host.replaceChildren(el)
   const map = L.map(el, { zoomControl: true, attributionControl: true }).setView(start ?? DHAKA, start ? 17 : 12)
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>' }).addTo(map)
   const icon = L.divIcon({
@@ -229,7 +293,10 @@ async function leafletEngine(el: HTMLElement, start: Pt | null, onPick: (p: Pt) 
 }
 
 /** Map with one draggable pin. Click or drag to place it; "My location" uses the device GPS. */
-export function PinPicker({ lat, lng, onChange, height = 260 }: { lat?: number | null; lng?: number | null; onChange: (p: Pt | null) => void; height?: number }) {
+type PinLabels = { tap: string; none: string; set: string; myLocation: string; clear: string }
+const PIN_EN: PinLabels = { tap: 'Tap the map to drop a pin', none: 'No pin yet — staff will navigate by address', set: 'Pinned', myLocation: 'My location', clear: 'Clear pin' }
+
+export function PinPicker({ lat, lng, onChange, height = 260, labels = PIN_EN }: { lat?: number | null; lng?: number | null; onChange: (p: Pt | null) => void; height?: number; labels?: PinLabels }) {
   const el = useRef<HTMLDivElement>(null)
   const engine = useRef<Engine | null>(null)
   const change = useRef(onChange)
@@ -238,20 +305,30 @@ export function PinPicker({ lat, lng, onChange, height = 260 }: { lat?: number |
   const [locating, setLocating] = useState(false)
   const has = lat != null && lng != null
 
+  const [osm, setOsm] = useState(googleOff) // re-renders onto Leaflet when Google gives up
+  const where = useRef<Pt | null>(has ? { lat: lat!, lng: lng! } : null)
+  where.current = has ? { lat: lat!, lng: lng! } : null
+
+  useEffect(() => {
+    const onFallback = () => setOsm(true)
+    window.addEventListener(FALLBACK_EVENT, onFallback)
+    return () => window.removeEventListener(FALLBACK_EVENT, onFallback)
+  }, [])
+
   useEffect(() => {
     let dead = false
-    const start = has ? { lat: lat!, lng: lng! } : null
+    const host = el.current!
+    host.innerHTML = '' // a fresh container when swapping Google → Leaflet
     const pick = (p: Pt) => change.current({ lat: Math.round(p.lat * 1e6) / 1e6, lng: Math.round(p.lng * 1e6) / 1e6 })
-    ;(MAPS_KEY ? googleEngine : leafletEngine)(el.current!, start, pick)
-      .then((e) => (dead ? e.destroy() : (engine.current = e)))
-      .catch((e) => !dead && setErr(e.message))
+    const make = (async () =>
+      !osm && (await googleUsable()) ? googleEngine(host, where.current, pick).catch(() => (dropGoogle(), leafletEngine(host, where.current, pick))) : leafletEngine(host, where.current, pick))()
+    make.then((e) => (dead ? e.destroy() : (engine.current = e))).catch((e) => !dead && setErr(e.message))
     return () => {
       dead = true
       engine.current?.destroy()
       engine.current = null
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [osm])
 
   // follow coordinates chosen by click/drag, address search, GPS or "clear"
   useEffect(() => {
@@ -281,19 +358,19 @@ export function PinPicker({ lat, lng, onChange, height = 260 }: { lat?: number |
       <div className="relative isolate overflow-hidden rounded-card border border-slate-200 bg-[#E5EEF2]" style={{ height }}>
         <div ref={el} className="size-full" />
         {err && <div className="absolute inset-0 z-[500] flex items-center justify-center bg-white/80 p-4 text-center text-[13px] text-slate-500">{err}</div>}
-        {!err && !has && <div className="pointer-events-none absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded-full bg-white/95 px-3 py-1 text-[12px] font-semibold text-slate-600 shadow-sm">Tap the map to drop a pin</div>}
+        {!err && !has && <div className="pointer-events-none absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded-full bg-white/95 px-3 py-1 text-[12px] font-semibold text-slate-600 shadow-sm">{labels.tap}</div>}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px] text-slate-500">
         <span className={cx('inline-flex items-center gap-1', has && 'font-semibold text-[#15803D]')}>
-          <MapPin size={14} /> {has ? `Pinned ${lat!.toFixed(5)}, ${lng!.toFixed(5)}` : 'No pin yet — staff will navigate by address'}
+          <MapPin size={14} /> {has ? `${labels.set} ${lat!.toFixed(5)}, ${lng!.toFixed(5)}` : labels.none}
         </span>
         <span className="flex-1" />
         <button type="button" onClick={locate} disabled={locating} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 font-semibold text-slate-700 hover:bg-slate-50">
-          {locating ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />} My location
+          {locating ? <Loader2 size={14} className="animate-spin" /> : <Crosshair size={14} />} {labels.myLocation}
         </button>
         {has && (
           <button type="button" onClick={() => change.current(null)} className="inline-flex h-8 items-center gap-1 rounded-lg px-2 font-semibold text-slate-500 hover:text-[#B91C1C]">
-            <X size={14} /> Clear pin
+            <X size={14} /> {labels.clear}
           </button>
         )}
       </div>

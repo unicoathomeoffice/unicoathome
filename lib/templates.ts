@@ -32,9 +32,26 @@ export const PLACEHOLDERS = [
   'doneCount',
   'totalCount',
   'code',
+  'loginLink',
 ] as const
 
 export const DEFAULT_TEMPLATES: TemplateDef[] = [
+  {
+    key: 'patient_received',
+    name: 'Request received (website)',
+    channel: ['EMAIL'],
+    audience: 'Patient',
+    subject: 'We received your home care request · {requestNo}',
+    body: 'Dear {patientName}, thank you — we received your home care request ({requestNo}).\nService: {serviceType}\nPreferred time: {date}, {slot}\nAddress: {address}\nOur Home Care coordinator will call you shortly to confirm. Need help sooner? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',
+  },
+  {
+    key: 'staff_approved',
+    name: 'Staff account approved',
+    channel: ['EMAIL'],
+    audience: 'Staff',
+    subject: 'Your Unico HomeCare account is approved',
+    body: 'Dear {staffName}, your Unico HomeCare account has been approved ({designation}).\nSign in with your Google account at {loginLink}\nWelcome to the Home Care team.\n— Unico Hospitals, Family Medicine',
+  },
   {
     key: 'patient_confirmed',
     name: 'Request confirmed',

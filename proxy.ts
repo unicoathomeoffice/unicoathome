@@ -5,14 +5,14 @@ import { NextResponse, type NextRequest } from 'next/server'
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
   const hasSession = req.cookies.has('hc_session')
-  if (hasSession) return NextResponse.next()
+  if (hasSession || pathname === '/') return NextResponse.next() // / is the public booking page
   const login = pathname.startsWith('/m') ? '/m/login' : '/login'
   const url = req.nextUrl.clone()
   url.pathname = login
-  url.search = pathname === '/' || pathname === '/m' ? '' : `?next=${encodeURIComponent(pathname)}`
+  url.search = pathname === '/m' ? '' : `?next=${encodeURIComponent(pathname)}`
   return NextResponse.redirect(url)
 }
 
 export const config = {
-  matcher: ['/((?!api|_next|login|m/login|m/forgot|feedback|privacy|terms|logo.svg|manifest.webmanifest|favicon.ico|icons).*)'],
+  matcher: ['/((?!api|_next|login|m/login|m/forgot|feedback|privacy|terms|join|logo.svg|manifest.webmanifest|favicon.ico|icons).*)'],
 }

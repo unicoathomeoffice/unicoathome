@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { EllipsisVertical, FileUp, KeyRound, Loader2, LogOut, Pencil, Ban, UserCheck, UserPlus, Download, CircleCheck, TriangleAlert, Clock } from 'lucide-react'
+import { EllipsisVertical, FileUp, Link2, KeyRound, Loader2, LogOut, Pencil, Ban, UserCheck, UserPlus, Download, CircleCheck, TriangleAlert, Clock } from 'lucide-react'
 import { api, Drawer, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { ROLES, SHIFTS, type Role } from '@/lib/constants'
@@ -127,6 +127,28 @@ export function UserRowMenu({ user, options }: { user: StaffUser & { sessions?: 
         </div>
       )}
     </div>
+  )
+}
+
+/** Copies the public Google sign-up link (/join) to share with new staff, e.g. on WhatsApp. */
+export function SignupLinkButton() {
+  const toast = useToast()
+  async function copy() {
+    const link = `${window.location.origin}/join`
+    try {
+      if (navigator.share && window.matchMedia('(pointer: coarse)').matches) await navigator.share({ title: 'Join Unico HomeCare', text: 'Register for Unico HomeCare with your Google account:', url: link })
+      else {
+        await navigator.clipboard.writeText(link)
+        toast(`Sign-up link copied: ${link}`, 'ok')
+      }
+    } catch {
+      /* share sheet dismissed */
+    }
+  }
+  return (
+    <button type="button" className={btnClass('o')} onClick={copy} title="New staff register with Google; you approve them in Approvals">
+      <Link2 size={16} /> Sign-up link
+    </button>
   )
 }
 

@@ -114,7 +114,7 @@ const PATIENT_EVENT: Record<string, string> = {
   patient_completed: 'COMPLETED',
 }
 
-async function emailPatient(r: any, templateKey: string, user: SessionUser | null, staffId?: unknown) {
+export async function emailPatient(r: any, templateKey: string, user: SessionUser | null, staffId?: unknown) {
   const s = await getSettings()
   if (!s.email.sendPatientEmails) return
   if (PATIENT_EVENT[templateKey] && !ruleAllows(s.notificationRules, PATIENT_EVENT[templateKey], 'PATIENT', 'email')) return
@@ -139,7 +139,7 @@ export const CreateRequestInput = z.object({
       uhid: z.string().optional(),
       email: z.string().email().optional().or(z.literal('')),
       bloodGroup: z.string().optional(),
-      address: z.object({ area: z.string().optional(), full: z.string().min(3), landmark: z.string().optional(), lat: z.number().optional(), lng: z.number().optional() }),
+      address: z.object({ area: z.string().optional(), full: z.string().min(3), house: z.string().optional(), flat: z.string().optional(), landmark: z.string().optional(), lat: z.number().optional(), lng: z.number().optional() }),
     })
     .optional(),
   requester: z.object({ type: z.enum(['SELF', 'RELATIVE', 'STAFF']).default('SELF'), name: z.string().optional(), relation: z.string().optional(), phone: z.string().optional() }).optional(),

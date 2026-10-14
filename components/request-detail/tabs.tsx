@@ -1,11 +1,12 @@
 // Server-rendered tabs of the request detail (W04): Overview · Timeline · Assignment · Visit data · Messages · Attachments · Audit.
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { Bell, Car, FileText, Mail, MessageCircle, MessageSquare, Paperclip, ScrollText, Smartphone, UserX, Wallet } from 'lucide-react'
+import { Bell, Car, CircleDot, ExternalLink, FileText, Navigation, Mail, MessageCircle, MessageSquare, Paperclip, ScrollText, Smartphone, UserX, Wallet } from 'lucide-react'
 import { ActionButton } from '@/components/client'
-import { Avatar, Empty, MapEmbed, StatusChip, Tag, type Tone } from '@/components/ui'
+import { Avatar, Empty, MapEmbed, StatusChip, Tag, mapsUrl, type Tone } from '@/components/ui'
 import { PAYMENT_METHOD_LABEL, ROLE_LABEL, TRANSPORT_MODE_LABEL, type Role } from '@/lib/constants'
 import { ago, cx, date, dateTime, dayNum, dur, minutesBetween, phone, taka, time } from '@/lib/format'
+import { directionsUrl } from '@/lib/maps'
 import { Field, MetricsTable, Panel, Stepper, SubTitle, VitalTiles } from './ui'
 import { bytes, GENDER, lifecycleSteps, timingMetrics, vitalRows, who, whoInitials, type People, type Sla } from './lib'
 import { Expander, EmailPreview, ResendButton, AttachmentUploader, DeleteAttachment } from './widgets'
@@ -95,7 +96,7 @@ export function OverviewTab({
               </Field>
             )}
           </div>
-          <MapEmbed className="mt-3.5" height={170} lat={p.address?.lat} lng={p.address?.lng} address={p.address?.full ? [p.address.full, p.address.landmark, p.address.area].filter(Boolean).join(', ') : r.patientSnapshot?.address} />
+          <VisitMap intake={r.intake} lat={p.address?.lat} lng={p.address?.lng} address={p.address?.full ? [p.address.full, p.address.landmark, p.address.area].filter(Boolean).join(', ') : r.patientSnapshot?.address} />
           <div className="mt-4 border-t border-slate-100 pt-3.5">
             <div className="text-[11px] font-semibold uppercase tracking-[.05em] text-slate-500">Chief complaint</div>
             <div className="mt-1 text-[13px] leading-[19px] text-slate-700">
@@ -971,3 +972,47 @@ export function AuditTab({ rows }: { rows: any[] }) {
   )
 }
 
+
+/** Patient home on the map + one-tap directions (exact when the address was pinned, else from the address text). */
+const INTAKE: Record<string, [string, string]> = {
+  gps: ['Location from the patient’s phone GPS', 'text-[#15803D] bg-[#DCFCE7]'],
+  search: ['Location picked from map search', 'text-[#1D4ED8] bg-[#DBEAFE]'],
+  pin: ['Pin placed by the patient on the map', 'text-[#1D4ED8] bg-[#DBEAFE]'],
+  typed: ['Address typed by the patient — no map location', 'text-[#B45309] bg-[#FEF3C7]'],
+}
+const FIELD_NAME: Record<string, string> = { road: 'Road & area', area: 'Area / thana', landmark: 'Landmark' }
+
+function VisitMap({ lat, lng, address, intake }: { lat?: number | null; lng?: number | null; address?: string; intake?: { locationSource?: string; accuracyM?: number; autoFields?: string[] } }) {
+  if (lat == null && !address) return null
+  const pinned = lat != null && lng != null
+  return (
+    <div className="mt-3.5">
+      {intake?.locationSource && INTAKE[intake.locationSource] && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[12px] font-semibold">
+          <span className={cx('rounded-full px-2.5 py-1', INTAKE[intake.locationSource][1])}>
+            {INTAKE[intake.locationSource][0]}
+            {intake.locationSource === 'gps' && intake.accuracyM != null ? ` · ±${intake.accuracyM} m` : ''}
+          </span>
+          {!!intake.autoFields?.length && (
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600" title="Filled in automatically from the location; everything else was typed by the patient">
+              Auto-filled: {intake.autoFields.map((f) => FIELD_NAME[f] ?? f).join(', ')}
+            </span>
+          )}
+        </div>
+      )}
+      <MapEmbed height={230} lat={lat} lng={lng} address={address} note={pinned ? 'Exact pin' : 'Approximate — from the address'} />
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <span className={cx('inline-flex items-center gap-1 text-[12px] font-semibold', pinned ? 'text-[#15803D]' : 'text-[#B45309]')}>
+          <CircleDot size={13} /> {pinned ? `Pinned ${lat!.toFixed(5)}, ${lng!.toFixed(5)}` : 'No pin — confirm the location by phone'}
+        </span>
+        <span className="flex-1" />
+        <a href={mapsUrl(address, lat, lng)} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 px-2.5 text-[12.5px] font-semibold text-slate-700 hover:bg-slate-50">
+          <ExternalLink size={13} /> Google Maps
+        </a>
+        <a href={directionsUrl({ lat, lng, address })} target="_blank" rel="noreferrer" className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-[12.5px] font-semibold text-white hover:bg-primary-700">
+          <Navigation size={13} /> Directions
+        </a>
+      </div>
+    </div>
+  )
+}

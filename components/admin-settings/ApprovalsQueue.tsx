@@ -36,7 +36,7 @@ const META: Record<string, { label: string; icon: ReactNode; approve: string; re
 
 function summary(a: ApprovalRow): ReactNode {
   const p = a.payload ?? {}
-  const by = a.requester?.name ?? 'Unknown'
+  const by = a.requester?.name ?? ((a as any).payload?.selfSignup ? 'Self sign-up (Google)' : 'Unknown')
   const req = a.request ? (
     <Link href={`/requests/${a.request.id}`} className="font-semibold text-primary-700 hover:underline">
       {a.request.requestNo}
