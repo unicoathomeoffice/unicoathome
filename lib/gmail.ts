@@ -1,6 +1,6 @@
 import 'server-only'
 import { cache } from 'react'
-import nodemailer, { type SendMailOptions } from 'nodemailer'
+import type { SendMailOptions } from 'nodemailer'
 import { IntegrationSecret } from './models'
 import { decryptIntegration, encryptIntegration } from './integration-secrets'
 import type { GmailMode, GmailStatus } from './gmail-types'
@@ -36,6 +36,7 @@ export async function saveGmailConfig(c: GmailConfig, userId: string) {
 }
 
 export async function sendGmail(c: GmailConfig, message: SendMailOptions): Promise<string> {
+  const nodemailer = (await import('nodemailer')).default // loaded only when a mail is actually sent
   if (c.mode === 'smtp') {
     const mailer = nodemailer.createTransport({
       host: 'smtp.gmail.com', port: 465, secure: true,

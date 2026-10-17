@@ -5,6 +5,7 @@ import { getPatient } from '@/lib/patient-auth'
 import { db } from '@/lib/db'
 import { getSettings } from '@/lib/settings'
 import { availability } from '@/lib/booking'
+import { memo } from '@/lib/memo'
 import { ServiceType, Zone } from '@/lib/models'
 import { PublicHome } from '@/components/public/PublicHome'
 import type { BookingPrefill } from '@/components/public/BookingForm'
@@ -20,15 +21,18 @@ export const metadata: Metadata = {
 /** Public home page: anyone can request a home-care visit (no sign-in). Signed-in patients get the form pre-filled. */
 export default async function Home() {
   await db()
+  // Public, slow-changing data is memoised for 30 s per server instance so the landing page answers in one
+  // round trip instead of four; the booking grid is re-checked by the browser every 2 min and the server still
+  // rejects a slot that was taken meanwhile (SLOT_TAKEN).
   const [user, patient, s, services, zones] = await Promise.all([
     getUser().catch(() => null),
     getPatient().catch(() => null),
-    getSettings(),
-    ServiceType.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('code name category requiresPrescription').lean<any[]>(),
-    Zone.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('name').lean<any[]>(),
+    memo('home:settings', 30_000, () => getSettings()),
+    memo('home:services', 30_000, () => ServiceType.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('code name category requiresPrescription').lean<any[]>()),
+    memo('home:zones', 30_000, () => Zone.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('name').lean<any[]>()),
   ])
   const g = s.general
-  const days = s.booking.enabled ? await availability(s.booking) : []
+  const days = s.booking.enabled ? await memo('home:availability', 30_000, () => availability(s.booking)) : []
   const b = s.booking.enabled ? s.booking : null
   const a = patient?.address
   const prefill: BookingPrefill | undefined = patient

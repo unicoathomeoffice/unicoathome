@@ -1,5 +1,6 @@
 import { requireWebUser } from '@/lib/auth'
-import { HomecareRequest, Notification } from '@/lib/models'
+import { HomecareRequest } from '@/lib/models'
+import { unreadCount } from '@/lib/unread'
 import { ROLE_LABEL, ACTIVE_STATUSES, permissionsFor } from '@/lib/constants'
 import { Sidebar } from '@/components/admin/Sidebar'
 
@@ -7,7 +8,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const user = await requireWebUser()
   const [open, unread] = await Promise.all([
     HomecareRequest.countDocuments({ status: { $in: ACTIVE_STATUSES }, deletedAt: null }),
-    Notification.countDocuments({ userId: user.id, readAt: null }),
+    unreadCount(user.id), // shared with AdminPage's bell — one query per request
   ])
   return (
     <div className="flex h-dvh overflow-hidden bg-page">

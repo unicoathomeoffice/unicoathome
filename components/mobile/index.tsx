@@ -2,7 +2,7 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { ChevronLeft, Home, ClipboardList, LayoutGrid, Bell, UserRound, Car, Truck } from 'lucide-react'
 import { getUser } from '@/lib/auth'
-import { Notification } from '@/lib/models'
+import { unreadCount } from '@/lib/unread'
 import { UnreadBadge } from '@/components/client'
 import { cx } from '@/lib/format'
 import { can } from '@/lib/constants'
@@ -29,11 +29,11 @@ export function tabsFor(user: { role: string; permissions?: string[] | null }): 
 
 async function TabBar({ active }: { active: TabKey }) {
   const user = (await getUser())!
-  const unread = await Notification.countDocuments({ userId: user.id, readAt: null })
+  const unread = await unreadCount(user.id)
   return (
     <nav className="sticky bottom-0 z-20 flex border-t border-slate-200 bg-white px-2 pb-[max(10px,env(safe-area-inset-bottom))] pt-2">
       {tabsFor(user).map((t) => (
-        <Link key={t.key} href={t.href} className={cx('relative flex flex-1 flex-col items-center gap-[3px] text-[11px]', t.key === active ? 'font-semibold text-primary' : 'font-medium text-slate-500')}>
+        <Link key={t.key} href={t.href} className={cx('relative flex flex-1 flex-col items-center gap-[3px] text-[11px] transition-colors active:text-primary', t.key === active ? 'font-semibold text-primary' : 'font-medium text-slate-500')}>
           <t.icon size={24} strokeWidth={t.key === active ? 2.2 : 2} />
           {t.label}
           {t.key === 'notifications' && <UnreadBadge initial={unread} className="absolute -top-0.5 left-[calc(50%+4px)]" />}
@@ -94,7 +94,7 @@ export async function MScreen({
             {right}
           </header>
         ))}
-      <main className={cx('grid flex-1 grid-cols-[minmax(0,1fr)] auto-rows-max content-start gap-3', pad && 'px-5 py-4')}>{children}</main>
+      <main className={cx('hc-enter grid flex-1 grid-cols-[minmax(0,1fr)] auto-rows-max content-start gap-3', pad && 'px-5 py-4')}>{children}</main>
       {bottom && (
         <div className="sticky bottom-0 z-20 border-t border-slate-200 bg-white px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
           {bottomNote && <div className="mb-2 text-center text-[12px] font-semibold text-[#B45309]">{bottomNote}</div>}
@@ -108,7 +108,7 @@ export async function MScreen({
 
 /** White rounded card (design `card`) */
 export function MCard({ children, className, pad = 'px-4 py-3.5' }: { children: ReactNode; className?: string; pad?: string }) {
-  return <div className={cx('rounded-card bg-white shadow-card', pad, className)}>{children}</div>
+  return <div className={cx('rounded-card bg-white shadow-card transition-shadow', pad, className)}>{children}</div>
 }
 
 /** Stacked rows inside one card (design `listcard`) */
@@ -116,7 +116,7 @@ export function MList({ children, className }: { children: ReactNode; className?
   return <div className={cx('divide-y divide-slate-100 overflow-hidden rounded-card bg-white shadow-card', className)}>{children}</div>
 }
 export function MRow({ children, href, className }: { children: ReactNode; href?: string; className?: string }) {
-  const cls = cx('flex items-center gap-3 px-4 py-3.5', href && 'active:bg-slate-50', className)
+  const cls = cx('flex items-center gap-3 px-4 py-3.5', href && 'transition-colors active:bg-slate-50', className)
   return href ? (
     <Link href={href} className={cls}>
       {children}

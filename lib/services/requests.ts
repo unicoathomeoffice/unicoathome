@@ -17,8 +17,7 @@ import { ApiError, bad, conflict, forbidden, notFound } from '../api'
 import { audit } from '../audit'
 import { can, FIELD_ROLES, TRANSITIONS, VITALS, type Status, hasRole, hasAnyRole } from '../constants'
 import { background, getTemplate, notifyRoles, notifyUsers, queueEmail, renderTemplate } from '../messaging'
-import { isPaired } from '../wa/auth-state'
-import { queueWhatsApp } from '../wa/service'
+import { isPaired } from '../wa/status'
 import { getSettings, ruleAllows } from '../settings'
 import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, dayRange } from '../format'
 import type { SessionUser } from '../auth'
@@ -150,6 +149,8 @@ export async function whatsappPatient(r: any, templateKey: string, user: Session
   const def = await getTemplate(templateKey)
   if (def.isActive === false || !def.channel.includes('WHATSAPP')) return
   if (!(await isPaired())) return
+  // Baileys + pino are loaded only when a message is actually sent — never on a plain page render (cold start).
+  const { queueWhatsApp } = await import('../wa/service')
   const { text } = await renderTemplate(templateKey, await templateVars(r, staffId))
   await queueWhatsApp({ to: p.whatsapp || p.phone, toName: p.name, text, templateKey, requestId: r._id, patientId: r.patientId, initiatedBy: user?.id })
 }

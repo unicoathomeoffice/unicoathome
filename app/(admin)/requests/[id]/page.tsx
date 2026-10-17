@@ -14,7 +14,7 @@ import { LivePill } from '@/components/request-detail/widgets'
 import { AssignmentTab, AttachmentsTab, AuditTab, MessagesTab, OverviewTab, TimelineTab, VisitTab } from '@/components/request-detail/tabs'
 import { ACTIVE_VISIT, availableActions, collectUserIds, permsFor, type People } from '@/components/request-detail/lib'
 import type { AssignProps } from '@/components/assign/AssignDrawer'
-import { isPaired } from '@/lib/wa/auth-state'
+import { isPaired } from '@/lib/wa/status'
 
 export const metadata = { title: 'Request detail' }
 

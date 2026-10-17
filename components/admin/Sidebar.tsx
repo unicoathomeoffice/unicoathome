@@ -65,7 +65,7 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Record<string
               <Link
                 href={n.href}
                 onClick={() => setMobileOpen(false)}
-                className={cx('flex h-10 items-center gap-3 rounded-lg px-3 text-sm', on ? 'bg-white/[.12] font-semibold text-white' : 'font-medium text-white/75 hover:bg-white/[.06] hover:text-white')}
+                className={cx('flex h-10 items-center gap-3 rounded-lg px-3 text-sm transition-colors', on ? 'bg-white/[.12] font-semibold text-white' : 'font-medium text-white/75 hover:bg-white/[.06] hover:text-white')}
               >
                 <n.icon size={18} />
                 <span className="flex-1">{n.label}</span>
@@ -83,7 +83,7 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Record<string
                       key={s.href}
                       href={s.href}
                       onClick={() => setMobileOpen(false)}
-                      className={cx('rounded-md px-2.5 py-1.5 text-[13px]', path === s.href ? 'bg-white/[.12] font-semibold text-white' : 'text-white/65 hover:text-white')}
+                      className={cx('rounded-md px-2.5 py-1.5 text-[13px] transition-colors', path === s.href ? 'bg-white/[.12] font-semibold text-white' : 'text-white/65 hover:text-white')}
                     >
                       {s.label}
                     </Link>

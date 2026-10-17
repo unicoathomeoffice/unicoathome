@@ -13,7 +13,6 @@ import { when } from '@/components/comms/MessageBits'
 import { cx } from '@/lib/format'
 import vercel from '@/vercel.json'
 import { canOpenSettings } from '@/lib/constants'
-import { waStatus } from '@/lib/wa/service'
 
 export const metadata: Metadata = { title: 'Settings & integrations' }
 
@@ -87,7 +86,7 @@ export default async function SettingsPage() {
           myEmail={user.email}
         />
 
-        <WhatsAppCard initial={plain(s.whatsapp)} envCountry={process.env.WA_DEFAULT_COUNTRY ?? '880'} status={JSON.parse(JSON.stringify(await waStatus()))} autoSend={s.whatsapp.autoSend !== false} />
+        <WhatsAppCard initial={plain(s.whatsapp)} envCountry={process.env.WA_DEFAULT_COUNTRY ?? '880'} status={JSON.parse(JSON.stringify(await (await import('@/lib/wa/service')).waStatus()))} /* Baileys loads only on this page */ autoSend={s.whatsapp.autoSend !== false} />
 
         <SCard title="Push · in-app" sub="Notification centre now · Expo push (FCM / APNs) next">
           {[

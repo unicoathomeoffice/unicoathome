@@ -43,12 +43,5 @@ export async function mongoAuthState() {
   }
 }
 
-export async function isPaired() {
-  const c = await read('creds')
-  return !!c?.me?.id
-}
-
-export async function pairedPhone(): Promise<string | null> {
-  const c = await read('creds')
-  return c?.me?.id ? String(c.me.id).split(':')[0].split('@')[0] : null
-}
+// Pairing status lives in ./status (no Baileys import) so ordinary pages stay light; re-exported for callers here.
+export { isPaired, pairedPhone } from './status'

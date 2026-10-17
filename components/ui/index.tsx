@@ -80,7 +80,7 @@ export function Avatar({ name, initials, size = 40, tone = 'blue', className }: 
 
 // ---------------------------------------------------------------- surfaces
 export function Card({ children, className, pad = true, as: As = 'div' }: { children: ReactNode; className?: string; pad?: boolean; as?: 'div' | 'section' }) {
-  return <As className={cx('rounded-card bg-white shadow-card', pad && 'p-5', className)}>{children}</As>
+  return <As className={cx('rounded-card bg-white shadow-card transition-shadow', pad && 'p-5', className)}>{children}</As>
 }
 
 export function CardHeader({ title, sub, right, className }: { title: ReactNode; sub?: ReactNode; right?: ReactNode; className?: string }) {
@@ -171,7 +171,7 @@ const BTN = {
 export type BtnKind = keyof typeof BTN
 const SIZE = { sm: 'h-8 px-3 text-[13px] rounded-lg', md: 'h-[38px] px-3.5 text-sm rounded-lg', lg: 'h-12 px-5 text-base rounded-xl', xl: 'h-[52px] px-5 text-base rounded-xl' } as const
 export const btnClass = (kind: BtnKind = 'p', size: keyof typeof SIZE = 'md', extra?: string) =>
-  cx('inline-flex flex-none select-none items-center justify-center gap-2 whitespace-nowrap font-semibold transition disabled:opacity-50', SIZE[size], size === 'lg' || size === 'xl' ? 'font-bold' : '', BTN[kind], extra)
+  cx('inline-flex flex-none select-none items-center justify-center gap-2 whitespace-nowrap font-semibold transition active:scale-[.98] disabled:opacity-50 disabled:active:scale-100', SIZE[size], size === 'lg' || size === 'xl' ? 'font-bold' : '', BTN[kind], extra)
 
 export function LinkButton({ href, children, kind = 'p', size = 'md', className, target }: { href: string; children: ReactNode; kind?: BtnKind; size?: keyof typeof SIZE; className?: string; target?: string }) {
   return (

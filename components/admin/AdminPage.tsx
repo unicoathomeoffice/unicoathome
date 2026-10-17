@@ -2,7 +2,7 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { Bell, Plus, Search } from 'lucide-react'
 import { getUser } from '@/lib/auth'
-import { Notification } from '@/lib/models'
+import { unreadCount } from '@/lib/unread'
 import { can } from '@/lib/constants'
 import { UnreadBadge } from '@/components/client'
 import { btnClass } from '@/components/ui'
@@ -28,7 +28,7 @@ export async function AdminPage({
   className?: string
 }) {
   const user = (await getUser())!
-  const unread = await Notification.countDocuments({ userId: user.id, readAt: null })
+  const unread = await unreadCount(user.id)
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-16 flex-none items-center gap-4 border-b border-slate-200 bg-white pl-16 pr-4 lg:px-8">
@@ -58,7 +58,7 @@ export async function AdminPage({
           {user.initials}
         </Link>
       </header>
-      <main className={cx('min-h-0 flex-1 overflow-y-auto', pad && 'px-4 py-6 lg:px-8', className)}>{children}</main>
+      <main className={cx('hc-enter min-h-0 flex-1 overflow-y-auto', pad && 'px-4 py-6 lg:px-8', className)}>{children}</main>
     </div>
   )
 }
