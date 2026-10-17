@@ -46,10 +46,11 @@ const EN = {
 // Strict accuracy rules. The phone's first fix is often coarse (cell / Wi-Fi) and GPS sharpens over the next
 // 10–60 s, so we keep watching and move the pin every time a better fix arrives:
 const DONE_M = 12 // stop early once this good
-const FILL_MAX_M = 60 // auto-fill road / area / landmark only from fixes at least this good
+const FILL_MAX_M = 60 // "accurate" threshold for the green / amber message
 const PIN_MAX_M = 300 // never drop a pin from a fix worse than this
-const MAX_WATCH_MS = 60_000
+const MAX_WATCH_MS = 45_000
 const FIRST_FIX_MS = 25_000 // give up if nothing usable by then
+const STALL_MS = 10_000 // no better fix for this long → the device has settled, stop
 const REGEOCODE_M = 25 // re-run address lookup when the position moved more than this
 
 const metres = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
@@ -114,7 +115,7 @@ export function AddressBlock({
   vRef.current = v
   const autoRef = useRef(auto)
   autoRef.current = auto
-  const watch = useRef<{ id: number; timers: number[]; silent: boolean } | null>(null)
+  const watch = useRef<{ id: number; timers: number[]; silent: boolean; stall?: number } | null>(null)
   const run = useRef(0) // bumped when a new GPS run starts or the user takes over — stale address lookups are dropped
   const best = useRef<{ lat: number; lng: number; acc: number } | null>(null)
   const geocodedAt = useRef<{ lat: number; lng: number } | null>(null)
@@ -139,6 +140,7 @@ export function AddressBlock({
     if (!watch.current) return
     navigator.geolocation.clearWatch(watch.current.id)
     watch.current.timers.forEach(clearTimeout)
+    clearTimeout(watch.current.stall)
     watch.current = null
     setTracking(null)
   }
@@ -171,7 +173,10 @@ export function AddressBlock({
     setMeta({ source: 'gps', accuracyM: best.current?.acc, autoFields: next })
   }
 
-  /** Start (or restart) live tracking: every better fix moves the pin; stops at DONE_M, after MAX_WATCH_MS, or when the user takes over. */
+  /** Start (or restart) live tracking, Google-Maps style: the FIRST fix already places the dot and fills the address;
+   *  every better fix moves the dot (and re-fills once it moved > REGEOCODE_M). Stops at DONE_M, when no better fix
+   *  has arrived for STALL_MS, after MAX_WATCH_MS, or when the user takes over. A laptop has no GPS — its one
+   *  Wi-Fi / IP fix never improves — so there we stop right after the first fix instead of making people wait. */
   function locate(silent = false) {
     if (!('geolocation' in navigator)) return silent ? undefined : setLocMsg({ tone: 'err', text: L.eLocNone })
     takeOver()
@@ -180,6 +185,7 @@ export function AddressBlock({
     setLocMsg(null)
     setTracking(0)
     const started = Date.now()
+    const hasGps = window.matchMedia?.('(pointer: coarse)').matches ?? false
     const finish = () => {
       const b = best.current
       stopTracking()
@@ -204,9 +210,13 @@ export function AddressBlock({
         if (accuracy <= PIN_MAX_M) {
           onChange({ lat: p.lat, lng: p.lng })
           setMeta({ source: 'gps', accuracyM: accuracy, autoFields: autoRef.current })
-          if (accuracy <= FILL_MAX_M && (!geocodedAt.current || metres(geocodedAt.current, p) > REGEOCODE_M)) fillFrom(p)
+          if (!geocodedAt.current || metres(geocodedAt.current, p) > REGEOCODE_M) fillFrom(p)
         }
-        if (accuracy <= DONE_M) finish()
+        if (accuracy <= DONE_M || !hasGps) return finish()
+        if (watch.current) {
+          clearTimeout(watch.current.stall)
+          watch.current.stall = window.setTimeout(finish, STALL_MS)
+        }
       },
       (e) => {
         if (e.code === 1) {
@@ -242,12 +252,12 @@ export function AddressBlock({
   const fp = (k: keyof AddressValue) => ({ id: `${idPrefix}-${k}`, error: errors[k], tag: tag(k), size })
 
   const gpsPinned = has && meta.source === 'gps'
-  // Google-Maps-like: "Finding your location…" only until the fix is usable (±60 m); after that the button already
-  // says "Location added" while the blue dot keeps tightening quietly in the background — no ±m countdown, no Stop.
+  // Google-Maps-like: "Finding your location…" only until the first fix; after that the button already says
+  // "Location added" while the blue dot keeps tightening quietly in the background — no ±m countdown, no Stop.
   // A background auto-detect with no fix yet (permission prompt pending / ignored) never locks the button either:
   // a tap restarts it from a real user gesture.
   const live = tracking != null && has && meta.source === 'gps'
-  const busy = tracking != null && (!best.current || best.current.acc > FILL_MAX_M) && !(watch.current?.silent && !best.current)
+  const busy = tracking != null && !best.current && !watch.current?.silent
   return (
     <div ref={root} className="flex flex-col gap-3.5">
       <div className="flex gap-2">
