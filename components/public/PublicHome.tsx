@@ -5,7 +5,7 @@
 // as a sheet with a grabber, and a bottom tab bar. EN / বাংলা; every link / button goes to a real page or section.
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, CalendarDays, ChevronDown, Clock3, FlaskConical, HeartPulse, House, LayoutGrid, Menu, Mouse, Phone, ShieldCheck, Smile, Stethoscope, Truck, UserRound, Users, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, ChevronDown, Clock3, FlaskConical, HeartPulse, House, LayoutDashboard, LayoutGrid, Menu, Mouse, Phone, ShieldCheck, Smile, Stethoscope, Truck, UserRound, Users, X } from 'lucide-react'
 import { telUrl } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { BookingForm, type BookingDay, type BookingPrefill } from './BookingForm'
@@ -72,7 +72,7 @@ function Page({ hospital: h, staff, patient, prefill, services, zones, booking, 
   const accountHref = patient ? '/my' : '/my/login'
 
   return (
-    <div id="top" className={cx('relative min-h-dvh overflow-x-hidden bg-[#F2F8FD] text-slate-900 lg:grid lg:h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)] lg:overflow-hidden', lang === 'bn' && bnFont)} style={lang === 'bn' ? { fontFamily: 'var(--font-bn), var(--font-dm-sans), sans-serif' } : undefined}>
+    <div id="top" className={cx('relative min-h-dvh overflow-x-hidden bg-[#F2F8FD] text-slate-900 lg:grid lg:h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,540px)] lg:overflow-hidden xl:grid-cols-[minmax(0,1fr)_minmax(0,600px)]', lang === 'bn' && bnFont)} style={lang === 'bn' ? { fontFamily: 'var(--font-bn), var(--font-dm-sans), sans-serif' } : undefined}>
       {/* ------------------------------------------------------------ background: soft blobs + the blue wave behind the card */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-40 top-10 size-[520px] rounded-full bg-primary/15 blur-3xl hc-blob" />
@@ -96,7 +96,7 @@ function Page({ hospital: h, staff, patient, prefill, services, zones, booking, 
           <Link href="/" className="flex-none">
             <img src="/logo.svg" alt={h.name} className="h-9 sm:h-10" />
           </Link>
-          <nav className="ml-8 hidden items-center gap-6 whitespace-nowrap text-[14.5px] font-semibold text-slate-600 xl:flex 2xl:ml-10 2xl:gap-7">
+          <nav className="ml-6 hidden items-center gap-4 whitespace-nowrap text-[14px] font-semibold text-slate-600 2xl:flex min-[1700px]:ml-10 min-[1700px]:gap-6">
             {nav.map((n) => (
               <a key={n.href} href={n.href} onClick={n.href === '#book' ? (e) => (e.preventDefault(), scrollToForm()) : undefined} className={cx('relative whitespace-nowrap transition hover:text-navy', n.active &&'text-navy after:absolute after:-bottom-2.5 after:left-1/2 after:size-1.5 after:-translate-x-1/2 after:rounded-full after:bg-primary')}>
                 {n.label}
@@ -105,11 +105,17 @@ function Page({ hospital: h, staff, patient, prefill, services, zones, booking, 
           </nav>
           <span className="flex-1" />
           <LangSwitch className="bg-white shadow-card ring-1 ring-slate-200" />
-          <a href={telUrl(h.phone)} className={cx(roundBtn, 'size-10 bg-primary text-white shadow-[0_6px_16px_rgba(0,144,202,.35)] hover:bg-primary-700 sm:size-10')} aria-label={`${t.call} ${h.phone}`}>
-            <Phone size={17} />
+          <a href={telUrl(h.phone)} className="flex items-center gap-2.5" aria-label={`${t.call} ${h.phone}`}>
+            <span className={cx(roundBtn, 'size-10 bg-primary text-white shadow-[0_6px_16px_rgba(0,144,202,.35)] hover:bg-primary-700')}>
+              <Phone size={17} />
+            </span>
+            <span className="hidden flex-col leading-tight min-[1800px]:flex">
+              <span className="text-[11px] font-medium text-slate-500">{t.emergency}</span>
+              <span className="whitespace-nowrap text-[14px] font-bold text-navy">{h.phone}</span>
+            </span>
           </a>
-          <Link href={staff.href} className="hidden h-10 items-center whitespace-nowrap text-[14px] font-semibold text-slate-700 hover:text-navy md:flex">
-            {staff.signedIn ? t.openDashboard : t.navStaff}
+          <Link href={staff.href} className={cx(pill, 'hidden px-3 lg:flex min-[1700px]:px-4')} title={staff.signedIn ? t.openDashboard : t.navStaff}>
+            <LayoutDashboard size={16} /> <span className="hidden min-[1700px]:inline">{staff.signedIn ? t.openDashboard : t.navStaff}</span>
           </Link>
           <Link href={accountHref} className={cx(pill, 'hidden sm:flex')}>
             <UserRound size={16} /> {patient ? patient.name.split(' ')[0] : t.navSignIn}

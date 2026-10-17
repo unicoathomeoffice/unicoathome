@@ -1,15 +1,16 @@
 'use client'
 // Public "book a home visit" form — phone first: one column, 48px+ targets, 16px inputs (no iOS zoom), sticky send bar.
 // English / বাংলা via useLang(); slots come live from Settings → Online booking and grey out as visits are confirmed.
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CalendarDays, Check, CheckCircle2, FileText, ImagePlus, Loader2, Phone, Send, UserRound, X } from 'lucide-react'
+import { AlertTriangle, CalendarDays, Check, CheckCircle2, ChevronRight, FileText, ImagePlus, Loader2, Phone, Send, UserRound, X } from 'lucide-react'
 import { api } from '@/components/client/api'
 import { compressImage } from '@/components/client'
 import { AddressBlock, type AddressMeta, type AddressValue } from '@/components/client/AddressBlock'
 import { btnClass, telUrl } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { useLang, type Lang } from './i18n'
+import { serviceMeta } from './services-meta'
 
 type Service = { code: string; name: string; category: string; requiresPrescription?: boolean }
 type Errors = Record<string, string>
@@ -45,7 +46,8 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
   const [done, setDone] = useState<{ requestNo: string; callWithinMin: number } | null>(null)
   const [docs, setDocs] = useState<Doc[]>([])
   const [addrMeta, setAddrMeta] = useState<AddressMeta>({ source: 'typed', autoFields: [] })
-  const [locHost, setLocHost] = useState<HTMLElement | null>(null) // the Address header slot that holds "Use my current location"
+  const [locHost, setLocHost] = useState<HTMLElement | null>(null)
+  const dateInput = useRef<HTMLInputElement>(null) // the calendar button opens the native date picker // the Address header slot that holds "Use my current location"
   const rxNeeded = services.filter((s) => s.requiresPrescription && f.serviceCodes.includes(s.code))
   const plainDays = useMemo(() => Array.from({ length: 14 }, (_, i) => dhakaDay(i)), [])
   const set = <K extends keyof typeof blank>(k: K, v: (typeof blank)[K]) => {
@@ -303,19 +305,33 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         />
       </Section>
 
-      <Section n={3} title={t.sService}>
-        <div id="f-serviceCodes" className="flex flex-wrap gap-2">
-          {services.map((s) => {
-            const on = f.serviceCodes.includes(s.code)
+      <Section n={3} title={t.sService} sub={t.sServiceSub}>
+        <div id="f-serviceCodes" className="grid gap-2.5 sm:grid-cols-2">
+          {services.map((svc) => {
+            const on = f.serviceCodes.includes(svc.code)
+            const m = serviceMeta(svc, lang)
             return (
               <button
-                key={s.code}
+                key={svc.code}
                 type="button"
-                onClick={() => set('serviceCodes', on ? f.serviceCodes.filter((c) => c !== s.code) : [...f.serviceCodes, s.code])}
-                className={cx('flex min-h-11 items-center gap-1.5 rounded-full border-[1.5px] px-4 py-2 text-left text-[14.5px] font-semibold', on ? 'border-primary bg-primary text-white' : 'border-slate-300 bg-white text-slate-700')}
+                onClick={() => set('serviceCodes', on ? f.serviceCodes.filter((c) => c !== svc.code) : [...f.serviceCodes, svc.code])}
                 aria-pressed={on}
+                className={cx('flex min-h-[64px] items-center gap-3 rounded-xl border-[1.5px] px-3 py-2.5 text-left transition', on ? 'border-primary bg-primary-50/50 shadow-[0_0_0_3px_rgba(0,144,202,.12)]' : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-card')}
               >
-                {on && <Check size={16} />} {s.name}
+                <span className={cx('flex size-11 flex-none items-center justify-center rounded-xl', m.tile)}>
+                  <m.icon size={22} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={cx('block text-[14px] font-bold leading-snug', on ? 'text-primary-700' : 'text-navy')}>{svc.name}</span>
+                  <span className="mt-0.5 block truncate text-[12px] text-slate-500">{m.sub}</span>
+                </span>
+                {on ? (
+                  <span className="flex size-5 flex-none items-center justify-center rounded-full bg-primary text-white">
+                    <Check size={12} strokeWidth={3} />
+                  </span>
+                ) : (
+                  <ChevronRight size={18} className="flex-none text-slate-400" />
+                )}
               </button>
             )
           })}
@@ -324,8 +340,9 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         {errors.serviceCodes && <Err>{errors.serviceCodes}</Err>}
       </Section>
 
-      <Section n={4} title={t.sWhen}>
-        <div className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 no-scrollbar" role="radiogroup" aria-label={t.sWhen}>
+      <Section n={4} title={t.sWhen} sub={t.sWhenSub}>
+        <div className="flex items-start gap-2">
+        <div className="-mx-1 flex min-w-0 flex-1 snap-x gap-2 overflow-x-auto px-1 pb-1 no-scrollbar" role="radiogroup" aria-label={t.sWhen}>
           {dayList.map((d) => {
             const on = f.date === d.date
             const top = d.date === today ? t.today : d.date === tomorrow ? t.tomorrow : fmtDay(d.date, lang, { weekday: 'short' })
@@ -337,16 +354,32 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
                 role="radio"
                 aria-checked={on}
                 onClick={() => (setF((x) => ({ ...x, date: d.date, slot: '' })), setErrors(({ slot: _, ...r }) => r))}
-                className={cx('flex h-[64px] w-[76px] flex-none snap-start flex-col items-center justify-center rounded-xl border-[1.5px] text-[12.5px] leading-tight', on ? 'border-primary bg-primary text-white' : off ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-slate-300 bg-white text-slate-600')}
+                className={cx('flex h-[58px] w-[74px] flex-none snap-start flex-col items-center justify-center rounded-xl border-[1.5px] text-[11.5px] leading-tight transition', on ? 'border-primary bg-primary text-white shadow-[0_6px_14px_rgba(0,144,202,.3)]' : off ? 'border-slate-200 bg-slate-50 text-slate-400' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300')}
               >
                 <span className="font-semibold">{top}</span>
-                <span className={cx('text-[14px] font-bold', on ? 'text-white' : off ? 'text-slate-400' : 'text-slate-900')}>{fmtDay(d.date, lang, { day: 'numeric', month: 'short' })}</span>
-                {off && <span className={cx('text-[10.5px] font-semibold', on ? 'text-white/80' : 'text-[#B45309]')}>{d.closed ? t.closed : t.full}</span>}
+                <span className={cx('mt-0.5 text-[13px] font-bold', on ? 'text-white' : off ? 'text-slate-400' : 'text-navy')}>{fmtDay(d.date, lang, { day: 'numeric', month: 'short' })}</span>
+                {off && <span className={cx('text-[10px] font-semibold', on ? 'text-white/80' : 'text-[#B45309]')}>{d.closed ? t.closed : t.full}</span>}
               </button>
             )
           })}
         </div>
-        <div id="f-slot" className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t.sWhen}>
+        {/* calendar button: the native date picker, limited to the bookable days */}
+        <button type="button" onClick={() => dateInput.current?.showPicker?.()} className="relative flex h-[58px] w-12 flex-none items-center justify-center rounded-xl border-[1.5px] border-slate-200 bg-white text-primary hover:border-slate-300" aria-label={t.pickDate}>
+          <CalendarDays size={20} />
+          <input
+            ref={dateInput}
+            type="date"
+            tabIndex={-1}
+            aria-hidden
+            className="absolute inset-0 size-full cursor-pointer opacity-0"
+            min={dayList[0]?.date}
+            max={dayList[dayList.length - 1]?.date}
+            value={f.date}
+            onChange={(e) => dayList.some((d) => d.date === e.target.value) && (setF((x) => ({ ...x, date: e.target.value, slot: '' })), setErrors(({ slot: _, ...r }) => r))}
+          />
+        </button>
+        </div>
+        <div id="f-slot" className="grid grid-cols-2 gap-2 sm:grid-cols-3" role="radiogroup" aria-label={t.sWhen}>
           {slotList.map((s) => {
             const on = f.slot === s.value
             const open = s.state === 'open'
@@ -358,10 +391,10 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
                 aria-checked={on}
                 disabled={!open}
                 onClick={() => set('slot', s.value)}
-                className={cx('flex h-[52px] flex-col items-center justify-center rounded-lg border-[1.5px] text-[14.5px] font-semibold leading-tight', on ? 'border-primary bg-primary-50 text-primary-700' : open ? 'border-slate-300 bg-white text-slate-700' : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400 line-through decoration-slate-300')}
+                className={cx('flex h-[56px] flex-col items-center justify-center rounded-xl border-[1.5px] text-[13.5px] font-semibold leading-tight transition', on ? 'border-primary bg-primary-50 text-primary-700 shadow-[0_0_0_3px_rgba(0,144,202,.12)]' : open ? 'border-slate-200 bg-white text-slate-700 hover:border-slate-300' : 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400')}
               >
-                {s.label}
-                {!open && <span className="text-[10.5px] font-semibold no-underline">{stateText[s.state]}</span>}
+                <span className={cx(!open && 'line-through decoration-slate-300')}>{s.label}</span>
+                <span className={cx('mt-0.5 text-[11px] font-semibold', open ? (on ? 'text-primary-700' : 'text-[#16A34A]') : 'text-slate-400')}>{open ? t.available : stateText[s.state]}</span>
               </button>
             )
           })}
@@ -439,13 +472,16 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
   )
 }
 
-function Section({ n, title, icon, right, children }: { n: number; title: string; icon?: ReactNode; right?: ReactNode; children: ReactNode }) {
+function Section({ n, title, sub, icon, right, children }: { n: number; title: string; sub?: string; icon?: ReactNode; right?: ReactNode; children: ReactNode }) {
   return (
     <section className="rounded-2xl bg-white p-4 shadow-[0_6px_24px_rgba(31,56,100,0.07)] ring-1 ring-slate-100 sm:p-5">
       <div className="mb-3.5 flex items-center justify-between gap-3">
-        <h2 className="flex min-w-0 items-center gap-2.5 text-[16px] font-bold text-slate-900">
-          <span className="flex size-8 flex-none items-center justify-center rounded-full bg-primary-50 text-[13.5px] font-bold text-primary-700">{icon ?? n}</span>
-          <span className="truncate">{title}</span>
+        <h2 className="flex min-w-0 items-center gap-3 text-[16px] font-bold text-slate-900">
+          <span className={cx('flex flex-none items-center justify-center rounded-full bg-primary-50 font-bold text-primary-700', sub ? 'size-10 text-[15px]' : 'size-8 text-[13.5px]')}>{icon ?? n}</span>
+          <span className="min-w-0">
+            <span className="block truncate">{title}</span>
+            {sub && <span className="block truncate text-[12.5px] font-normal text-slate-500">{sub}</span>}
+          </span>
         </h2>
         {right}
       </div>
