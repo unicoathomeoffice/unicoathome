@@ -83,8 +83,11 @@ function Page({ hospital: h, staff, patient, prefill, services, zones, booking, 
 
       {/* ------------------------------------------------------------ hero */}
       <section className={cx(styles.hero, 'relative flex flex-col overflow-hidden lg:h-dvh lg:min-h-0')}>
+        {/* AVIF first (≈35% smaller), WebP for browsers without it; portrait photo on phones */}
         <picture className={styles.backdrop} aria-hidden="true">
-          <source media="(max-width: 639px)" srcSet="/home-care-mobile.webp" />
+          <source media="(max-width: 639px)" type="image/avif" srcSet="/home-care-mobile.avif" />
+          <source media="(max-width: 639px)" type="image/webp" srcSet="/home-care-mobile.webp" />
+          <source type="image/avif" srcSet="/home-care-desktop.avif" />
           <img src="/home-care-desktop.webp" alt="" fetchPriority="high" decoding="async" />
         </picture>
         <div className={styles.scrim} aria-hidden="true" />
