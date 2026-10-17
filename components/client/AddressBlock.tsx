@@ -2,7 +2,7 @@
 // One address block for every form (public booking, patient profile, staff new-request web + app):
 // GPS that keeps improving live, address search, house / flat, area, landmark, always-visible pin map.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, Crosshair, Loader2, MapPin, Square } from 'lucide-react'
+import { Check, Crosshair, Loader2, MapPin } from 'lucide-react'
 import { AddressSearchInput, PinPicker, reportUsage, reverseGeocode } from './maps'
 import { cx } from '@/lib/format'
 
@@ -187,6 +187,9 @@ export function AddressBlock({
         if (!silent) setLocMsg({ tone: 'err', text: L.eLocFail })
         return
       }
+      // Indoors the phone may never get better than ±100–300 m. Still fill road / area / landmark from the best fix
+      // (marked "Auto-filled", so the patient can correct it) instead of leaving every box empty.
+      if (b.acc <= PIN_MAX_M && !geocodedAt.current) fillFrom(b)
       setLocMsg(b.acc <= FILL_MAX_M ? { tone: 'ok', text: L.accGood(b.acc) } : b.acc <= PIN_MAX_M ? { tone: 'warn', text: L.accPoor(b.acc) } : { tone: 'err', text: L.accBad })
     }
     const id = navigator.geolocation.watchPosition(
@@ -239,9 +242,12 @@ export function AddressBlock({
   const fp = (k: keyof AddressValue) => ({ id: `${idPrefix}-${k}`, error: errors[k], tag: tag(k), size })
 
   const gpsPinned = has && meta.source === 'gps'
-  // A background auto-detect that has no fix yet (permission prompt pending / ignored, or still searching) must not
-  // lock the button: on phones that left people tapping a dead button. A tap restarts it from a real user gesture.
-  const busy = tracking != null && !(watch.current?.silent && !best.current)
+  // Google-Maps-like: "Finding your location…" only until the fix is usable (±60 m); after that the button already
+  // says "Location added" while the blue dot keeps tightening quietly in the background — no ±m countdown, no Stop.
+  // A background auto-detect with no fix yet (permission prompt pending / ignored) never locks the button either:
+  // a tap restarts it from a real user gesture.
+  const live = tracking != null && has && meta.source === 'gps'
+  const busy = tracking != null && (!best.current || best.current.acc > FILL_MAX_M) && !(watch.current?.silent && !best.current)
   return (
     <div ref={root} className="flex flex-col gap-3.5">
       <div className="flex gap-2">
@@ -252,13 +258,8 @@ export function AddressBlock({
           className={cx('flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border-[1.5px] px-3 font-semibold', size === 'lg' ? 'h-[52px] text-[15px]' : 'h-10 text-[13.5px]', gpsPinned ? 'border-[#86EFAC] bg-[#F0FDF4] text-[#15803D]' : 'border-primary/40 bg-primary-50 text-primary-700')}
         >
           {busy ? <Loader2 size={18} className="flex-none animate-spin" /> : gpsPinned ? <Check size={18} className="flex-none" /> : <Crosshair size={18} className="flex-none" />}
-          <span className="truncate">{busy ? (best.current ? `${L.improving} · ±${tracking || best.current.acc} m` : L.locating) : gpsPinned ? L.located : L.useLocation}</span>
+          <span className="truncate">{busy ? L.locating : gpsPinned ? L.located : L.useLocation}</span>
         </button>
-        {busy && (
-          <button type="button" onClick={() => (watch.current ? (best.current ? (stopTracking(), setLocMsg(best.current.acc <= FILL_MAX_M ? { tone: 'ok', text: L.accGood(best.current.acc) } : { tone: 'warn', text: L.accPoor(best.current.acc) })) : stopTracking()) : null)} className={cx('flex flex-none items-center gap-1.5 rounded-lg border-[1.5px] border-slate-300 px-3 font-semibold text-slate-600', size === 'lg' ? 'h-[52px] text-[14px]' : 'h-10 text-[13px]')}>
-            <Square size={14} /> {L.stop}
-          </button>
-        )}
       </div>
       {locMsg && <div className={cx('rounded-lg px-3 py-2 text-[13px]', locMsg.tone === 'ok' ? 'bg-[#DCFCE7] text-[#15803D]' : locMsg.tone === 'warn' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#B91C1C]')}>{locMsg.text}</div>}
 
@@ -312,6 +313,7 @@ export function AddressBlock({
           lat={v.lat}
           lng={v.lng}
           accuracyM={meta.source === 'gps' ? acc : null}
+          live={live}
           hideLocate
           onChange={(p) => {
             // the user took over (drag / tap / clear): stop following the GPS

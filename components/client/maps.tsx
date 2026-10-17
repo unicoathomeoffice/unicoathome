@@ -245,7 +245,15 @@ export async function reverseGeocode(lat: number, lng: number): Promise<{ road: 
 
 // ---------------------------------------------------------------- pin picker
 /** What PinPicker needs from a map engine: move the pin, hide it, and report clicks/drags. */
-type Engine = { show: (p: { lat: number; lng: number }, zoomIn: boolean) => void; hide: () => void; destroy: () => void; accuracy: (p: { lat: number; lng: number } | null, m: number | null) => void }
+/** live = the GPS is still following the device: draw a pulsing blue "you are here" dot instead of the pin. */
+type Engine = { show: (p: { lat: number; lng: number }, zoomIn: boolean, live: boolean) => void; hide: () => void; destroy: () => void; accuracy: (p: { lat: number; lng: number } | null, m: number | null, live: boolean) => void }
+const GPS_BLUE = '#1A73E8'
+const gpsDot = () => {
+  const d = document.createElement('div')
+  d.className = 'hc-gps-dot'
+  d.style.transform = 'translateY(50%)' // advanced markers anchor at bottom-centre; the dot should sit centred
+  return d
+}
 type Pt = { lat: number; lng: number }
 
 async function googleEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt) => void): Promise<Engine> {
@@ -266,18 +274,22 @@ async function googleEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt)
     if (p) onPick(p)
   })
   let circle: any = null
+  const pinContent = marker.content
+  const dot = gpsDot()
   return {
-    show: (p, zoomIn) => {
+    show: (p, zoomIn, live) => {
       marker.position = p
+      marker.content = live ? dot : pinContent
       marker.map = map
       map.panTo(p)
       if (zoomIn && map.getZoom() < 15) map.setZoom(17)
     },
     hide: () => (marker.map = null),
     destroy: () => {},
-    accuracy: (p, m) => {
+    accuracy: (p, m, live) => {
       if (circle) circle.setMap(null)
-      circle = p && m ? new maps.Circle({ map, center: p, radius: m, strokeColor: '#0090CA', strokeWeight: 1, fillColor: '#0090CA', fillOpacity: 0.12, clickable: false }) : null
+      const c = live ? GPS_BLUE : '#0090CA'
+      circle = p && m ? new maps.Circle({ map, center: p, radius: m, strokeColor: c, strokeWeight: 1, fillColor: c, fillOpacity: live ? 0.15 : 0.12, clickable: false }) : null
     },
   }
 }
@@ -296,22 +308,24 @@ async function leafletEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt
     iconAnchor: [13, 26],
     html: '<div style="width:26px;height:26px;background:#0090CA;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 6px rgba(0,0,0,.3);border:2px solid #fff"></div>',
   })
+  const dotIcon = L.divIcon({ className: '', iconSize: [18, 18], iconAnchor: [9, 9], html: '<div class="hc-gps-dot"></div>' })
   const marker = L.marker(start ?? DHAKA, { draggable: true, icon, title: 'Patient location' })
   if (start) marker.addTo(map)
   marker.on('dragend', () => onPick(marker.getLatLng()))
   map.on('click', (e: any) => onPick(e.latlng))
   let circle: any = null
   return {
-    show: (p, zoomIn) => {
+    show: (p, zoomIn, live) => {
       marker.setLatLng(p)
+      marker.setIcon(live ? dotIcon : icon)
       if (!map.hasLayer(marker)) marker.addTo(map)
       map.setView(p, zoomIn && map.getZoom() < 15 ? 17 : map.getZoom())
     },
     hide: () => marker.remove(),
     destroy: () => map.remove(),
-    accuracy: (p, m) => {
+    accuracy: (p, m, live) => {
       circle?.remove()
-      circle = p && m ? L.circle(p, { radius: m, color: '#0090CA', weight: 1, fillOpacity: 0.12, interactive: false }).addTo(map) : null
+      circle = p && m ? L.circle(p, { radius: m, color: live ? GPS_BLUE : '#0090CA', weight: 1, fillOpacity: live ? 0.15 : 0.12, interactive: false }).addTo(map) : null
     },
   }
 }
@@ -320,7 +334,7 @@ async function leafletEngine(host: HTMLElement, start: Pt | null, onPick: (p: Pt
 type PinLabels = { tap: string; none: string; set: string; myLocation: string; clear: string }
 const PIN_EN: PinLabels = { tap: 'Tap the map to drop a pin', none: 'No pin yet — staff will navigate by address', set: 'Pinned', myLocation: 'My location', clear: 'Clear pin' }
 
-export function PinPicker({ lat, lng, onChange, height = 260, labels = PIN_EN, accuracyM = null, hideLocate = false }: { hideLocate?: boolean; lat?: number | null; lng?: number | null; onChange: (p: Pt | null) => void; height?: number; labels?: PinLabels; /** GPS accuracy radius to draw around the pin */ accuracyM?: number | null }) {
+export function PinPicker({ lat, lng, onChange, height = 260, labels = PIN_EN, accuracyM = null, hideLocate = false, live = false }: { hideLocate?: boolean; /** GPS still following the device: blue dot instead of the pin */ live?: boolean; lat?: number | null; lng?: number | null; onChange: (p: Pt | null) => void; height?: number; labels?: PinLabels; /** GPS accuracy radius to draw around the pin */ accuracyM?: number | null }) {
   const el = useRef<HTMLDivElement>(null)
   const engine = useRef<Engine | null>(null)
   const change = useRef(onChange)
@@ -357,10 +371,10 @@ export function PinPicker({ lat, lng, onChange, height = 260, labels = PIN_EN, a
   // follow coordinates chosen by click/drag, address search, GPS or "clear"
   useEffect(() => {
     if (!engine.current) return
-    if (has) engine.current.show({ lat: lat!, lng: lng! }, true)
+    if (has) engine.current.show({ lat: lat!, lng: lng! }, true, live)
     else engine.current.hide()
-    engine.current.accuracy(has ? { lat: lat!, lng: lng! } : null, accuracyM ?? null)
-  }, [lat, lng, has, accuracyM, osm])
+    engine.current.accuracy(has ? { lat: lat!, lng: lng! } : null, accuracyM ?? null, live)
+  }, [lat, lng, has, accuracyM, osm, live])
 
   function locate() {
     if (!('geolocation' in navigator)) return setErr('This device does not share location')
