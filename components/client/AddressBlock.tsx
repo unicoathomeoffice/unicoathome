@@ -2,6 +2,7 @@
 // One address block for every form (public booking, patient profile, staff new-request web + app):
 // GPS that keeps improving live, address search, house / flat, area, landmark, always-visible pin map.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, Crosshair, Loader2, MapPin } from 'lucide-react'
 import { AddressSearchInput, PinPicker, reportUsage, reverseGeocode } from './maps'
 import { cx } from '@/lib/format'
@@ -63,11 +64,12 @@ const metres = (a: { lat: number; lng: number }, b: { lat: number; lng: number }
 
 // Lives outside AddressBlock on purpose: a component declared inside render is a new type every render, so React
 // remounted every input on each GPS tick (~1/s on phones) — the keyboard closed and the search box reset mid-typing.
-function Field({ id, label, hint, error, tag, size, children }: { id: string; label: string; hint?: string; error?: string; tag?: string; size: 'lg' | 'md'; children: ReactNode }) {
+function Field({ id, label, hint, error, tag, size, required, children }: { id: string; label: string; hint?: string; error?: string; tag?: string; size: 'lg' | 'md'; required?: boolean; children: ReactNode }) {
   return (
     <div className={cx(error && '[&_.hc-input]:border-[#DC2626]', tag && !error && '[&_.hc-input]:border-[#86EFAC] [&_.hc-input]:bg-[#F0FDF4]')}>
       <label htmlFor={id} className={cx('hc-label flex items-center gap-2', size === 'lg' && '!text-[13.5px]')}>
         {label}
+        {required && <span className="-ml-1 text-[#DC2626]">*</span>}
         {tag && <span className="rounded-full bg-[#DCFCE7] px-2 py-px text-[11px] font-semibold text-[#15803D]">✓ {tag}</span>}
       </label>
       {children}
@@ -87,6 +89,8 @@ export function AddressBlock({
   size = 'lg',
   mapHeight = 260,
   idPrefix = 'f',
+  locateInto,
+  required,
   children,
 }: {
   value: AddressValue
@@ -101,6 +105,11 @@ export function AddressBlock({
   mapHeight?: number
   idPrefix?: string
   requireHouse?: boolean
+  /** undefined → full-width "Use my current location" bar on top (default). An element → the button is rendered
+   *  into it as a compact pill (e.g. the section header); null → that host is not mounted yet, render nothing. */
+  locateInto?: HTMLElement | null
+  /** red asterisk on these labels */
+  required?: Partial<Record<keyof AddressValue, boolean>>
   /** extra fields rendered after the landmark (e.g. requester on the staff form) */
   children?: ReactNode
 }) {
@@ -249,7 +258,7 @@ export function AddressBlock({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoDetect])
 
-  const fp = (k: keyof AddressValue) => ({ id: `${idPrefix}-${k}`, error: errors[k], tag: tag(k), size })
+  const fp = (k: keyof AddressValue) => ({ id: `${idPrefix}-${k}`, error: errors[k], tag: tag(k), size, required: required?.[k] })
 
   const gpsPinned = has && meta.source === 'gps'
   // Google-Maps-like: "Finding your location…" only until the first fix; after that the button already says
@@ -258,19 +267,25 @@ export function AddressBlock({
   // a tap restarts it from a real user gesture.
   const live = tracking != null && has && meta.source === 'gps'
   const busy = tracking != null && !best.current && !watch.current?.silent
+  const compact = locateInto !== undefined
+  const locateBtn = (
+    <button
+      type="button"
+      onClick={() => locate()}
+      disabled={busy}
+      className={cx(
+        'flex items-center justify-center gap-2 border-[1.5px] font-semibold',
+        compact ? 'h-9 max-w-[240px] rounded-full px-3 text-[13px]' : cx('min-w-0 flex-1 rounded-lg px-3', size === 'lg' ? 'h-[52px] text-[15px]' : 'h-10 text-[13.5px]'),
+        gpsPinned ? 'border-[#86EFAC] bg-[#F0FDF4] text-[#15803D]' : compact ? 'border-primary/50 bg-white text-primary-700 hover:bg-primary-50' : 'border-primary/40 bg-primary-50 text-primary-700',
+      )}
+    >
+      {busy ? <Loader2 size={compact ? 15 : 18} className="flex-none animate-spin" /> : gpsPinned ? <Check size={compact ? 15 : 18} className="flex-none" /> : compact ? <MapPin size={15} className="flex-none" /> : <Crosshair size={18} className="flex-none" />}
+      <span className="truncate">{busy ? L.locating : gpsPinned ? L.located : L.useLocation}</span>
+    </button>
+  )
   return (
     <div ref={root} className="flex flex-col gap-3.5">
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => locate()}
-          disabled={busy}
-          className={cx('flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border-[1.5px] px-3 font-semibold', size === 'lg' ? 'h-[52px] text-[15px]' : 'h-10 text-[13.5px]', gpsPinned ? 'border-[#86EFAC] bg-[#F0FDF4] text-[#15803D]' : 'border-primary/40 bg-primary-50 text-primary-700')}
-        >
-          {busy ? <Loader2 size={18} className="flex-none animate-spin" /> : gpsPinned ? <Check size={18} className="flex-none" /> : <Crosshair size={18} className="flex-none" />}
-          <span className="truncate">{busy ? L.locating : gpsPinned ? L.located : L.useLocation}</span>
-        </button>
-      </div>
+      {locateInto === undefined ? <div className="flex gap-2">{locateBtn}</div> : locateInto ? createPortal(locateBtn, locateInto) : null}
       {locMsg && <div className={cx('rounded-lg px-3 py-2 text-[13px]', locMsg.tone === 'ok' ? 'bg-[#DCFCE7] text-[#15803D]' : locMsg.tone === 'warn' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#B91C1C]')}>{locMsg.text}</div>}
 
       <Field {...fp('road')} label={L.road} hint={L.roadHint}>

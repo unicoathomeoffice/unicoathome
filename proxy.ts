@@ -23,5 +23,6 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!api|_next|login|m/login|m/forgot|feedback|privacy|terms|join|my/login|my/register|my/complete|logo.svg|manifest.webmanifest|favicon.ico|icons).*)'],
+  // `.*\..*` = any path with a file extension (hero.jpg, icons, fonts…): static files are never gated
+  matcher: ['/((?!api|_next|login|m/login|m/forgot|feedback|privacy|terms|join|my/login|my/register|my/complete|icons|.*\\..*).*)'],
 }

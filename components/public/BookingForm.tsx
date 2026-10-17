@@ -3,7 +3,7 @@
 // English / বাংলা via useLang(); slots come live from Settings → Online booking and grey out as visits are confirmed.
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, Check, CheckCircle2, FileText, ImagePlus, Loader2, Phone, Send, X } from 'lucide-react'
+import { AlertTriangle, CalendarDays, Check, CheckCircle2, FileText, ImagePlus, Loader2, Phone, Send, UserRound, X } from 'lucide-react'
 import { api } from '@/components/client/api'
 import { compressImage } from '@/components/client'
 import { AddressBlock, type AddressMeta, type AddressValue } from '@/components/client/AddressBlock'
@@ -45,6 +45,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
   const [done, setDone] = useState<{ requestNo: string; callWithinMin: number } | null>(null)
   const [docs, setDocs] = useState<Doc[]>([])
   const [addrMeta, setAddrMeta] = useState<AddressMeta>({ source: 'typed', autoFields: [] })
+  const [locHost, setLocHost] = useState<HTMLElement | null>(null) // the Address header slot that holds "Use my current location"
   const rxNeeded = services.filter((s) => s.requiresPrescription && f.serviceCodes.includes(s.code))
   const plainDays = useMemo(() => Array.from({ length: 14 }, (_, i) => dhakaDay(i)), [])
   const set = <K extends keyof typeof blank>(k: K, v: (typeof blank)[K]) => {
@@ -170,7 +171,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
 
   if (done)
     return (
-      <div className="mt-6 rounded-card bg-white p-6 text-center shadow-card">
+      <div className="rounded-2xl bg-white p-6 text-center shadow-card">
         <CheckCircle2 size={56} className="mx-auto text-[#16A34A]" />
         <h2 className="mt-3 text-[22px] font-bold">{t.sent}</h2>
         <div className="mt-1 text-[15px] text-slate-600">{t.yourNo}</div>
@@ -207,23 +208,37 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
   const stateText: Record<SlotState, string> = { open: '', full: t.booked, past: t.unavailable, blocked: t.unavailable, closed: t.closed }
 
   return (
-    <form onSubmit={submit} noValidate className="mt-6 flex flex-col gap-4">
+    <form onSubmit={submit} noValidate className="flex flex-col gap-3.5">
       {/* honeypot: hidden from people, irresistible to bots */}
       <input type="text" name="website" value={f.website} onChange={(e) => set('website', e.target.value)} tabIndex={-1} autoComplete="off" className="absolute -left-[9999px] h-0 w-0 opacity-0" aria-hidden />
 
-      <Section n={1} title={t.sPatient}>
-        <Field id="name" label={t.name} error={errors.name}>
-          <input id="f-name" className={input} value={f.name} onChange={(e) => set('name', e.target.value)} autoComplete="name" placeholder={t.namePh} />
+      <Section n={1} title={t.sPatient} icon={<UserRound size={15} />}>
+        <Field id="name" label={t.name} required error={errors.name}>
+          <Iconed icon={<UserRound size={18} />}>
+            <input id="f-name" className={cx(input, 'pl-11')} value={f.name} onChange={(e) => set('name', e.target.value)} autoComplete="name" placeholder={t.namePh} />
+          </Iconed>
         </Field>
-        <Field id="phone" label={t.phone} error={errors.phone}>
-          <input id="f-phone" className={input} value={f.phone} onChange={(e) => set('phone', e.target.value)} type="tel" inputMode="tel" autoComplete="tel" placeholder="01XXXXXXXXX" />
+        <Field id="phone" label={t.phone} required error={errors.phone}>
+          <div className="flex gap-2">
+            <span className="flex h-12 flex-none items-center gap-2 rounded-lg border-[1.5px] border-slate-300 bg-slate-50 px-3 text-[15px] font-semibold text-slate-700" aria-hidden>
+              <Phone size={16} className="text-slate-400" />
+              <svg viewBox="0 0 20 12" className="h-3 w-5 rounded-[2px]">
+                <rect width="20" height="12" fill="#006A4E" />
+                <circle cx="9" cy="6" r="4" fill="#F42A41" />
+              </svg>
+              +88
+            </span>
+            <input id="f-phone" className={input} value={f.phone} onChange={(e) => set('phone', e.target.value)} type="tel" inputMode="tel" autoComplete="tel" placeholder="01XXXXXXXXX" />
+          </div>
         </Field>
-        <div className="grid grid-cols-[104px_1fr] gap-3">
-          <Field id="ageYears" label={t.age} error={errors.ageYears}>
-            <input id="f-ageYears" className={input} value={f.ageYears} onChange={(e) => set('ageYears', e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder={t.agePh} />
+        <div className="grid grid-cols-[124px_1fr] gap-3">
+          <Field id="ageYears" label={t.age} required error={errors.ageYears}>
+            <Iconed icon={<CalendarDays size={17} />}>
+              <input id="f-ageYears" className={cx(input, 'pl-10')} value={f.ageYears} onChange={(e) => set('ageYears', e.target.value.replace(/\D/g, '').slice(0, 3))} inputMode="numeric" placeholder={t.agePh} />
+            </Iconed>
           </Field>
           <Field id="gender" label={t.gender} error={errors.gender}>
-            <div id="f-gender" className="grid h-12 grid-cols-3 gap-1 rounded-lg bg-slate-200 p-1">
+            <div id="f-gender" className="grid h-12 grid-cols-3 gap-2">
               {(
                 [
                   ['M', t.male],
@@ -231,7 +246,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
                   ['O', t.other],
                 ] as const
               ).map(([v, l]) => (
-                <button key={v} type="button" onClick={() => set('gender', v)} aria-pressed={f.gender === v} className={cx('rounded-md text-[14px] font-semibold', f.gender === v ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600')}>
+                <button key={v} type="button" onClick={() => set('gender', v)} aria-pressed={f.gender === v} className={cx('rounded-lg border-[1.5px] text-[14px] font-semibold transition', f.gender === v ? 'border-primary bg-primary text-white shadow-[0_6px_14px_rgba(0,144,202,.3)]' : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100')}>
                   {l}
                 </button>
               ))}
@@ -243,8 +258,10 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         </Field>
       </Section>
 
-      <Section n={2} title={t.sAddress}>
+      <Section n={2} title={t.sAddress} right={<span ref={setLocHost} className="flex min-w-0 flex-none" />}>
         <AddressBlock
+          locateInto={locHost}
+          required={{ road: true, house: true, flat: true }}
           value={{ road: f.road, house: f.house, flat: f.flat, area: f.area, landmark: f.landmark, lat: f.lat, lng: f.lng }}
           onChange={setAddr}
           onMeta={setAddrMeta}
@@ -415,33 +432,34 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         . {t.consent2}
       </p>
 
-      {/* sticky on phones, inline on larger screens */}
-      <div className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:static sm:border-0 sm:bg-transparent sm:p-0">
-        <button type="submit" disabled={busy} className={btnClass('p', 'xl', 'mx-auto w-full max-w-[720px]')}>
-          {busy ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />} {busy ? t.sending : t.send}
-        </button>
-      </div>
+      <button type="submit" disabled={busy} className={cx(btnClass('p', 'xl', 'w-full !rounded-2xl !text-[16px]'), 'shadow-[0_10px_24px_rgba(0,144,202,.35)]')}>
+        {busy ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />} {busy ? t.sending : t.send}
+      </button>
     </form>
   )
 }
 
-function Section({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+function Section({ n, title, icon, right, children }: { n: number; title: string; icon?: ReactNode; right?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-card bg-white p-4 shadow-card sm:p-5">
-      <h2 className="mb-3.5 flex items-center gap-2.5 text-[16px] font-bold text-slate-900">
-        <span className="flex size-7 flex-none items-center justify-center rounded-full bg-primary-50 text-[13px] text-primary-700">{n}</span>
-        {title}
-      </h2>
+    <section className="rounded-2xl bg-white p-4 shadow-[0_6px_24px_rgba(31,56,100,0.07)] ring-1 ring-slate-100 sm:p-5">
+      <div className="mb-3.5 flex items-center justify-between gap-3">
+        <h2 className="flex min-w-0 items-center gap-2.5 text-[16px] font-bold text-slate-900">
+          <span className="flex size-8 flex-none items-center justify-center rounded-full bg-primary-50 text-[13.5px] font-bold text-primary-700">{icon ?? n}</span>
+          <span className="truncate">{title}</span>
+        </h2>
+        {right}
+      </div>
       <div className="flex flex-col gap-3.5">{children}</div>
     </section>
   )
 }
 
-function Field({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string; children: ReactNode }) {
+function Field({ id, label, hint, error, required, children }: { id: string; label: string; hint?: string; error?: string; required?: boolean; children: ReactNode }) {
   return (
     <div className={cx(error && '[&_.hc-input]:border-[#DC2626]')}>
       <label htmlFor={`f-${id}`} className="hc-label !text-[13.5px]">
         {label}
+        {required && <span className="ml-0.5 text-[#DC2626]">*</span>}
       </label>
       {children}
       {error ? <Err>{error}</Err> : hint && <div className="mt-1 text-[12.5px] text-slate-500">{hint}</div>}
@@ -450,3 +468,11 @@ function Field({ id, label, hint, error, children }: { id: string; label: string
 }
 
 const Err = ({ children }: { children: ReactNode }) => <div className="mt-1 text-[13px] font-medium text-[#B91C1C]">{children}</div>
+
+/** an input with a grey icon inside its left edge */
+const Iconed = ({ icon, children }: { icon: ReactNode; children: ReactNode }) => (
+  <div className="relative">
+    <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">{icon}</span>
+    {children}
+  </div>
+)
