@@ -60,6 +60,21 @@ const metres = (a: { lat: number; lng: number }, b: { lat: number; lng: number }
   return 2 * R * Math.asin(Math.sqrt(x))
 }
 
+// Lives outside AddressBlock on purpose: a component declared inside render is a new type every render, so React
+// remounted every input on each GPS tick (~1/s on phones) — the keyboard closed and the search box reset mid-typing.
+function Field({ id, label, hint, error, tag, size, children }: { id: string; label: string; hint?: string; error?: string; tag?: string; size: 'lg' | 'md'; children: ReactNode }) {
+  return (
+    <div className={cx(error && '[&_.hc-input]:border-[#DC2626]', tag && !error && '[&_.hc-input]:border-[#86EFAC] [&_.hc-input]:bg-[#F0FDF4]')}>
+      <label htmlFor={id} className={cx('hc-label flex items-center gap-2', size === 'lg' && '!text-[13.5px]')}>
+        {label}
+        {tag && <span className="rounded-full bg-[#DCFCE7] px-2 py-px text-[11px] font-semibold text-[#15803D]">✓ {tag}</span>}
+      </label>
+      {children}
+      {error ? <div className="mt-1 text-[13px] font-medium text-[#B91C1C]">{error}</div> : hint && <div className="mt-1 text-[12.5px] text-slate-500">{hint}</div>}
+    </div>
+  )
+}
+
 export function AddressBlock({
   value: v,
   onChange,
@@ -99,7 +114,8 @@ export function AddressBlock({
   vRef.current = v
   const autoRef = useRef(auto)
   autoRef.current = auto
-  const watch = useRef<{ id: number; timers: number[] } | null>(null)
+  const watch = useRef<{ id: number; timers: number[]; silent: boolean } | null>(null)
+  const run = useRef(0) // bumped when a new GPS run starts or the user takes over — stale address lookups are dropped
   const best = useRef<{ lat: number; lng: number; acc: number } | null>(null)
   const geocodedAt = useRef<{ lat: number; lng: number } | null>(null)
   const input = cx('hc-input', size === 'lg' && 'hc-input-lg !text-[16px]')
@@ -126,13 +142,21 @@ export function AddressBlock({
     watch.current = null
     setTracking(null)
   }
+  /** the user chose the position themselves (search / pin): stop the GPS and ignore any lookup still in flight */
+  function takeOver() {
+    run.current++
+    stopTracking()
+  }
   useEffect(() => () => stopTracking(), [])
 
   /** fill road / area / landmark from the position (only boxes that are empty or were auto-filled before) */
   async function fillFrom(p: { lat: number; lng: number }) {
     geocodedAt.current = p
+    const mine = run.current
     const place = await reverseGeocode(p.lat, p.lng)
-    if (!place || !watch.current) return // user stopped meanwhile
+    // Only drop the result if the user took over or restarted. (It used to be dropped whenever tracking had ended —
+    // but a ±12 m fix ends tracking at once, so on phones the best fix never filled road / area / landmark.)
+    if (!place || mine !== run.current) return
     const cur = vRef.current
     const may = (k: keyof AddressValue) => !String(cur[k] ?? '').trim() || autoRef.current.includes(k)
     const zone = place.area ? zones.find((z) => z.toLowerCase().includes(place.area.toLowerCase()) || place.area.toLowerCase().includes(z.toLowerCase())) : undefined
@@ -150,7 +174,7 @@ export function AddressBlock({
   /** Start (or restart) live tracking: every better fix moves the pin; stops at DONE_M, after MAX_WATCH_MS, or when the user takes over. */
   function locate(silent = false) {
     if (!('geolocation' in navigator)) return silent ? undefined : setLocMsg({ tone: 'err', text: L.eLocNone })
-    stopTracking()
+    takeOver()
     best.current = null
     geocodedAt.current = null
     setLocMsg(null)
@@ -191,7 +215,7 @@ export function AddressBlock({
     )
     const t1 = window.setTimeout(() => !best.current && finish(), FIRST_FIX_MS)
     const t2 = window.setTimeout(finish, MAX_WATCH_MS)
-    watch.current = { id, timers: [t1, t2] }
+    watch.current = { id, timers: [t1, t2], silent }
   }
 
   // auto-detect once the block is on screen (phones/tablets only)
@@ -212,35 +236,25 @@ export function AddressBlock({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoDetect])
 
-  const Field = ({ k, label, hint, children }: { k: keyof AddressValue; label: string; hint?: string; children: ReactNode }) => {
-    const error = errors[k]
-    const tg = tag(k)
-    return (
-      <div className={cx(error && '[&_.hc-input]:border-[#DC2626]', tg && !error && '[&_.hc-input]:border-[#86EFAC] [&_.hc-input]:bg-[#F0FDF4]')}>
-        <label htmlFor={`${idPrefix}-${k}`} className={cx('hc-label flex items-center gap-2', size === 'lg' && '!text-[13.5px]')}>
-          {label}
-          {tg && <span className="rounded-full bg-[#DCFCE7] px-2 py-px text-[11px] font-semibold text-[#15803D]">✓ {tg}</span>}
-        </label>
-        {children}
-        {error ? <div className="mt-1 text-[13px] font-medium text-[#B91C1C]">{error}</div> : hint && <div className="mt-1 text-[12.5px] text-slate-500">{hint}</div>}
-      </div>
-    )
-  }
+  const fp = (k: keyof AddressValue) => ({ id: `${idPrefix}-${k}`, error: errors[k], tag: tag(k), size })
 
   const gpsPinned = has && meta.source === 'gps'
+  // A background auto-detect that has no fix yet (permission prompt pending / ignored, or still searching) must not
+  // lock the button: on phones that left people tapping a dead button. A tap restarts it from a real user gesture.
+  const busy = tracking != null && !(watch.current?.silent && !best.current)
   return (
     <div ref={root} className="flex flex-col gap-3.5">
       <div className="flex gap-2">
         <button
           type="button"
           onClick={() => locate()}
-          disabled={tracking != null}
+          disabled={busy}
           className={cx('flex min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border-[1.5px] px-3 font-semibold', size === 'lg' ? 'h-[52px] text-[15px]' : 'h-10 text-[13.5px]', gpsPinned ? 'border-[#86EFAC] bg-[#F0FDF4] text-[#15803D]' : 'border-primary/40 bg-primary-50 text-primary-700')}
         >
-          {tracking != null ? <Loader2 size={18} className="flex-none animate-spin" /> : gpsPinned ? <Check size={18} className="flex-none" /> : <Crosshair size={18} className="flex-none" />}
-          <span className="truncate">{tracking != null ? (best.current ? `${L.improving} · ±${tracking || best.current.acc} m` : L.locating) : gpsPinned ? L.located : L.useLocation}</span>
+          {busy ? <Loader2 size={18} className="flex-none animate-spin" /> : gpsPinned ? <Check size={18} className="flex-none" /> : <Crosshair size={18} className="flex-none" />}
+          <span className="truncate">{busy ? (best.current ? `${L.improving} · ±${tracking || best.current.acc} m` : L.locating) : gpsPinned ? L.located : L.useLocation}</span>
         </button>
-        {tracking != null && (
+        {busy && (
           <button type="button" onClick={() => (watch.current ? (best.current ? (stopTracking(), setLocMsg(best.current.acc <= FILL_MAX_M ? { tone: 'ok', text: L.accGood(best.current.acc) } : { tone: 'warn', text: L.accPoor(best.current.acc) })) : stopTracking()) : null)} className={cx('flex flex-none items-center gap-1.5 rounded-lg border-[1.5px] border-slate-300 px-3 font-semibold text-slate-600', size === 'lg' ? 'h-[52px] text-[14px]' : 'h-10 text-[13px]')}>
             <Square size={14} /> {L.stop}
           </button>
@@ -248,14 +262,14 @@ export function AddressBlock({
       </div>
       {locMsg && <div className={cx('rounded-lg px-3 py-2 text-[13px]', locMsg.tone === 'ok' ? 'bg-[#DCFCE7] text-[#15803D]' : locMsg.tone === 'warn' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#B91C1C]')}>{locMsg.text}</div>}
 
-      <Field k="road" label={L.road} hint={L.roadHint}>
+      <Field {...fp('road')} label={L.road} hint={L.roadHint}>
         <div id={`${idPrefix}-road`}>
           <AddressSearchInput
             className={input}
             value={v.road}
             onChange={(road) => set('road', road)}
             onPlace={(p) => {
-              stopTracking()
+              takeOver()
               onChange({ road: p.full, lat: p.lat, lng: p.lng })
               const next = [...new Set([...autoRef.current, 'road'])]
               setAuto(next)
@@ -268,15 +282,15 @@ export function AddressBlock({
         </div>
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field k="house" label={L.house}>
+        <Field {...fp('house')} label={L.house}>
           <input id={`${idPrefix}-house`} className={input} value={v.house} onChange={(e) => set('house', e.target.value)} placeholder={L.housePh} />
         </Field>
-        <Field k="flat" label={L.flat}>
+        <Field {...fp('flat')} label={L.flat}>
           <input id={`${idPrefix}-flat`} className={input} value={v.flat} onChange={(e) => set('flat', e.target.value)} placeholder={L.flatPh} />
         </Field>
       </div>
       <div className={cx('grid gap-3', size === 'md' && 'sm:grid-cols-2')}>
-        <Field k="area" label={L.area}>
+        <Field {...fp('area')} label={L.area}>
           <input id={`${idPrefix}-area`} className={input} value={v.area} onChange={(e) => set('area', e.target.value)} list={`${idPrefix}-zones`} placeholder={L.areaPh} autoComplete="off" />
           <datalist id={`${idPrefix}-zones`}>
             {zones.map((z) => (
@@ -284,7 +298,7 @@ export function AddressBlock({
             ))}
           </datalist>
         </Field>
-        <Field k="landmark" label={L.landmark}>
+        <Field {...fp('landmark')} label={L.landmark}>
           <input id={`${idPrefix}-landmark`} className={input} value={v.landmark} onChange={(e) => set('landmark', e.target.value)} placeholder={L.landmarkPh} />
         </Field>
       </div>
@@ -301,7 +315,7 @@ export function AddressBlock({
           hideLocate
           onChange={(p) => {
             // the user took over (drag / tap / clear): stop following the GPS
-            stopTracking()
+            takeOver()
             onChange({ lat: p?.lat ?? null, lng: p?.lng ?? null })
             setAcc(null)
             setLocMsg(null)
