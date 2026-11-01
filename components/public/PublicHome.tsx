@@ -1,8 +1,7 @@
 'use client'
 // Public landing, ported from the "Home care at your door" mockups (desktop + mobile): light page with soft blue
 // blobs, a top nav, hero copy + photo on the left and the booking card (gradient header) in its own scroll panel
-// on the right. On phones: feature list card over the photo, "Your Health · Our Priority" badge, the booking card
-// as a sheet with a grabber, and a bottom tab bar. EN / বাংলা; every link / button goes to a real page or section.
+// on the right. On phones the hero is dropped: just the top bar, the booking card and a bottom tab bar. EN / বাংলা; every link / button goes to a real page or section.
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 import { ArrowRight, CalendarDays, ChevronDown, Clock3, FlaskConical, HeartPulse, House, LayoutDashboard, LayoutGrid, Menu, Mouse, Phone, ShieldCheck, Smile, Stethoscope, Truck, UserRound, Users, X } from 'lucide-react'
@@ -83,10 +82,9 @@ function Page({ hospital: h, staff, patient, prefill, services, zones, booking, 
 
       {/* ------------------------------------------------------------ hero */}
       <section className={cx(styles.hero, 'relative flex flex-col overflow-hidden lg:h-dvh lg:min-h-0')}>
-        {/* AVIF first (≈35% smaller), WebP for browsers without it; portrait photo on phones */}
+        {/* AVIF first (≈35% smaller), WebP for browsers without it; phones hide the hero, so they get a 1px GIF */}
         <picture className={styles.backdrop} aria-hidden="true">
-          <source media="(max-width: 639px)" type="image/avif" srcSet="/home-care-mobile.avif" />
-          <source media="(max-width: 639px)" type="image/webp" srcSet="/home-care-mobile.webp" />
+          <source media="(max-width: 639px)" srcSet="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
           <source type="image/avif" srcSet="/home-care-desktop.avif" />
           <img src="/home-care-desktop.webp" alt="" fetchPriority="high" decoding="async" />
         </picture>
@@ -207,10 +205,10 @@ function Page({ hospital: h, staff, patient, prefill, services, zones, booking, 
       </section>
 
       {/* ------------------------------------------------------------ booking card (a sheet on phones; scrolls on its own on desktop) */}
-      <section id="book" ref={panel} className="relative z-10 -mt-6 lg:mt-0 lg:h-dvh lg:overflow-y-auto hc-scroll lg:py-4 lg:pr-4">
-        <div className="mx-auto max-w-[640px] pb-10 sm:px-4 lg:px-0 lg:pb-4">
-          <div className="overflow-hidden rounded-t-[28px] bg-white shadow-[0_-12px_40px_rgba(31,56,100,.14)] ring-1 ring-white/70 sm:rounded-[28px] sm:shadow-[0_24px_60px_rgba(31,56,100,.18)]">
-            <div className="mx-auto mt-3 h-1.5 w-20 rounded-full bg-slate-300 lg:hidden" />
+      <section id="book" ref={panel} className="relative z-10 mt-1 sm:-mt-6 lg:mt-0 lg:h-dvh lg:overflow-y-auto hc-scroll lg:py-4 lg:pr-4">
+        <div className="mx-auto max-w-[640px] px-3 pb-10 sm:px-4 lg:px-0 lg:pb-4">
+          <div className="overflow-hidden rounded-[24px] bg-white shadow-[0_12px_40px_rgba(31,56,100,.12)] ring-1 ring-white/70 sm:rounded-[28px] sm:shadow-[0_24px_60px_rgba(31,56,100,.18)]">
+            <div className="mx-auto mt-3 hidden h-1.5 w-20 rounded-full bg-slate-300 sm:block lg:hidden" />
             <div className="flex items-center gap-3.5 px-5 py-5 sm:px-6 lg:flex-row-reverse lg:items-start lg:justify-between lg:bg-gradient-to-r lg:from-primary lg:to-[#1FB6E8] lg:text-white">
               <span className="flex size-14 flex-none items-center justify-center rounded-2xl bg-primary-50 text-primary lg:size-11 lg:rounded-xl lg:bg-white/20 lg:text-white lg:ring-1 lg:ring-white/40">
                 <CalendarDays size={30} className="lg:hidden" />
@@ -226,7 +224,7 @@ function Page({ hospital: h, staff, patient, prefill, services, zones, booking, 
             </div>
           </div>
 
-          <footer id="contact" className="mt-6 flex flex-wrap gap-x-5 gap-y-2 px-5 pb-28 text-[13px] text-slate-500 sm:px-2 lg:pb-0">
+          <footer id="contact" className="mt-6 flex flex-wrap gap-x-5 gap-y-2 px-2 pb-28 text-[13px] text-slate-500 sm:px-2 lg:pb-0">
             <span className="w-full text-slate-700">
               {h.name} · {h.address} ·{' '}
               <a href={telUrl(h.phone)} className="font-semibold text-primary-700">
