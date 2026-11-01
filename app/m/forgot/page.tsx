@@ -8,7 +8,7 @@ export const metadata = { title: 'Forgot password' }
 
 /** M02 · password reset is done by the coordinator / IT (no SMS provider). Public page. */
 export default async function Forgot() {
-  let phone = process.env.HOSPITAL_PHONE ?? '+880 9666 710 710'
+  let phone = process.env.HOSPITAL_PHONE ?? '+880 1841-996655'
   try {
     await db()
     phone = (await getSettings()).general.hospitalPhone

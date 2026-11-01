@@ -8,7 +8,7 @@ export const DEFAULT_SETTINGS = {
   general: {
     hospitalName: 'Unico Hospitals PLC',
     department: 'Family Medicine · Home Care',
-    hospitalPhone: process.env.HOSPITAL_PHONE ?? '+880 9666 710 710',
+    hospitalPhone: process.env.HOSPITAL_PHONE ?? '+880 1841-996655',
     address: 'Plot 1, Road 12, Dhaka',
     workingHours: { from: '08:00', to: '20:00' },
     slots: [...SLOTS] as string[],
