@@ -6,7 +6,8 @@ export const GET = route<{ id: string }>(
   async ({ req, user, params }) => {
     const r = await loadRequest(params.id, user)
     const roles = qp(req).get('role')?.split(',')
-    return { items: await rankCandidates(r, 30, roles) }
+    const limit = Math.min(80, Math.max(1, Number(qp(req).get('limit')) || 30))
+    return { items: await rankCandidates(r, limit, roles) }
   },
   { perm: 'requests.assign' },
 )

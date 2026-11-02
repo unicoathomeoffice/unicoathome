@@ -438,6 +438,7 @@ export const AssignInput = z.object({
 export async function assign(r: any, input: z.infer<typeof AssignInput>, user: SessionUser, meta: Meta) {
   const ids = [input.primaryStaffId, ...input.secondaryStaffIds]
   if (!ids.every(isOid)) throw bad('Invalid staff')
+  if (new Set(ids).size !== ids.length) throw bad('The same person is on the care team twice', { secondaryStaffIds: 'Duplicate team member' })
   const staff = await User.find({ _id: { $in: ids }, status: 'ACTIVE' }).select('name role availability').lean<any[]>()
   if (staff.length !== new Set(ids).size) throw bad('One or more staff members are not active')
   const prevPrimary = r.assignment?.primaryStaffId ? String(r.assignment.primaryStaffId) : null
