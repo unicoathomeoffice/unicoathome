@@ -1,6 +1,7 @@
 import 'server-only'
 import { cache } from 'react'
 import { Setting } from './models'
+import { db } from './db'
 import { SLOTS } from './constants'
 import { forget, memo } from './memo'
 
@@ -92,6 +93,24 @@ export const DEFAULT_SETTINGS = {
     /** on-call security supervisors; from/to = shift (HH:MM, may cross midnight); empty = always on call */
     supervisors: [] as { id: string; name: string; phone: string; from: string; to: string; active: boolean }[],
   },
+  /** WhatsApp sending safety for the QR-paired hospital number (lib/wa/guard.ts) — keeps it looking like a careful
+   *  person: rate limits with a warm-up, pauses and "typing…", number check, no duplicates, quiet hours, STOP opt-out,
+   *  and an automatic pause when WhatsApp pushes back. Nothing makes an unofficial session ban-proof. */
+  whatsappSafety: {
+    perMinute: 6,
+    perHour: 60,
+    perDay: 300,
+    perRecipientHour: 4,
+    perRecipientDay: 12,
+    delayMinSec: 2,
+    delayMaxSec: 6,
+    typing: true,
+    checkNumbers: true,
+    dedupeMin: 10,
+    quietHours: true, // uses quietHours (22:00–07:00) for routine automatic messages
+    warmUpDays: 7,
+    optOut: true,
+  },
   /** daily WhatsApp summary (lib/services/daily.ts): sent once a day at the first activity after `time` */
   dailyWhatsApp: {
     enabled: true,
@@ -140,6 +159,9 @@ const SETTINGS_TTL_MS = 30_000
 /** Settings rows are read at most every 30 s per instance; saveSetting() clears that at once on this instance.
  *  Only the configuration keys are loaded (the collection also holds OTPs and other runtime rows). */
 export const getSettings = cache(async function getSettings(): Promise<Settings> {
+  // Connect first: pages like /my/login read settings before any other query, and with bufferCommands off a
+  // cold instance would otherwise throw "before initial connection is complete".
+  await db()
   const rows = await memo('settings:rows', SETTINGS_TTL_MS, () => Setting.find({ key: { $in: Object.keys(DEFAULT_SETTINGS) } }).select('key value').lean<any[]>())
   const over: any = {}
   for (const r of rows) over[r.key] = r.value
@@ -163,6 +185,7 @@ export function ruleAllows(rules: Settings['notificationRules'], event: string, 
 }
 
 export async function saveSetting(key: keyof Settings | string, value: unknown, userId?: string) {
+  await db()
   await Setting.updateOne({ key }, { value, updatedBy: userId }, { upsert: true })
   forget('settings:')
 }
