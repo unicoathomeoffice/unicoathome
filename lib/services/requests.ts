@@ -197,10 +197,22 @@ export function slotStart(slot?: string) {
   return `${slot?.match(/^\d{1,2}/)?.[0]?.padStart(2, '0') ?? '09'}:00`
 }
 
-/** Car paperwork (lib/services/transport-docs.ts), loaded only when needed. */
+/** Car paperwork (lib/services/transport-docs.ts), loaded only when needed. A first request also alerts the
+ *  Security / Transport groups ("Car requested"). */
 export async function carRequestedLazy(requestId: unknown, userId: string, opts: { updated?: boolean } = {}) {
   const { carRequested } = await import('./transport-docs')
-  await carRequested(requestId, userId, opts)
+  const first = await carRequested(requestId, userId, opts)
+  if (first && !opts.updated) await carAlertLazy('CAR_REQUESTED', requestId)
+}
+
+/** Security / Transport group alert (lib/services/hod.ts carAlert), never throws. */
+export async function carAlertLazy(event: import('./hod').CarEvent, requestId: unknown, extra: { reason?: string; at?: Date } = {}) {
+  try {
+    const { carAlert } = await import('./hod')
+    await carAlert(event, requestId, extra)
+  } catch (e) {
+    console.error('[car alert]', event, e)
+  }
 }
 
 // ============================================================== create
@@ -484,6 +496,7 @@ export async function reschedule(r: any, input: z.infer<typeof RescheduleInput>,
     await whatsappPatient(r, 'patient_rescheduled', user)
     // the security supervisor already has a requisition for the old time: send the updated one
     if (r.transport?.needed && r.transport?.requisitionSentAt) await carRequestedLazy(r._id, user.id, { updated: true })
+    if (r.transport?.needed) await carAlertLazy('CAR_CHANGED', r._id)
   })
 }
 
@@ -498,6 +511,7 @@ export async function cancel(r: any, input: z.infer<typeof CancelInput>, user: S
     await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? []), r.transport?.driverId], { type: 'CANCELLED', as: 'STAFF', title: `${r.requestNo} cancelled`, body: input.reason, requestId: r._id })
     await emailPatient(r, 'patient_cancelled', user)
     await whatsappPatient(r, 'patient_cancelled', user)
+    if (r.transport?.needed) await carAlertLazy('CAR_CANCELLED', r._id, { reason: input.reason })
   })
 }
 
@@ -584,6 +598,8 @@ export async function enRoute(r: any, input: z.infer<typeof Stamp>, user: Sessio
     await closeOpenReturns(user.id, r._id) // left straight from the last visit: that way back is over
     await notifyRoles(['HC_ADMIN'], { type: 'EN_ROUTE', title: `${user.name} is on the way`, body: `${r.requestNo} · ${r.patientSnapshot.name}`, requestId: r._id, url: url(r._id) })
     if (token && s.features.shareTrackingWithPatient) await whatsappPatient(r, 'patient_en_route', user, user.id)
+    // a Unico car the driver didn't stamp out: the team leaving is the car leaving
+    if (r.transport?.mode === 'UNICO_CAR' && !r.transport.legs?.find((l: any) => l.key === 'pickup')?.at) await carAlertLazy('CAR_OUT', r._id)
   })
 }
 
@@ -849,6 +865,7 @@ export async function assignTransport(r: any, input: z.infer<typeof TransportInp
     background(async () => {
       const { sendTransportDocs } = await import('./transport-docs')
       await sendTransportDocs(r._id, 'allotted', user.id) // requisition with Section B + gate pass
+      await carAlertLazy('CAR_ALLOTTED', r._id)
       await notifyUsers([driverId], { ...note, as: 'DRIVER', url: '/m/trips' })
       await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])], { ...note, as: 'STAFF', url: appUrl(r._id) })
     })
@@ -871,6 +888,7 @@ export async function stampTransportLeg(r: any, legKey: string, user: SessionUse
   await r.save()
   if (r.transport.vehicleId) await Vehicle.updateOne({ _id: r.transport.vehicleId }, { status: legKey === 'return' ? 'FREE' : 'ON_TRIP' })
   await audit(user, 'transport.leg', 'request', r._id, { after: { leg: legKey, at: leg.at }, label: r.requestNo }, meta)
+  if (legKey === 'pickup' || legKey === 'return') background(() => carAlertLazy(legKey === 'pickup' ? 'CAR_OUT' : 'CAR_BACK', r._id, { at: leg.at }))
 }
 
 // ============================================================== reschedule / cancel / handover asked by staff (→ approvals)

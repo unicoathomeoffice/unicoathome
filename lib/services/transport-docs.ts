@@ -132,13 +132,17 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
       : `${stage === 'updated' ? 'UPDATED · ' : ''}Unico @ Home car requested · ${r.requestNo}\n${when}\nTo: ${address || r.patientSnapshot?.area || ''}\nRequested by ${requester?.name ?? 'Home Care'}`
   if ((await isPaired()) && (wantReq || wantGate)) {
     const { queueWhatsApp } = await import('../wa/service')
-    for (const sup of await onCallSupervisors()) {
+    // on-call security supervisors + everyone in an alert group that takes the car paperwork (Security / Transport)
+    const { groupRecipients } = await import('./hod')
+    const docTo = [...(await onCallSupervisors()).map((x) => ({ name: x.name, phone: x.phone, role: 'security supervisor' })), ...(await groupRecipients('CAR_DOCS')).map((x) => ({ name: x.name, phone: x.phone, role: x.group.name }))]
+    const seenDoc = new Set<string>()
+    for (const sup of docTo.filter((x) => { const n = waNumber(x.phone); return !!n && !seenDoc.has(n) && !!seenDoc.add(n) })) {
       if (wantReq) {
-        await queueWhatsApp({ to: sup.phone, toName: `${sup.name} (security supervisor)`, text: caption, templateKey: 'vehicle_requisition', requestId: r._id, initiatedBy, attachmentId: reqFile._id, fileName: reqFile.filename })
+        await queueWhatsApp({ to: sup.phone, toName: `${sup.name} (${sup.role})`, text: caption, templateKey: 'vehicle_requisition', requestId: r._id, initiatedBy, attachmentId: reqFile._id, fileName: reqFile.filename })
         sent++
       }
       if (wantGate) {
-        await queueWhatsApp({ to: sup.phone, toName: `${sup.name} (security supervisor)`, text: `Gate pass · ${r.requestNo}`, templateKey: 'gate_pass', requestId: r._id, initiatedBy, attachmentId: gate._id, fileName: gate.filename })
+        await queueWhatsApp({ to: sup.phone, toName: `${sup.name} (${sup.role})`, text: `Gate pass · ${r.requestNo}`, templateKey: 'gate_pass', requestId: r._id, initiatedBy, attachmentId: gate._id, fileName: gate.filename })
         sent++
       }
     }
@@ -154,11 +158,12 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
 }
 
 /** Hook for every place a Unico car can be asked for: sends the requisition the first time (or "UPDATED"). */
-export async function carRequested(requestId: unknown, userId: string, opts: { updated?: boolean } = {}) {
+export async function carRequested(requestId: unknown, userId: string, opts: { updated?: boolean } = {}): Promise<boolean> {
   const r = await HomecareRequest.findById(requestId).select('transport status').lean<any>()
-  if (!r?.transport?.needed || r.status === 'CANCELLED') return
-  if (r.transport.mode && r.transport.mode !== 'UNICO_CAR') return
+  if (!r?.transport?.needed || r.status === 'CANCELLED') return false
+  if (r.transport.mode && r.transport.mode !== 'UNICO_CAR') return false
   if (!r.transport.requestedBy) await HomecareRequest.updateOne({ _id: requestId }, { $set: { 'transport.requestedBy': userId } })
-  if (r.transport.requisitionSentAt && !opts.updated) return
+  if (r.transport.requisitionSentAt && !opts.updated) return false
   await sendTransportDocs(requestId, opts.updated ? 'updated' : 'requested', userId)
+  return true // a new (or updated) car request
 }

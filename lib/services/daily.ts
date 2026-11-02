@@ -51,7 +51,12 @@ async function recipients() {
   const s = await getSettings()
   const cfg = s.dailyWhatsApp
   const out: { name: string; phone: string }[] = []
-  if (cfg.toHods) for (const c of s.hodAlerts.contacts ?? []) if (c.active) out.push({ name: `${c.name} (${c.designation})`, phone: c.phone })
+  if (cfg.toHods) {
+    const { hodConfig, eventsOf } = await import('./hod')
+    const { groups, contacts } = hodConfig(s.hodAlerts as any)
+    const heads = new Set(groups.filter((g) => eventsOf(g).includes('NEW_REQUEST')).map((g) => g.id))
+    for (const c of contacts) if (c.active && heads.has(c.groupId!)) out.push({ name: `${c.name} (${c.designation})`, phone: c.phone })
+  }
   if (cfg.toUpdateNumbers) for (const e of s.visitUpdates.extra ?? []) out.push({ name: e.name, phone: e.phone })
   for (const e of cfg.extra ?? []) out.push({ name: e.name, phone: e.phone })
   const seen = new Set<string>()

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { route, body, clientMeta, forbidden, bad } from '@/lib/api'
-import { can, canOpenSettings } from '@/lib/constants'
+import { ALERT_EVENTS, can, canOpenSettings } from '@/lib/constants'
 import { getSettings, saveSetting, DEFAULT_SETTINGS, HOD_CATEGORIES } from '@/lib/settings'
 import { emailConfigured, queueEmail } from '@/lib/messaging'
 import { getGmailStatus } from '@/lib/gmail'
@@ -60,6 +60,8 @@ const HodPatch = z
           services: z.union([z.literal('ALL'), z.array(z.string().max(40)).max(100)]),
           message: z.string().max(1000).optional(),
           active: z.boolean(),
+          events: z.array(z.enum(ALERT_EVENTS)).max(ALERT_EVENTS.length).optional(),
+          system: z.enum(['security', 'transport']).optional(),
         }),
       )
       .max(30),

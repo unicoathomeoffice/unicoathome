@@ -212,6 +212,23 @@ export const PAYMENT_METHOD_LABEL = { CASH: 'Cash', BKASH: 'bKash', NAGAD: 'Naga
 
 /** "Service provided by" in the original Google Form */
 export const TRANSPORT_MODES = ['UNICO_CAR', 'RICKSHAW', 'UBER', 'PATHAO', 'OTHER'] as const
+
+/** What an alert group (Settings → Notification rules) can be WhatsApped about. Car events are for a Unico car. */
+export const ALERT_EVENTS = ['NEW_REQUEST', 'CAR_REQUESTED', 'CAR_ALLOTTED', 'CAR_DOCS', 'CAR_CHANGED', 'CAR_CANCELLED', 'CAR_OUT', 'CAR_BACK', 'CLAIM'] as const
+export type AlertEvent = (typeof ALERT_EVENTS)[number]
+export const ALERT_EVENT_LABEL: Record<AlertEvent, string> = {
+  NEW_REQUEST: 'New request',
+  CAR_REQUESTED: 'Car requested',
+  CAR_ALLOTTED: 'Car & driver allotted',
+  CAR_DOCS: 'Requisition & gate pass (PDF)',
+  CAR_CHANGED: 'Trip time changed',
+  CAR_CANCELLED: 'Trip cancelled',
+  CAR_OUT: 'Car left hospital',
+  CAR_BACK: 'Car back at hospital',
+  CLAIM: 'Expense claims (PDF)',
+}
+/** the transport + security events (everything except new requests) */
+export const CAR_EVENTS: AlertEvent[] = ['CAR_REQUESTED', 'CAR_ALLOTTED', 'CAR_DOCS', 'CAR_CHANGED', 'CAR_CANCELLED', 'CAR_OUT', 'CAR_BACK', 'CLAIM']
 export const TRANSPORT_MODE_LABEL = {
   UNICO_CAR: 'Unico @ Home car',
   RICKSHAW: 'Rickshaw',

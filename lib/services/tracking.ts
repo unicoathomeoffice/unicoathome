@@ -77,6 +77,8 @@ export async function finishReturn(requestId: unknown, by: 'geofence' | 'button'
   if (reached) {
     const { sendVisitUpdate } = await import('./updates')
     await sendVisitUpdate(requestId, 'auto').catch((e) => console.error('[visit update]', e))
+    const { carAlertLazy } = await import('./requests')
+    await carAlertLazy('CAR_BACK', requestId, { at: reached })
   }
   return true
 }

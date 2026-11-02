@@ -169,7 +169,12 @@ async function sendClaim(c: any, e: Awaited<ReturnType<typeof employee>>, x: any
   const { queueWhatsApp } = await import('../wa/service')
   const caption = `Bill submission · ${c.claimNo}\n${e.name} (${e.employeeId}) · ${e.designation}\nTotal ${taka(c.total)} · ${c.lines.length} item${c.lines.length === 1 ? '' : 's'}${c.status !== 'SUBMITTED' ? ` · ${c.status.toLowerCase()}` : ''}`
   let sent = 0
-  const to = [...(await onCallSupervisors()).map((s) => ({ name: `${s.name} (security supervisor)`, phone: s.phone })), ...(e.u.whatsapp || e.u.phone ? [{ name: `${e.name} (copy)`, phone: e.u.whatsapp || e.u.phone }] : [])]
+  const { groupRecipients } = await import('./hod')
+  const to = [
+    ...(await onCallSupervisors()).map((s) => ({ name: `${s.name} (security supervisor)`, phone: s.phone })),
+    ...(await groupRecipients('CLAIM')).map((g) => ({ name: `${g.name} (${g.group.name})`, phone: g.phone })), // Security / Transport groups
+    ...(e.u.whatsapp || e.u.phone ? [{ name: `${e.name} (copy)`, phone: e.u.whatsapp || e.u.phone }] : []),
+  ]
   const seen = new Set<string>()
   for (const r of to) {
     const n = waNumber(r.phone)

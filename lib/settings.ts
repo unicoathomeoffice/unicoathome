@@ -2,15 +2,17 @@ import 'server-only'
 import { cache } from 'react'
 import { Setting } from './models'
 import { db } from './db'
-import { SLOTS } from './constants'
+import { SLOTS, type AlertEvent } from './constants'
 import { forget, memo } from './memo'
 
 export const HOD_CATEGORIES = ['Doctor', 'Nursing', 'Lab', 'Physio'] as const
 /** groupId: which alert group; services: optional ServiceType codes this person is limited to.
  *  category: first-version field (contacts keyed by category) — read as group `cat-<category>`. */
 export type HodContact = { id: string; groupId?: string; category?: (typeof HOD_CATEGORIES)[number]; name: string; designation: string; phone: string; services?: string[]; active: boolean }
-/** category: built-in group following a ServiceType category; services: codes, or 'ALL'; message: own WhatsApp text */
-export type HodGroup = { id: string; name: string; category?: string; services: 'ALL' | string[]; message?: string; active: boolean }
+/** category: built-in group following a ServiceType category; services: codes, or 'ALL'; message: own WhatsApp text
+ *  (new requests only); events: what the group hears about (missing = new requests only); system: built-in Security /
+ *  Transport group (lib/services/hod.ts), can't be deleted */
+export type HodGroup = { id: string; name: string; category?: string; services: 'ALL' | string[]; message?: string; active: boolean; events?: AlertEvent[]; system?: 'security' | 'transport' }
 
 /** Non-secret configuration editable from Settings (W15 / A5). Secrets stay in env vars. */
 export const DEFAULT_SETTINGS = {

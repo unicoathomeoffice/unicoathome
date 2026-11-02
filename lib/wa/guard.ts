@@ -11,7 +11,7 @@ import { getSettings } from '../settings'
 const PROVIDER = 'wa_baileys'
 
 /** Templates that must not wait (quiet hours) and go first when the queue is limited. */
-export const URGENT_KEYS = new Set(['hod_new_request', 'patient_en_route', 'patient_confirmed', 'vehicle_requisition', 'gate_pass', 'staff_assigned', 'test'])
+export const URGENT_KEYS = new Set(['hod_new_request', 'patient_en_route', 'patient_confirmed', 'vehicle_requisition', 'gate_pass', 'staff_assigned', 'test', 'car_requested', 'car_allotted', 'car_changed', 'car_cancelled', 'car_out', 'car_back'])
 const LOW_KEYS = new Set(['daily_summary', 'visit_update', 'patient_visit_summary', 'claim_form'])
 export function priorityOf(templateKey?: string) {
   return templateKey && URGENT_KEYS.has(templateKey) ? 10 : templateKey && LOW_KEYS.has(templateKey) ? -10 : 0
