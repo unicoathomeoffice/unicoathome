@@ -83,7 +83,10 @@ export async function sweep(force = false) {
   const { finishReturn } = await import('./tracking')
   const stale = await HomecareRequest.find({ 'tracking.active': true, 'tracking.phase': 'RETURN', 'returnTrip.startedAt': { $lt: new Date(now.getTime() - 4 * 3600_000) } }).select('_id').lean<any[]>()
   for (const r of stale) await finishReturn(r._id, 'timeout')
-  return { timeouts, overdue, lost, returnsClosed: stale.length }
+  // daily WhatsApp summary: sent once, at the first sweep after the chosen time
+  const { sendDailySummary } = await import('./daily')
+  const daily = await sendDailySummary().catch((e) => ({ sent: 0, skipped: String(e?.message ?? e) }))
+  return { timeouts, overdue, lost, returnsClosed: stale.length, daily }
 }
 
 /** Reminders T-2h and T-30min to the assigned staff (in-app). */
@@ -105,6 +108,9 @@ export async function reminders() {
 /** Daily digest email 20:00 to HC_ADMIN and VIEWER. */
 export async function dailyDigest() {
   const s = await getSettings()
+  // backstop for the WhatsApp summary (8 PM cron) in case nobody used the app after the chosen time
+  const { sendDailySummary } = await import('./daily')
+  await sendDailySummary().catch((e) => console.error('[daily summary]', e))
   if (!s.email.dailyDigest) return { skipped: true }
   const { start, end } = dayRange(isoDay())
   const [created, completed, cancelled, open] = await Promise.all([

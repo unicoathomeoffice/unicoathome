@@ -173,6 +173,14 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     body: '{summary}\nQuestions? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',
   },
   {
+    key: 'daily_summary',
+    name: 'Daily WhatsApp summary',
+    channel: ['WHATSAPP'],
+    audience: 'Admin',
+    subject: 'Home care · daily summary',
+    body: '{summary}',
+  },
+  {
     key: 'patient_bill',
     name: 'Bill copy to patient',
     channel: ['WHATSAPP'],

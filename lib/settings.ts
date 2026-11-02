@@ -92,6 +92,14 @@ export const DEFAULT_SETTINGS = {
     /** on-call security supervisors; from/to = shift (HH:MM, may cross midnight); empty = always on call */
     supervisors: [] as { id: string; name: string; phone: string; from: string; to: string; active: boolean }[],
   },
+  /** daily WhatsApp summary (lib/services/daily.ts): sent once a day at the first activity after `time` */
+  dailyWhatsApp: {
+    enabled: true,
+    time: '20:00',
+    toHods: false,
+    toUpdateNumbers: true,
+    extra: [] as { id: string; name: string; phone: string }[],
+  },
   /** short WhatsApp update after each visit (lib/services/updates.ts) */
   visitUpdates: {
     enabled: true,
