@@ -3,7 +3,7 @@ import { route, body, bad, forbidden, clientMeta } from '@/lib/api'
 import { canOpenSettings } from '@/lib/constants'
 import { getSettings, saveSetting } from '@/lib/settings'
 import { audit } from '@/lib/audit'
-import { pumpWhatsApp, queueWhatsApp, unpairWhatsApp, waStatus } from '@/lib/wa/service'
+import { checkWhatsApp, pumpWhatsApp, queueWhatsApp, unpairWhatsApp, waStatus } from '@/lib/wa/service'
 import { bdMobile } from '@/lib/services/public'
 import { resume, safetyStatus } from '@/lib/wa/guard'
 
@@ -31,6 +31,7 @@ const Action = z.discriminatedUnion('action', [
   z.object({ action: z.literal('pump') }),
   z.object({ action: z.literal('disconnect') }),
   z.object({ action: z.literal('resume') }),
+  z.object({ action: z.literal('check') }),
 ])
 
 /** POST — test message · send queued now · disconnect */
@@ -47,6 +48,11 @@ export const POST = route(async ({ req, user }) => {
     return { ok: true, ...r }
   }
   if (input.action === 'pump') return { ok: true, ...(await pumpWhatsApp()) }
+  if (input.action === 'check') {
+    const r = await checkWhatsApp()
+    await audit(user, 'settings.whatsapp_check', 'settings', 'whatsapp', { after: r }, meta)
+    return { ok: r.ok, error: r.error }
+  }
   if (input.action === 'resume') {
     await resume()
     await audit(user, 'settings.whatsapp_resume', 'settings', 'whatsapp', { label: 'WhatsApp sending resumed' }, meta)

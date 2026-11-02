@@ -10,9 +10,22 @@ async function creds(): Promise<any> {
   return row?.value ? JSON.parse(row.value) : null
 }
 
+/** Linked and usable: credentials with a phone, the link was completed (device keys stored or a verified
+ *  connection) and nothing has asked for a re-scan since. A half-finished QR scan is NOT paired. */
 export async function isPaired() {
+  return (await linkState()).state === 'connected'
+}
+
+export type LinkState = { state: 'connected' | 'needs_rescan' | 'not_paired'; reason?: string | null }
+export async function linkState(): Promise<LinkState> {
   const c = await creds()
-  return !!c?.me?.id
+  if (!c?.me?.id) return { state: 'not_paired' }
+  const meta = (await WaAuth.findById('meta').lean<any>()) ?? {}
+  if (meta.needsRescan) return { state: 'needs_rescan', reason: meta.needsRescanReason ?? 'WhatsApp asked to link the device again' }
+  if (meta.verifiedAt) return { state: 'connected' }
+  // sessions linked before verification existed: completed links have their signal keys stored
+  const keys = await WaAuth.countDocuments({ _id: { $nin: ['meta', 'creds', 'lock'] } })
+  return keys > 0 ? { state: 'connected' } : { state: 'needs_rescan', reason: 'The last QR scan did not finish linking' }
 }
 
 export async function pairedPhone(): Promise<string | null> {

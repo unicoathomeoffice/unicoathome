@@ -1,5 +1,5 @@
 import 'server-only'
-import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, type WASocket } from '@whiskeysockets/baileys'
+import makeWASocket, { Browsers, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, type WASocket } from '@whiskeysockets/baileys'
 import pino from 'pino'
 import { WaAuth } from '../models'
 import { mongoAuthState } from './auth-state'
@@ -37,13 +37,14 @@ export async function acquireLock(ttlMs = 70_000) {
 export type Conn = { sock: WASocket; ready: Promise<'open' | 'paired'>; close: () => void }
 
 /** Open one connection. `ready` resolves when the socket is open (or right after a successful QR scan). */
-export async function connect(opts: { onQr?: (qr: string) => void; timeoutMs?: number } = {}): Promise<Conn> {
+export async function connect(opts: { onQr?: (qr: string) => void; onSocket?: (sock: WASocket) => void; timeoutMs?: number } = {}): Promise<Conn> {
   const { state, saveCreds, clear } = await mongoAuthState()
   const sock = makeWASocket({
     version: await waVersion(),
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
     logger,
-    browser: ['Unico HomeCare', 'Chrome', '1.0.0'],
+    // a standard WhatsApp Web identity — custom browser names are increasingly refused when a phone links the device
+    browser: Browsers.macOS('Desktop'),
     markOnlineOnConnect: false,
     syncFullHistory: false,
     generateHighQualityLinkPreview: false,
@@ -59,6 +60,7 @@ export async function connect(opts: { onQr?: (qr: string) => void; timeoutMs?: n
     fail = rej
   })
   ready.catch(() => {}) // observed by callers; avoid unhandled-rejection noise when they time out first
+  opts.onSocket?.(sock)
   const timer = setTimeout(() => fail(new Error('WhatsApp did not connect in time')), opts.timeoutMs ?? 25_000)
   sock.ev.on('creds.update', () => {
     saveCreds().catch(() => {})

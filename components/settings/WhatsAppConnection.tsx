@@ -1,13 +1,13 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, Loader2, QrCode, RefreshCw, Send, Unplug, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, QrCode, RefreshCw, Send, Smartphone, Unplug, XCircle } from 'lucide-react'
 import { api, Toggle, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { ago } from '@/lib/format'
 import { WaQueueDrawer } from './WaQueueDrawer'
 
-export type WaStatus = { paired: boolean; phone: string | null; queued: number; failed7d: number; lastSentAt: string | null; lastError: string | null; lastErrorAt: string | null; pairedAt: string | null }
+export type WaStatus = { paired: boolean; state?: 'connected' | 'needs_rescan' | 'not_paired'; stateReason?: string | null; phone: string | null; queued: number; failed7d: number; lastSentAt: string | null; lastError: string | null; lastErrorAt: string | null; pairedAt: string | null; verifiedAt?: string | null }
 
 /** Settings → WhatsApp: pair the hospital's WhatsApp by QR (no server needed), auto-send switch, test, queue. */
 export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial: WaStatus; autoSend: boolean }) {
@@ -21,6 +21,10 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
   const [busy, setBusy] = useState<string | null>(null)
   const [testTo, setTestTo] = useState('')
   const [list, setList] = useState<null | 'QUEUED' | 'FAILED'>(null)
+  const [code, setCode] = useState<string | null>(null)
+  const [byPhone, setByPhone] = useState(false)
+  const [linkPhone, setLinkPhone] = useState('')
+  const state = st.state ?? (st.paired ? 'connected' : 'not_paired')
   const es = useRef<EventSource | null>(null)
 
   useEffect(() => () => es.current?.close(), [])
@@ -33,12 +37,13 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
     } catch {}
   }
 
-  function connect() {
+  function connect(phone?: string) {
     es.current?.close()
     setQr(null)
+    setCode(null)
     setNote('Opening a WhatsApp session…')
     setPairing(true)
-    const s = new EventSource('/api/v1/settings/whatsapp/pair')
+    const s = new EventSource(`/api/v1/settings/whatsapp/pair${phone ? `?phone=${encodeURIComponent(phone)}` : ''}`)
     es.current = s
     s.onmessage = (ev) => {
       const d = JSON.parse(ev.data)
@@ -46,8 +51,18 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
         setQr(d.qr)
         setNote('On your phone: WhatsApp → ⋮ → Linked devices → Link a device, then scan.')
       }
+      if (d.code) {
+        setCode(d.code)
+        setNote('On the hospital phone: WhatsApp → ⋮ → Linked devices → Link a device → Link with phone number instead, then type this code.')
+      }
+      if (d.note) {
+        setQr(null)
+        setCode(null)
+        setNote(d.note)
+      }
       if (d.paired) {
         setQr(null)
+        setCode(null)
         setNote('')
         toast(`WhatsApp connected${d.phone ? ` · +${d.phone}` : ''}`, 'ok')
         refresh()
@@ -55,6 +70,7 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
       }
       if (d.error) {
         setQr(null)
+        setCode(null)
         setNote(d.error)
         toast(d.error, 'err')
       }
@@ -70,7 +86,7 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
     }
   }
 
-  async function act(action: 'pump' | 'disconnect' | 'test') {
+  async function act(action: 'pump' | 'disconnect' | 'test' | 'check') {
     if (action === 'disconnect' && !confirm('Disconnect WhatsApp? Automatic messages stop until you scan again.')) return
     setBusy(action)
     try {
@@ -78,6 +94,7 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
       if (action === 'test') toast(r.sent ? 'Test message sent' : `Queued · ${r.skipped ?? 'will send shortly'}`, r.sent ? 'ok' : 'err')
       if (action === 'pump') toast(`Sent ${r.sent}${r.failed ? ` · failed ${r.failed}` : ''}${r.skipped ? ` · ${r.skipped}` : ''}`, r.sent || !r.skipped ? 'ok' : 'err')
       if (action === 'disconnect') toast('WhatsApp disconnected', 'ok')
+      if (action === 'check') toast(r.ok ? 'WhatsApp is linked and working' : `Not working: ${r.error ?? 'could not connect'} — scan again`, r.ok ? 'ok' : 'err')
       await refresh()
       router.refresh()
     } catch (e: any) {
@@ -102,9 +119,13 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
     <div className="flex flex-col gap-3">
       <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
         <span className="text-[13.5px] font-semibold">Hospital WhatsApp</span>
-        {st.paired ? (
+        {state === 'connected' ? (
           <span className="inline-flex h-6 items-center gap-1 rounded-full bg-[#DCFCE7] px-2 text-[11px] font-bold text-[#15803D]">
             <CheckCircle2 size={13} /> CONNECTED{st.phone ? ` · +${st.phone}` : ''}
+          </span>
+        ) : state === 'needs_rescan' ? (
+          <span className="inline-flex h-6 items-center gap-1 rounded-full bg-[#FEE2E2] px-2 text-[11px] font-bold text-[#B91C1C]" title={st.stateReason ?? undefined}>
+            <AlertTriangle size={13} /> NEEDS RE-SCAN{st.phone ? ` · +${st.phone}` : ''}
           </span>
         ) : (
           <span className="inline-flex h-6 items-center gap-1 rounded-full bg-[#FFEDD5] px-2 text-[11px] font-bold text-[#C2410C]">
@@ -113,25 +134,53 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
         )}
       </div>
 
+      {state === 'needs_rescan' && !pairing && (
+        <div className="rounded-lg bg-[#FEE2E2] px-3 py-2 text-[12.5px] text-[#B91C1C]">
+          The hospital number is not linked any more{st.stateReason ? ` (${st.stateReason})` : ''}. Messages wait in the queue — link it again below.
+        </div>
+      )}
+      {code && (
+        <div className="flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="font-mono text-[30px] font-bold tracking-[.18em] text-navy">{code}</div>
+          <div className="text-center text-[12.5px] text-slate-600">{note}</div>
+        </div>
+      )}
       {qr ? (
         <div className="flex flex-col items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
           <img src={qr} alt="Scan with WhatsApp" className="size-[260px] rounded-md" />
           <div className="text-center text-[12.5px] text-slate-600">{note}</div>
         </div>
       ) : (
-        note && <div className="rounded-lg bg-slate-50 px-3 py-2 text-[12.5px] text-slate-600">{note}</div>
+        note && !code && <div className="rounded-lg bg-slate-50 px-3 py-2 text-[12.5px] text-slate-600">{note}</div>
       )}
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={connect} disabled={pairing} className={btnClass(st.paired ? 'o' : 'p', 'md')}>
-          {pairing ? <Loader2 size={16} className="animate-spin" /> : <QrCode size={16} />} {st.paired ? 'Re-connect (scan)' : 'Connect · scan QR'}
+        <button type="button" onClick={() => connect()} disabled={pairing} className={btnClass(state === 'connected' ? 'o' : 'p', 'md')}>
+          {pairing && !byPhone ? <Loader2 size={16} className="animate-spin" /> : <QrCode size={16} />} {state === 'connected' ? 'Re-connect (scan)' : 'Connect · scan QR'}
         </button>
+        <button type="button" onClick={() => setByPhone((x) => !x)} disabled={pairing} className={btnClass('o', 'md')}>
+          <Smartphone size={16} /> Link with phone number
+        </button>
+        {state === 'connected' && (
+          <button type="button" onClick={() => act('check')} disabled={busy === 'check'} className={btnClass('o', 'md')}>
+            {busy === 'check' ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />} Check connection
+          </button>
+        )}
         {st.paired && (
           <button type="button" onClick={() => act('disconnect')} disabled={busy === 'disconnect'} className={btnClass('o', 'md')}>
             {busy === 'disconnect' ? <Loader2 size={16} className="animate-spin" /> : <Unplug size={16} />} Disconnect
           </button>
         )}
       </div>
+
+      {byPhone && (
+        <div className="flex gap-2">
+          <input className="hc-input" placeholder="Hospital WhatsApp number · 01XXXXXXXXX" value={linkPhone} onChange={(e) => setLinkPhone(e.target.value)} inputMode="tel" />
+          <button type="button" disabled={pairing || linkPhone.replace(/\D/g, '').length < 10} onClick={() => connect(linkPhone)} className={btnClass('p', 'md', 'flex-none')}>
+            {pairing && byPhone ? <Loader2 size={16} className="animate-spin" /> : <Smartphone size={16} />} Get code
+          </button>
+        </div>
+      )}
 
       <div className="flex items-center justify-between py-1">
         <span className="text-[13.5px]">

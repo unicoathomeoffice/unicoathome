@@ -4,6 +4,7 @@ import { MessageLog, WaAuth } from '../models'
 import { background, waNumber } from '../messaging'
 import { acquireLock, connect, type Conn } from './client'
 import { isPaired, mongoAuthState, pairedPhone } from './auth-state'
+import { linkState } from './status'
 import { allowance, calmDown, checkFresh, contactState, inQuietHours, isDuplicate, isPushback, needsOptOutFooter, OPT_OUT_FOOTER, optOut, pausedUntil, priorityOf, rand, recipientRoom, rememberCheck, sleep, STOP_RX, tripBreaker, typingMs } from './guard'
 
 // WhatsApp auto-send. Messages are rows in message_logs (channel WHATSAPP, provider wa_baileys) with
@@ -21,7 +22,8 @@ export async function waStatus() {
     MessageLog.countDocuments({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED' }),
     MessageLog.countDocuments({ channel: 'WHATSAPP', provider: PROVIDER, status: 'FAILED', at: { $gte: new Date(Date.now() - 7 * 86400_000) } }),
   ])
-  return { paired, phone, queued, failed7d, lastSentAt: m.lastSentAt ?? null, lastError: m.lastError ?? null, lastErrorAt: m.lastErrorAt ?? null, pairedAt: m.pairedAt ?? null }
+  const link = await linkState()
+  return { paired, state: link.state, stateReason: link.reason ?? null, phone, queued, failed7d, lastSentAt: m.lastSentAt ?? null, lastError: m.lastError ?? null, lastErrorAt: m.lastErrorAt ?? null, pairedAt: m.pairedAt ?? null, verifiedAt: m.verifiedAt ?? null }
 }
 
 /** Log a WhatsApp message and deliver it in the background. With attachmentId the file is sent (PDF as a document,
@@ -94,6 +96,7 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
     await setMeta({ lastSessionAt: new Date() })
     conn = await connect({ timeoutMs: 25_000 })
     if ((await conn.ready) !== 'open') throw new Error('Connection did not open')
+    await setMeta({ verifiedAt: new Date(), needsRescan: null, needsRescanReason: null })
     const sock = conn.sock
     // STOP replies that arrive while we're connected (WhatsApp also delivers ones received while we were away)
     if (cfg.optOut)
@@ -189,6 +192,7 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
   } catch (e: any) {
     const msg = String(e?.message ?? e)
     await setMeta({ lastError: msg.slice(0, 300), lastErrorAt: new Date() })
+    await markIfLoggedOut(msg)
     if (/logged this device out/i.test(msg)) await tripBreaker('WhatsApp logged this device out — scan the QR again')
     return { sent, failed, skipped: msg }
   } finally {
@@ -197,9 +201,14 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
   }
 }
 
-/** Pairing: yields QR images until the phone scans one (≈ 55 s window). Used by the SSE route. */
-export async function* pairWhatsApp(): AsyncGenerator<{ qr?: string; paired?: boolean; phone?: string | null; error?: string }> {
-  const lock = await acquireLock(65_000)
+/**
+ * Pairing. Yields QR images (or, with `phone`, an 8-character code for "Link with phone number") until the phone
+ * links. After the scan WhatsApp closes the socket with "restart required" and the companion must reconnect AT ONCE
+ * with the new credentials to finish the login — otherwise the phone gives up with "Couldn't log in". So we reconnect,
+ * wait for the connection to open (device keys get stored), and only then report success.
+ */
+export async function* pairWhatsApp(opts: { phone?: string } = {}): AsyncGenerator<{ qr?: string; code?: string; paired?: boolean; phone?: string | null; error?: string; note?: string }> {
+  const lock = await acquireLock(115_000)
   if (!lock) {
     yield { error: 'WhatsApp is busy sending messages — try again in a minute' }
     return
@@ -208,18 +217,53 @@ export async function* pairWhatsApp(): AsyncGenerator<{ qr?: string; paired?: bo
   let wake: (() => void) | null = null
   let finished: { r?: 'open' | 'paired'; e?: Error } | null = null
   let conn: Conn | undefined
+  let code: string | null = null
+  let codeErr: string | null = null
   try {
+    // a fresh start: a half-finished earlier link must not be reused
+    const { clear } = await mongoAuthState()
+    await clear()
+    await setMeta({ needsRescan: null, needsRescanReason: null, verifiedAt: null })
     conn = await connect({
-      timeoutMs: 58_000,
+      timeoutMs: 60_000,
       onQr: (qr) => {
         qrs.push(qr)
         wake?.()
       },
+      onSocket: (sock) => {
+        const phone = opts.phone ? waNumber(opts.phone) : ''
+        if (!phone) return
+        // the code can be asked for once the socket is up (WhatsApp sends the first QR at that moment)
+        setTimeout(() => {
+          sock
+            .requestPairingCode(phone)
+            .then((c) => {
+              code = c
+              wake?.()
+            })
+            .catch((e) => {
+              codeErr = String(e?.message ?? e)
+              wake?.()
+            })
+        }, 2500)
+      },
     })
     conn.ready.then((r) => (finished = { r }), (e) => (finished = { e })).finally(() => wake?.())
     const started = Date.now()
-    while (!finished && Date.now() - started < 58_000) {
-      if (qrs.length) {
+    let codeSent = false
+    while (!finished && Date.now() - started < 60_000) {
+      if (opts.phone) {
+        if (code && !codeSent) {
+          codeSent = true
+          yield { code: String(code).replace(/(.{4})(.{4})/, '$1-$2') }
+          continue
+        }
+        if (codeErr) {
+          yield { error: `Could not get a code for this number (${codeErr})` }
+          return
+        }
+        qrs.length = 0 // phone-number mode: no QR
+      } else if (qrs.length) {
         const qr = qrs.pop()! // newest only
         qrs.length = 0
         yield { qr: await QRCode.toDataURL(qr, { margin: 1, width: 280 }) }
@@ -231,15 +275,57 @@ export async function* pairWhatsApp(): AsyncGenerator<{ qr?: string; paired?: bo
       })
     }
     const f = finished as { r?: 'open' | 'paired'; e?: Error } | null
-    if (f?.r) {
-      await setMeta({ pairedAt: new Date(), lastError: null })
-      yield { paired: true, phone: await pairedPhone() }
-    } else if (f?.e) yield { error: f.e.message }
-    else yield { error: 'The QR expired — click Connect again' }
+    if (!f?.r) {
+      yield { error: f?.e?.message ?? (opts.phone ? 'The code expired — try again' : 'The QR expired — click Connect again') }
+      return
+    }
+    if (f.r === 'paired') {
+      // finish the login: reconnect straight away with the credentials the scan just gave us
+      yield { note: 'Scanned — finishing the link on your phone…' }
+      conn.close()
+      await new Promise((r) => setTimeout(r, 1500)) // the scan's credentials are saved asynchronously (creds.update)
+      conn = await connect({ timeoutMs: 45_000 })
+      const second = await conn.ready.catch((e: Error) => e)
+      if (second !== 'open') {
+        await clear()
+        yield { error: `Linking didn't finish (${second instanceof Error ? second.message : 'no connection'}) — scan again` }
+        return
+      }
+    }
+    await new Promise((r) => setTimeout(r, 3000)) // let WhatsApp take the device keys before we close
+    await setMeta({ pairedAt: new Date(), verifiedAt: new Date(), needsRescan: null, needsRescanReason: null, lastError: null })
+    yield { paired: true, phone: await pairedPhone() }
   } finally {
     conn?.close()
     await lock.release()
   }
+}
+
+/** Open a session for a moment to confirm the link still works (Settings → Check connection). */
+export async function checkWhatsApp(): Promise<{ ok: boolean; error?: string }> {
+  const lock = await acquireLock(40_000)
+  if (!lock) return { ok: false, error: 'WhatsApp is busy sending — try again in a minute' }
+  let conn: Conn | undefined
+  try {
+    conn = await connect({ timeoutMs: 25_000 })
+    const r = await conn.ready
+    if (r !== 'open') throw new Error('Connection did not open')
+    await setMeta({ verifiedAt: new Date(), needsRescan: null, needsRescanReason: null, lastError: null })
+    return { ok: true }
+  } catch (e: any) {
+    const msg = String(e?.message ?? e)
+    await markIfLoggedOut(msg)
+    await setMeta({ lastError: msg.slice(0, 300), lastErrorAt: new Date() })
+    return { ok: false, error: msg }
+  } finally {
+    conn?.close()
+    await lock.release()
+  }
+}
+
+/** WhatsApp logged the device out / refused it: the link is gone, show "Needs re-scan" instead of Connected. */
+async function markIfLoggedOut(msg: string) {
+  if (/logged this device out|loggedOut|401|not-authorized|device removed|Connection Failure/i.test(msg)) await setMeta({ needsRescan: true, needsRescanReason: msg.slice(0, 200) })
 }
 
 /** Log the device out of WhatsApp (best effort) and forget the session. */
