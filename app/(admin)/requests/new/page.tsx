@@ -12,9 +12,9 @@ import { activeServices, activeZones } from '@/lib/cached'
 
 export const metadata = { title: 'New request · Unico HomeCare' }
 
-export default async function NewRequestPage({ searchParams }: { searchParams: Promise<{ patientId?: string }> }) {
+export default async function NewRequestPage({ searchParams }: { searchParams: Promise<{ patientId?: string; q?: string }> }) {
   const user = await requireWebUser('requests.create')
-  const { patientId } = await searchParams
+  const { patientId, q } = await searchParams
   const ymd = isoDay().replace(/-/g, '').slice(2)
   const [settings, services, zones, counter, pre] = await Promise.all([
     getSettings(),
@@ -44,6 +44,7 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
         zones={zones}
         services={services.map((s) => ({ code: s.code, name: s.name, category: s.category ?? '', fee: s.fee ?? 0, duration: s.defaultDurationMin ?? 45 }))}
         initialPatient={patient}
+        initialQuery={q?.slice(0, 80)}
         canConfirm={can(user, 'requests.manage')}
         canAssign={can(user, 'requests.assign')}
         waPaired={await isPaired()}

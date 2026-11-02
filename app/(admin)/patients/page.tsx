@@ -9,6 +9,7 @@ import { FilterSelect, SearchBox } from '@/components/people/filters'
 import { ExportCsvButton, PatientRowActions } from '@/components/people/PatientActions'
 import { PatientDrawerButton } from '@/components/people/PatientDrawer'
 import { loadPatientBoard, maskPhone, type BoardRow } from '@/components/people/patient-board'
+import { PatientsH360 } from '@/components/people/PatientsH360'
 import { dayNum, phone as fmtPhone, relDay, time } from '@/lib/format'
 
 export const metadata = { title: 'Patients · Unico HomeCare' }
@@ -53,7 +54,7 @@ export default async function PatientsPage({ searchParams }: { searchParams: SP 
   return (
     <AdminPage title={`Patient board · ${active} active`}>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
-        <SearchBox placeholder="Phone, UHID or name" className="w-full sm:w-[230px]" />
+        <SearchBox placeholder="UHID, phone or name (+ H360)" className="w-full sm:w-[230px]" />
         <FilterSelect label="Status" param="status" options={[{ value: 'ACTIVE', label: 'Any active' }, ...STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] })), { value: 'NONE', label: 'No requests' }]} />
         <FilterSelect label="Zone" param="zone" options={zoneNames.map((z) => ({ value: z, label: z }))} />
         <FilterSelect label="Staff" param="staff" options={[{ value: 'unassigned', label: 'Unassigned' }, ...staff.map((s) => ({ value: String(s._id), label: s.name }))]} />
@@ -63,6 +64,7 @@ export default async function PatientsPage({ searchParams }: { searchParams: SP 
         {!masked && <ExportCsvButton />}
         {canEdit && <PatientDrawerButton zones={zoneNames} />}
       </div>
+      {sp.q && sp.q.trim().length >= 3 && <PatientsH360 q={sp.q} />}
 
       <Table
         cols={COLS}

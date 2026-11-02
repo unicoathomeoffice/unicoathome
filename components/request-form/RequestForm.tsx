@@ -10,6 +10,7 @@ import { ACTIVE_STATUSES, PAYMENT_METHOD_LABEL, PAYMENT_METHODS, REQUEST_SOURCES
 import { ageGender, cx, dayNum, initialsOf, phone as fmtPhone, taka, time as fmtTime } from '@/lib/format'
 import { firstOpen, SlotPicker, slotLabel, type SlotBooking } from './SlotPicker'
 import { openConfirmLink, PatientWhatsAppToggle, reserveTab } from '@/components/request-detail/PatientWhatsApp'
+import { H360PatientSearch, type H360Hit } from '@/components/client/H360PatientSearch'
 
 export type FormPatient = {
   _id: string
@@ -70,6 +71,7 @@ export function RequestForm({
   zones,
   services,
   initialPatient,
+  initialQuery,
   canConfirm,
   canAssign,
   waPaired,
@@ -81,6 +83,8 @@ export function RequestForm({
   zones: string[]
   services: Service[]
   initialPatient: FormPatient | null
+  /** opened from Patients → H360 result: the search box starts with this */
+  initialQuery?: string
   canConfirm: boolean
   canAssign: boolean
   /** hospital WhatsApp paired: the confirmation goes out automatically */
@@ -301,7 +305,7 @@ export function RequestForm({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col gap-4">
-        {step === 1 && <StepPatient f={f} set={set} setIn={setIn} zones={zones} errors={errors} />}
+        {step === 1 && <StepPatient f={f} set={set} setIn={setIn} zones={zones} errors={errors} initialQuery={initialQuery} />}
         {step === 2 && <StepService f={f} set={set} services={services} slots={slots} booking={booking} today={today} errors={errors} autoDuration={autoDuration} />}
         {step === 3 && <StepClinical f={f} set={set} services={chosen} autoFee={autoFee} fee={fee} errors={errors} />}
         {step === 3 && canConfirm && (
@@ -420,8 +424,8 @@ type SetF = <K extends keyof F>(k: K, v: F[K]) => void
 type SetIn = <K extends 'np' | 'addr' | 'requester'>(k: K, patch: Partial<F[K]>) => void
 
 // ==================================================================== step 1
-function StepPatient({ f, set, setIn, zones, errors }: { f: F; set: SetF; setIn: SetIn; zones: string[]; errors: Record<string, string> }) {
-  const [q, setQ] = useState('')
+function StepPatient({ f, set, setIn, zones, errors, initialQuery }: { f: F; set: SetF; setIn: SetIn; zones: string[]; errors: Record<string, string>; initialQuery?: string }) {
+  const [q, setQ] = useState(initialQuery ?? '')
   const [results, setResults] = useState<FormPatient[] | null>(null)
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -453,6 +457,25 @@ function StepPatient({ f, set, setIn, zones, errors }: { f: F; set: SetF; setIn:
   const shown = results ?? (f.patient ? [f.patient] : null)
   const openLatest = f.patient?.latest && ACTIVE_STATUSES.includes(f.patient.latest.status as Status) ? f.patient.latest : null
 
+  // H360 record → existing HomeCare patient (same UHID / phone) or a pre-filled new patient
+  const useH360 = async (h: H360Hit) => {
+    if (h.linkedPatientId) {
+      try {
+        const r = await api<{ patient?: FormPatient } & FormPatient>(`/patients/${h.linkedPatientId}`)
+        const p = (r as any).patient ?? r
+        choose({ ...p, _id: p._id ?? h.linkedPatientId })
+        return
+      } catch {}
+    }
+    const age = h.ageYears ?? (h.dob && !isNaN(Date.parse(h.dob)) ? Math.floor((Date.now() - Date.parse(h.dob)) / (365.25 * 86400_000)) : undefined)
+    set('mode', 'new')
+    set('patient', null)
+    setIn('np', { name: h.name, phone: h.phone ?? '', ageYears: age != null ? String(age) : '', gender: (h.gender as 'M' | 'F' | 'O' | undefined) ?? '', uhid: h.uhid ?? '' })
+    if (h.address) set('addr', { ...f.addr, full: h.address })
+    if (h.guardianName) setIn('requester', { type: 'RELATIVE', name: h.guardianName })
+    setQ('')
+  }
+
   const choose = (p: FormPatient) => {
     set('mode', 'existing')
     set('patient', p)
@@ -470,7 +493,7 @@ function StepPatient({ f, set, setIn, zones, errors }: { f: F; set: SetF; setIn:
               ref={inputRef}
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Phone, UHID or name"
+              placeholder="UHID, phone or name — searches HomeCare + H360"
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400"
               aria-label="Find existing patient"
               autoFocus={!f.patient && f.mode === 'existing'}
@@ -549,6 +572,7 @@ function StepPatient({ f, set, setIn, zones, errors }: { f: F; set: SetF; setIn:
           </div>
         )}
         {f.mode === 'existing' && !shown && <div className="mt-2.5 text-[13px] text-slate-400">Type at least 2 characters — phone numbers match on the last digits.</div>}
+        <H360PatientSearch q={q} onUse={useH360} className="mt-2.5" />
         {errors.patient && f.mode === 'existing' && !f.patient && <div className="mt-2 text-[12px] font-semibold text-[#B91C1C]">{errors.patient}</div>}
 
         {openLatest && (
