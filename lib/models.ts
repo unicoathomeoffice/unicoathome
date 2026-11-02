@@ -72,6 +72,10 @@ const UserSchema = new Schema<any>(
     customRoleId: { type: ObjectId, ref: 'CustomRole' }, // optional A2 custom role: overrides the base role's permissions
     departmentId: { type: ObjectId, ref: 'Department' },
     designationId: { type: ObjectId, ref: 'Designation' },
+    // e-signature (Account page): stamped on forms only for actions this person performs
+    signatureId: { type: ObjectId, ref: 'Attachment' },
+    /** this person (a dept. head) lets their signature be stamped as approver on car requisitions */
+    autoSignApprover: Boolean,
     skills: [String],
     zones: [String],
     platformAccess: [{ type: String, enum: ['web', 'app'] }],
@@ -250,6 +254,10 @@ const RequestSchema = new Schema<any>(
       returnAt: Date,
       assignedBy: { type: ObjectId, ref: 'User' },
       assignedAt: Date,
+      requestedBy: { type: ObjectId, ref: 'User' }, // who asked for the Unico car (requisition "Requester")
+      requisitionSentAt: Date, // Vehicle Requisition Form sent to the on-call security supervisor
+      requisitionId: { type: ObjectId, ref: 'Attachment' },
+      gatePassId: { type: ObjectId, ref: 'Attachment' },
       legs: [{ _id: false, key: String, label: String, at: Date, plannedAt: Date }],
     },
     pettyCash: [

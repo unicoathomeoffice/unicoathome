@@ -20,6 +20,10 @@ const STATUS_TONE: Record<string, { label: string; cls: string }> = {
 const SHIFT: Record<string, string> = { MORNING: 'Morning', EVENING: 'Evening', NIGHT: 'Night', FLEX: 'Flexible' }
 const km = (n?: number) => (n == null ? '—' : `${n.toLocaleString('en-IN')} km`)
 
+import { TransportDocsCard } from '@/components/settings/TransportDocsCard'
+import { getSettings } from '@/lib/settings'
+import { isPaired } from '@/lib/wa/status'
+
 export default async function FleetPage() {
   const user = await requireWebUser('transport.manage')
   const canUsers = can(user, 'users.manage')
@@ -35,6 +39,14 @@ export default async function FleetPage() {
     Department.find({ isActive: { $ne: false } }).select('name').lean<any[]>(),
     Designation.find({ isActive: { $ne: false } }).select('title departmentId').lean<any[]>(),
     Zone.find({ isActive: true }).sort({ sortOrder: 1 }).select('name').lean<any[]>(),
+  ])
+  const [docs, waPaired, heads] = await Promise.all([
+    getSettings(),
+    isPaired(),
+    User.find({ deletedAt: null, status: 'ACTIVE', $or: [{ role: { $in: ['SUPER_ADMIN', 'HC_ADMIN', 'TRANSPORT_SUPERVISOR', 'DOCTOR'] } }, { roles: { $in: ['SUPER_ADMIN', 'HC_ADMIN', 'TRANSPORT_SUPERVISOR'] } }] })
+      .sort({ name: 1 })
+      .select('name role signatureId autoSignApprover')
+      .lean<any[]>(),
   ])
   const active = cars.filter((c) => c.isActive !== false)
   const person = (id: unknown, list: any[]) => (id ? list.find((x) => String(x._id) === String(id)) : undefined)
@@ -204,6 +216,16 @@ export default async function FleetPage() {
           </div>
         </Card>
       </div>
+      <div className="mt-5 max-w-[1100px]">
+        <TransportDocsCard
+          initial={plain(docs.transportDocs)}
+          approvers={heads.map((h) => ({ id: String(h._id), name: h.name, sub: ROLE_LABEL_SHORT(h.role) }))}
+          waPaired={waPaired}
+          approverSigned={docs.transportDocs.approverId ? !!heads.find((h) => String(h._id) === docs.transportDocs.approverId && h.signatureId && h.autoSignApprover) : null}
+        />
+      </div>
     </AdminPage>
   )
 }
+
+const ROLE_LABEL_SHORT = (r: string) => r.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase())

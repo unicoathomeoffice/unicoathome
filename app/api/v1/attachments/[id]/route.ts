@@ -14,6 +14,8 @@ export const GET = route<{ id: string }>(async ({ user, params }) => {
     const r = await HomecareRequest.findById(a.requestId).select('assignment createdBy transport').lean()
     if (r && !canView(user, r)) throw forbidden()
   }
+  // e-signatures: only their owner and coordinators may look at them
+  if (a.kind === 'SIGNATURE' && a.ownerType === 'USER' && String(a.ownerId) !== user.id && !isCoordinator(user)) throw forbidden()
   const headers = { 'content-type': a.mime, 'content-disposition': `inline; filename="${encodeURIComponent(a.filename ?? 'file')}"`, 'cache-control': 'private, max-age=3600' }
   if (a.storage === 'blob' && a.blobUrl) {
     const b = await readBlob(a.blobUrl)

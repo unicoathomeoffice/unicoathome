@@ -6,6 +6,8 @@ import { Department, Designation, Session, User } from '@/lib/models'
 import { AVAILABILITY_LABEL, ROLE_LABEL } from '@/lib/constants'
 import { ago, dateTime, phone } from '@/lib/format'
 import { PasswordForm, Prefs, Sessions, type SessionRow } from './AccountForms'
+import { SignatureCard } from '@/components/client/SignatureCard'
+import { getSettings } from '@/lib/settings'
 
 export const metadata = { title: 'My account' }
 
@@ -80,6 +82,7 @@ export default async function AccountPage() {
             </div>
             <div className="mt-2 text-[12px] text-slate-500">To change your name, phone or role, ask a super admin.</div>
           </Card>
+          <SignatureCard signatureId={u?.signatureId ? String(u.signatureId) : null} autoSignApprover={!!u?.autoSignApprover} isApprover={(await getSettings()).transportDocs.approverId === me.id} />
           <Card>
             <CardHeader title="Change password" sub={u?.mustChangePassword ? 'You are using a temporary password — please change it now.' : 'Other devices stay signed in unless you sign them out.'} />
             <PasswordForm />

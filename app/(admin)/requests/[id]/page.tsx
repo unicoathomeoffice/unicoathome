@@ -19,6 +19,7 @@ import { ConfirmationStatus } from '@/components/request-detail/PatientWhatsApp'
 import { LiveTrackingCard } from '@/components/request-detail/LiveTrackingCard'
 import { VisitUpdateCard } from '@/components/request-detail/VisitUpdateCard'
 import { InvoiceTab } from '@/components/request-detail/InvoiceTab'
+import { TransportDocsBox } from '@/components/request-detail/TransportDocsBox'
 import { liveView } from '@/lib/services/tracking'
 
 export const metadata = { title: 'Request detail' }
@@ -229,6 +230,16 @@ export default async function RequestDetailPage({ params, searchParams }: { para
         </div>
         {!['NEW', 'VERIFIED', 'CANCELLED'].includes(status) && (
           <ConfirmationStatus requestId={id} wa={lite.wa} last={confirmMsg ? { status: confirmMsg.status, at: new Date(confirmMsg.at).toISOString(), error: confirmMsg.error, provider: confirmMsg.provider } : null} />
+        )}
+        {tab === 'overview' && r.transport?.needed && (!r.transport.mode || r.transport.mode === 'UNICO_CAR') && status !== 'CANCELLED' && (
+          <TransportDocsBox
+            requestId={id}
+            requisitionId={r.transport.requisitionId ? String(r.transport.requisitionId) : null}
+            gatePassId={r.transport.gatePassId ? String(r.transport.gatePassId) : null}
+            sentAt={r.transport.requisitionSentAt ? new Date(r.transport.requisitionSentAt).toISOString() : null}
+            sent={plain(await MessageLog.find({ requestId: r._id, channel: 'WHATSAPP', templateKey: { $in: ['vehicle_requisition', 'gate_pass'] } }).sort({ at: -1 }).limit(20).select('to status at templateKey').lean<any[]>())}
+            canSend={can(user, 'requests.manage') || can(user, 'transport.manage')}
+          />
         )}
         {tab === 'overview' && r.tracking?.phase && (
           <LiveTrackingCard

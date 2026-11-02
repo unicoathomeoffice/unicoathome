@@ -77,6 +77,16 @@ export const DEFAULT_SETTINGS = {
     transportModule: true,
     pettyCash: true,
   },
+  /** Unico car paperwork (Settings → Fleet & drivers): Vehicle Requisition Form (Annex-3) + gate pass, sent on WhatsApp */
+  transportDocs: {
+    sendRequisition: true, // as soon as a Unico car is requested
+    sendGatePass: true, // when a car is allotted (also to the driver)
+    vehicleType: 'Car' as 'Car' | 'Micro' | 'Ambulance',
+    approverId: '' as string, // dept. head whose signature is stamped (only if they allowed it on their account)
+    emailCopy: '' as string, // e.g. ruhul.security@unicohospitals.com
+    /** on-call security supervisors; from/to = shift (HH:MM, may cross midnight); empty = always on call */
+    supervisors: [] as { id: string; name: string; phone: string; from: string; to: string; active: boolean }[],
+  },
   /** short WhatsApp update after each visit (lib/services/updates.ts) */
   visitUpdates: {
     enabled: true,

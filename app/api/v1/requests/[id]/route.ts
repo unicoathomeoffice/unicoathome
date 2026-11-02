@@ -2,7 +2,8 @@ import { z } from 'zod'
 import { route, body, clientMeta, conflict, forbidden } from '@/lib/api'
 import { Patient } from '@/lib/models'
 import { can } from '@/lib/constants'
-import { loadRequest, withPeople, slaInfo } from '@/lib/services/requests'
+import { carRequestedLazy, loadRequest, withPeople, slaInfo } from '@/lib/services/requests'
+import { background } from '@/lib/messaging'
 import { audit, diff } from '@/lib/audit'
 import { getSettings } from '@/lib/settings'
 import { plain } from '@/lib/db'
@@ -38,7 +39,7 @@ export const PATCH = route<{ id: string }>(async ({ req, user, params }) => {
   const isTeam = [r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])].map(String).includes(user.id)
   if (!can(user, 'patients.edit') && !(isTeam && Object.keys(input).every((k) => ['tests', 'version'].includes(k)))) throw forbidden()
   if (input.version != null && input.version !== r.version) throw conflict('VERSION_CONFLICT', 'Someone else changed this request. Reload to see the latest version.')
-  const before = { priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
+  const before = { transport: !!r.transport?.needed, priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
   if (input.priority) r.priority = input.priority
   if (input.tests) r.tests = input.tests
   if (input.expectedDurationMin) r.expectedDurationMin = input.expectedDurationMin
@@ -53,8 +54,10 @@ export const PATCH = route<{ id: string }>(async ({ req, user, params }) => {
     r.set('transport.needed', input.transportNeeded)
     if (input.transportNeeded && !r.transport?.status) r.set('transport.status', 'REQUESTED')
   }
+  const carAsked = input.transportNeeded === true && !before.transport
   r.version = (r.version ?? 0) + 1
   await r.save()
+  if (carAsked) background(() => carRequestedLazy(r._id, user.id)) // requisition → on-call security supervisor
   const after = { priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
   await audit(user, 'request.update', 'request', r._id, { ...diff(before, after), label: r.requestNo }, clientMeta(req, user))
   return { ok: true, version: r.version }

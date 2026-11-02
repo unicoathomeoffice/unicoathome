@@ -193,6 +193,12 @@ export function slotStart(slot?: string) {
   return `${slot?.match(/^\d{1,2}/)?.[0]?.padStart(2, '0') ?? '09'}:00`
 }
 
+/** Car paperwork (lib/services/transport-docs.ts), loaded only when needed. */
+export async function carRequestedLazy(requestId: unknown, userId: string, opts: { updated?: boolean } = {}) {
+  const { carRequested } = await import('./transport-docs')
+  await carRequested(requestId, userId, opts)
+}
+
 // ============================================================== create
 export const CreateRequestInput = z.object({
   patientId: z.string().optional(),
@@ -328,6 +334,7 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
   await audit(user, 'request.create', 'request', r._id, { after: { requestNo: r.requestNo, patient: patient.name, services: services.map((s) => s.name), priority: r.priority }, label: r.requestNo }, meta)
   // heads of department hear about every new request except visits generated from a care plan
   if (!r.carePlanId) background(() => notifyHods(r))
+  if (r.transport?.needed) background(() => carRequestedLazy(r._id, user.id)) // requisition → security supervisor
   background(() =>
     notifyRoles(
       ['HC_ADMIN'],
@@ -393,6 +400,7 @@ export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user:
       await whatsappPatient(r, 'patient_confirmed', user, undefined, input.notifyPatient === true)
     }
     await notifyRoles(['FRONT_DESK'], { type: 'CONFIRMED', title: `${r.requestNo} confirmed`, body: `${r.patientSnapshot.name} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: url(r._id) })
+    if (r.transport?.needed) await carRequestedLazy(r._id, user.id)
     if (r.transport?.needed)
       await notifyRoles(['TRANSPORT_SUPERVISOR'], { type: 'TRANSPORT', title: `Trip request ${r.requestNo}`, body: `${r.patientSnapshot.area ?? ''} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: '/m/trips' })
   })
@@ -470,6 +478,8 @@ export async function reschedule(r: any, input: z.infer<typeof RescheduleInput>,
     await notifyUsers(team, { type: 'RESCHEDULED', as: 'STAFF', title: `${r.requestNo} rescheduled`, body: `New time ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)} · needs re-assignment`, requestId: r._id, url: appUrl(r._id) })
     await emailPatient(r, 'patient_rescheduled', user)
     await whatsappPatient(r, 'patient_rescheduled', user)
+    // the security supervisor already has a requisition for the old time: send the updated one
+    if (r.transport?.needed && r.transport?.requisitionSentAt) await carRequestedLazy(r._id, user.id, { updated: true })
   })
 }
 
@@ -833,6 +843,8 @@ export async function assignTransport(r: any, input: z.infer<typeof TransportInp
       requestId: r._id,
     }
     background(async () => {
+      const { sendTransportDocs } = await import('./transport-docs')
+      await sendTransportDocs(r._id, 'allotted', user.id) // requisition with Section B + gate pass
       await notifyUsers([driverId], { ...note, as: 'DRIVER', url: '/m/trips' })
       await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])], { ...note, as: 'STAFF', url: appUrl(r._id) })
     })

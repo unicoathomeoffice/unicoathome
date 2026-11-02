@@ -97,6 +97,23 @@ export const PATCH = route(
       if (!r.success) throw bad(`Visit updates: ${r.error.issues[0]?.message}`)
       input.value = r.data
     }
+    if (input.key === 'transportDocs') {
+      const HM2 = z.union([HM, z.literal('')])
+      const r = z
+        .object({
+          sendRequisition: z.boolean(),
+          sendGatePass: z.boolean(),
+          vehicleType: z.enum(['Car', 'Micro', 'Ambulance']),
+          approverId: z.string().max(40),
+          emailCopy: z.union([z.string().email(), z.literal('')]),
+          supervisors: z.array(z.object({ id: z.string().min(1).max(40), name: z.string().trim().min(2).max(80), phone: z.string().trim().refine((v) => v.replace(/[^0-9]/g, '').length >= 10, 'Enter a full mobile number'), from: HM2, to: HM2, active: z.boolean() })).max(20),
+        })
+        .partial()
+        .strict()
+        .safeParse(input.value)
+      if (!r.success) throw bad(`Car requisition: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`)
+      input.value = r.data
+    }
     if (input.key === 'booking') {
       const r = BookingPatch.safeParse(input.value)
       if (!r.success) throw bad(`Booking: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`)

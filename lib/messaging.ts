@@ -55,6 +55,9 @@ type EmailInput = {
   initiatedBy?: string
   cc?: string
   cta?: { label: string; url: string }
+  /** a stored file (Attachment) to attach, e.g. a generated requisition PDF */
+  attachmentId?: unknown
+  fileName?: string
 }
 
 /** Log the email, then deliver after the response. Every send lands in message_logs. */
@@ -72,6 +75,8 @@ export async function queueEmail(input: EmailInput) {
     requestId: input.requestId,
     patientId: input.patientId,
     initiatedBy: input.initiatedBy,
+    attachmentId: input.attachmentId,
+    fileName: input.fileName,
     status: 'QUEUED',
     events: [{ status: 'QUEUED', at: new Date() }],
   })
@@ -95,7 +100,13 @@ export async function deliverEmail(logId: string, cc?: string) {
     log.provider = config.mode === 'smtp' ? 'gmail_smtp' : 'gmail_api'
     const s = await getSettings()
     const from = { name: s.email.fromName || process.env.EMAIL_FROM_NAME || 'Unico HomeCare', address: config[config.mode].user }
-    const messageId = await sendGmail(config, { from, to: log.to, cc, replyTo: s.email.replyTo || undefined, subject: log.subject, text: log.renderedText, html: log.renderedHtml })
+    let attachments: { filename: string; content: Buffer; contentType: string }[] | undefined
+    if (log.attachmentId) {
+      const { readFile } = await import('./files')
+      const f = await readFile(log.attachmentId)
+      if (f) attachments = [{ filename: log.fileName || f.filename, content: f.data, contentType: f.mime }]
+    }
+    const messageId = await sendGmail(config, { from, to: log.to, cc, replyTo: s.email.replyTo || undefined, subject: log.subject, text: log.renderedText, html: log.renderedHtml, attachments })
     log.status = 'SENT'
     log.providerId = messageId
     log.error = undefined
