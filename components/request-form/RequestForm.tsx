@@ -8,6 +8,7 @@ import { api, ChipPicker, Segmented, Toggle, useToast } from '@/components/clien
 import { AddressBlock, ADDRESS_LABELS_EN, composeFull, roadOf } from '@/components/client/AddressBlock'
 import { ACTIVE_STATUSES, PAYMENT_METHOD_LABEL, PAYMENT_METHODS, REQUEST_SOURCES, TESTS_PROCEDURES, type Status } from '@/lib/constants'
 import { ageGender, cx, dayNum, initialsOf, phone as fmtPhone, taka, time as fmtTime } from '@/lib/format'
+import { firstOpen, SlotPicker, slotLabel, type SlotBooking } from './SlotPicker'
 
 export type FormPatient = {
   _id: string
@@ -64,6 +65,7 @@ export function RequestForm({
   nextNo,
   today,
   slots,
+  booking,
   zones,
   services,
   initialPatient,
@@ -73,6 +75,7 @@ export function RequestForm({
   nextNo: string
   today: string
   slots: string[]
+  booking: SlotBooking
   zones: string[]
   services: Service[]
   initialPatient: FormPatient | null
@@ -81,7 +84,9 @@ export function RequestForm({
 }) {
   const router = useRouter()
   const toast = useToast()
-  const [f, setF] = useState<F>(() => (initialPatient ? pickPatient(blank(today), initialPatient) : blank(today)))
+  // default day: the first one with an open slot, like the public form
+  const startDate = booking.enabled ? firstOpen(booking.days, today) : today
+  const [f, setF] = useState<F>(() => (initialPatient ? pickPatient(blank(startDate), initialPatient) : blank(startDate)))
   const [step, setStep] = useState<1 | 2 | 3>(1)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<null | 'save' | 'confirm' | 'assign'>(null)
@@ -102,7 +107,10 @@ export function RequestForm({
       if (!raw) return
       const d = JSON.parse(raw)
       if (d?.f && Date.now() - new Date(d.at).getTime() < 24 * 3600_000) {
-        setF({ ...blank(today), ...d.f, date: d.f.date && d.f.date >= today ? d.f.date : today })
+        const date = d.f.date && d.f.date >= today ? d.f.date : startDate
+        // an old fixed-list slot ("09–11") is not on the live grid: drop it so the coordinator picks again
+        const slot = booking.enabled && d.f.slot && !/^\d{2}:\d{2}/.test(d.f.slot) ? '' : (d.f.slot ?? '')
+        setF({ ...blank(startDate), ...d.f, date, slot })
         setSavedAt(new Date(d.at))
         toast('Restored your unsaved draft', 'info')
       }
@@ -130,7 +138,7 @@ export function RequestForm({
     try {
       localStorage.removeItem(DRAFT_KEY)
     } catch {}
-    setF(blank(today))
+    setF(blank(startDate))
     setSavedAt(null)
     setStep(1)
     setErrors({})
@@ -284,7 +292,7 @@ export function RequestForm({
 
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         {step === 1 && <StepPatient f={f} set={set} setIn={setIn} zones={zones} errors={errors} />}
-        {step === 2 && <StepService f={f} set={set} services={services} slots={slots} today={today} errors={errors} autoDuration={autoDuration} />}
+        {step === 2 && <StepService f={f} set={set} services={services} slots={slots} booking={booking} today={today} errors={errors} autoDuration={autoDuration} />}
         {step === 3 && <StepClinical f={f} set={set} services={chosen} autoFee={autoFee} fee={fee} errors={errors} />}
 
         {dup && (
@@ -623,7 +631,7 @@ function StepPatient({ f, set, setIn, zones, errors }: { f: F; set: SetF; setIn:
 }
 
 // ==================================================================== step 2
-function StepService({ f, set, services, slots, today, errors, autoDuration }: { f: F; set: SetF; services: Service[]; slots: string[]; today: string; errors: Record<string, string>; autoDuration: number }) {
+function StepService({ f, set, services, slots, booking, today, errors, autoDuration }: { f: F; set: SetF; services: Service[]; slots: string[]; booking: SlotBooking; today: string; errors: Record<string, string>; autoDuration: number }) {
   const [testQ, setTestQ] = useState('')
   const tests = useMemo(() => {
     const t = testQ.trim().toLowerCase()
@@ -631,11 +639,6 @@ function StepService({ f, set, services, slots, today, errors, autoDuration }: {
     return t ? all.filter((x) => x.toLowerCase().includes(t) || f.tests.includes(x)) : all
   }, [testQ, f.tests])
   const toggle = (code: string) => set('serviceCodes', f.serviceCodes.includes(code) ? f.serviceCodes.filter((c) => c !== code) : [...f.serviceCodes, code])
-  const tomorrow = useMemo(() => {
-    const d = new Date(`${today}T12:00:00+06:00`)
-    d.setUTCDate(d.getUTCDate() + 1)
-    return d.toISOString().slice(0, 10)
-  }, [today])
   return (
     <>
       <SectionCard title="Service" right={errors.services ? <span className="text-[12px] font-semibold text-[#B91C1C]">{errors.services}</span> : <span className="text-[12px] text-slate-400">Select one or more</span>}>
@@ -676,41 +679,26 @@ function StepService({ f, set, services, slots, today, errors, autoDuration }: {
       </SectionCard>
 
       <SectionCard title="Schedule">
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div>
-            <span className="hc-label">Priority</span>
-            <div className="grid grid-cols-3 gap-2">
-              {(
-                [
-                  ['ROUTINE', 'Routine', 'border-slate-900 bg-slate-900 text-white'],
-                  ['URGENT', 'Urgent', 'border-[#F59E0B] bg-[#F59E0B] text-white'],
-                  ['EMERGENCY', 'Emergency', 'border-[#DC2626] bg-[#DC2626] text-white'],
-                ] as const
-              ).map(([v, label, onCls]) => (
-                <button key={v} type="button" onClick={() => set('priority', v)} className={cx('h-10 rounded-lg border text-sm font-semibold', f.priority === v ? onCls : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="grid grid-cols-[1fr_auto] items-end gap-2">
-            <Field label="Preferred date" error={errors.date}>
-              <input type="date" className={cx('hc-input', errCls(errors.date))} value={f.date} min={today} onChange={(e) => set('date', e.target.value)} />
-            </Field>
-            <div className="flex gap-1.5">
-              <button type="button" onClick={() => set('date', today)} className={cx('h-10 rounded-lg px-3 text-[13px] font-semibold', f.date === today ? 'bg-primary-50 text-primary-700' : 'border border-slate-300 text-slate-700')}>
-                Today
+        <div>
+          <span className="hc-label">Priority</span>
+          <div className="grid max-w-[520px] grid-cols-3 gap-2">
+            {(
+              [
+                ['ROUTINE', 'Routine', 'border-slate-900 bg-slate-900 text-white'],
+                ['URGENT', 'Urgent', 'border-[#F59E0B] bg-[#F59E0B] text-white'],
+                ['EMERGENCY', 'Emergency', 'border-[#DC2626] bg-[#DC2626] text-white'],
+              ] as const
+            ).map(([v, label, onCls]) => (
+              <button key={v} type="button" onClick={() => set('priority', v)} className={cx('h-10 rounded-lg border text-sm font-semibold', f.priority === v ? onCls : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}>
+                {label}
               </button>
-              <button type="button" onClick={() => set('date', tomorrow)} className={cx('h-10 rounded-lg px-3 text-[13px] font-semibold', f.date === tomorrow ? 'bg-primary-50 text-primary-700' : 'border border-slate-300 text-slate-700')}>
-                Tomorrow
-              </button>
-            </div>
+            ))}
           </div>
         </div>
 
         <div className="mt-4">
           <div className="mb-1.5 flex items-center justify-between gap-3">
-            <span className="text-[12.5px] font-semibold text-slate-700">Time</span>
+            <span className="text-[12.5px] font-semibold text-slate-700">Day &amp; time</span>
             <div className="w-[220px]">
               <Segmented
                 h={30}
@@ -723,25 +711,23 @@ function StepService({ f, set, services, slots, today, errors, autoDuration }: {
               />
             </div>
           </div>
-          {f.timeMode === 'slot' ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {slots.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => set('slot', f.slot === s ? '' : s)}
-                  className={cx('h-11 rounded-lg border-[1.5px] text-sm font-semibold', f.slot === s ? 'border-primary bg-primary-50 text-primary-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300')}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <Field label="Exact time" error={errors.time} className="max-w-[200px]">
+          <SlotPicker
+            booking={booking}
+            legacySlots={slots}
+            today={today}
+            date={f.date}
+            slot={f.slot}
+            onDate={(d) => set('date', d)}
+            onSlot={(v) => set('slot', v)}
+            showSlots={f.timeMode === 'slot'}
+            error={errors.date}
+          />
+          {f.timeMode === 'time' && (
+            <Field label="Exact time" error={errors.time} className="mt-3 max-w-[200px]">
               <input type="time" className={cx('hc-input', errCls(errors.time))} value={f.time} onChange={(e) => set('time', e.target.value)} />
             </Field>
           )}
-          <div className="mt-1.5 text-[12px] text-slate-400">{f.priority !== 'ROUTINE' && !f.slot && !f.time ? 'Leave empty for ASAP.' : 'Optional — the coordinator confirms the final time.'}</div>
+          <div className="mt-1.5 text-[12px] text-slate-400">{f.priority !== 'ROUTINE' && !f.slot && !f.time ? 'Leave the time empty for ASAP.' : 'Optional — the coordinator confirms the final time.'}</div>
         </div>
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -821,7 +807,7 @@ function StepClinical({ f, set, services, autoFee, fee, errors }: { f: F; set: S
           <Row k="Address" v={[f.addr.full, f.addr.area].filter(Boolean).join(', ') || '—'} />
           <Row k="Services" v={[...services.map((s) => s.name), f.otherService.trim()].filter(Boolean).join(', ') || '—'} sub={f.tests.length ? `${f.tests.length} test${f.tests.length === 1 ? '' : 's'} / procedures` : undefined} />
           <Row k="Priority" v={f.priority[0] + f.priority.slice(1).toLowerCase()} />
-          <Row k="When" v={f.date ? `${dayNum(`${f.date}T12:00:00+06:00`)} · ${f.timeMode === 'slot' ? f.slot || 'any slot' : f.time || 'any time'}` : 'ASAP'} />
+          <Row k="When" v={f.date ? `${dayNum(`${f.date}T12:00:00+06:00`)} · ${f.timeMode === 'slot' ? (f.slot ? slotLabel(f.slot) : 'any slot') : f.time || 'any time'}` : 'ASAP'} />
           <Row k="Transport" v={f.transport ? 'Unico car' : 'Own'} />
           <Row k="Estimated fee" v={taka(fee)} />
         </dl>

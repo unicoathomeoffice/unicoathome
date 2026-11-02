@@ -4,6 +4,7 @@ import { Counter, HomecareRequest, isOid, Patient } from '@/lib/models'
 import { getSettings } from '@/lib/settings'
 import { plain } from '@/lib/db'
 import { isoDay } from '@/lib/format'
+import { availability } from '@/lib/booking'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { RequestForm, type FormPatient } from '@/components/request-form/RequestForm'
 import { activeServices, activeZones } from '@/lib/cached'
@@ -22,6 +23,9 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
     patientId && isOid(patientId) ? Patient.findOne({ _id: patientId, deletedAt: null }).lean<any>() : null,
   ])
 
+  // the same live slot grid the public booking form shows (Settings → Online booking)
+  const days = settings.booking.enabled ? await availability(settings.booking) : []
+
   let patient: FormPatient | null = null
   if (pre) {
     const latest = await HomecareRequest.find({ patientId: pre._id, deletedAt: null }).sort({ createdAt: -1 }).select('requestNo status scheduledAt').limit(1).lean<any[]>()
@@ -35,6 +39,7 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
         nextNo={`HC-${ymd}-${String((counter?.seq ?? 0) + 1).padStart(4, '0')}`}
         today={isoDay()}
         slots={settings.general.slots}
+        booking={{ enabled: !!settings.booking.enabled, days: plain(days) }}
         zones={zones}
         services={services.map((s) => ({ code: s.code, name: s.name, category: s.category ?? '', fee: s.fee ?? 0, duration: s.defaultDurationMin ?? 45 }))}
         initialPatient={patient}

@@ -155,6 +155,12 @@ export async function whatsappPatient(r: any, templateKey: string, user: Session
   await queueWhatsApp({ to: p.whatsapp || p.phone, toName: p.name, text, templateKey, requestId: r._id, patientId: r.patientId, initiatedBy: user?.id })
 }
 
+/** Start time of a slot label: "09:30–10:30" → "09:30"; legacy "09–11" → "09:00"; none → "09:00". */
+export function slotStart(slot?: string) {
+  if (slot && /^\d{2}:\d{2}/.test(slot)) return slot.slice(0, 5)
+  return `${slot?.match(/^\d{1,2}/)?.[0]?.padStart(2, '0') ?? '09'}:00`
+}
+
 // ============================================================== create
 export const CreateRequestInput = z.object({
   patientId: z.string().optional(),
@@ -254,7 +260,7 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
     if (dupe) throw new ApiError(409, 'DUPLICATE', `Possible duplicate of ${dupe.requestNo} (same phone and service in the last 2 hours)`, { requestNo: dupe.requestNo })
   }
 
-  const scheduledAt = input.preferredDate ? dhakaDate(input.preferredDate, input.preferredTime || (input.preferredSlot?.slice(0, 2) ?? '09') + ':00') : undefined
+  const scheduledAt = input.preferredDate ? dhakaDate(input.preferredDate, input.preferredTime || slotStart(input.preferredSlot)) : undefined
   const duration = input.expectedDurationMin ?? Math.max(...types.map((t) => t.defaultDurationMin ?? 45), 30)
   const now = new Date()
   const r = await HomecareRequest.create({
@@ -327,7 +333,7 @@ export const ConfirmInput = z.object({
 export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user: SessionUser, meta: Meta) {
   const before = { status: r.status, scheduledAt: r.scheduledAt, tests: r.tests, uhid: r.patientSnapshot?.uhid }
   move(r, 'CONFIRMED', 'confirmedAt')
-  if (input.date) r.scheduledAt = dhakaDate(input.date, input.time || (input.slot?.slice(0, 2) ?? '09') + ':00')
+  if (input.date) r.scheduledAt = dhakaDate(input.date, input.time || slotStart(input.slot))
   if (input.slot) r.slot = input.slot
   if (input.tests) r.tests = input.tests
   if (input.priority) r.priority = input.priority
@@ -375,7 +381,7 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   if (r.status === 'ACCEPTED' || r.status === 'ASSIGNED') r.status = 'CONFIRMED' // re-assign resets acceptance
   move(r, 'ASSIGNED', 'assignedAt')
   const s = await getSettings()
-  if (input.date) r.scheduledAt = dhakaDate(input.date, input.time || (input.slot?.slice(0, 2) ?? '09') + ':00')
+  if (input.date) r.scheduledAt = dhakaDate(input.date, input.time || slotStart(input.slot))
   if (input.slot) r.slot = input.slot
   if (input.expectedDurationMin) r.expectedDurationMin = input.expectedDurationMin
   if (input.fee != null) r.set('billing.estimatedFee', input.fee)
@@ -411,7 +417,7 @@ export const RescheduleInput = z.object({ date: z.string(), time: z.string().opt
 export async function reschedule(r: any, input: z.infer<typeof RescheduleInput>, user: SessionUser, meta: Meta) {
   const from = r.scheduledAt
   move(r, 'RESCHEDULED', 'rescheduledAt')
-  r.scheduledAt = dhakaDate(input.date, input.time || (input.slot?.slice(0, 2) ?? '09') + ':00')
+  r.scheduledAt = dhakaDate(input.date, input.time || slotStart(input.slot))
   if (input.slot) r.slot = input.slot
   r.reschedules.push({ from, to: r.scheduledAt, slot: input.slot, reason: input.reason, by: user.id, at: new Date() })
   // re-confirm immediately: the coordinator made the decision with the patient
