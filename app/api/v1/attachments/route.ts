@@ -2,9 +2,10 @@ import { route, bad, clientMeta } from '@/lib/api'
 import { Attachment, Types, isOid } from '@/lib/models'
 import { loadRequest } from '@/lib/services/requests'
 import { audit } from '@/lib/audit'
+import { ATTACHMENT_KINDS } from '@/lib/files'
 import { blobEnabled, blobPath, storeBlob, MAX_UPLOAD_BYTES } from '@/lib/storage'
 
-const KINDS = ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'OTHER']
+const KINDS: string[] = [...ATTACHMENT_KINDS].filter((k) => !['REQUISITION', 'GATE_PASS', 'CLAIM'].includes(k)) // generated documents are made on the server
 
 /**
  * POST /api/v1/attachments (multipart/form-data): file, kind, requestId? | patientId?, caption?

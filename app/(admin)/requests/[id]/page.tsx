@@ -18,11 +18,12 @@ import { isPaired } from '@/lib/wa/status'
 import { ConfirmationStatus } from '@/components/request-detail/PatientWhatsApp'
 import { LiveTrackingCard } from '@/components/request-detail/LiveTrackingCard'
 import { VisitUpdateCard } from '@/components/request-detail/VisitUpdateCard'
+import { InvoiceTab } from '@/components/request-detail/InvoiceTab'
 import { liveView } from '@/lib/services/tracking'
 
 export const metadata = { title: 'Request detail' }
 
-const TABS = ['overview', 'timeline', 'assignment', 'visit', 'messages', 'attachments', 'audit'] as const
+const TABS = ['overview', 'timeline', 'assignment', 'visit', 'invoice', 'messages', 'attachments', 'audit'] as const
 type Tab = (typeof TABS)[number]
 const PHOTO_KINDS = ['WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'PHOTO']
 
@@ -65,6 +66,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   let prescriptions: any[] = []
   let labs: any[] = []
   let staffWa: any = null
+  let billSent: any[] = []
   const extraIds: unknown[] = []
   if (tab === 'overview') {
     staffWa = await MessageLog.findOne({ requestId: r._id, channel: 'WHATSAPP', templateKey: 'staff_assigned', status: { $in: ['SENT_CONFIRMED', 'SENT', 'DELIVERED'] } })
@@ -88,6 +90,8 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   } else if (tab === 'attachments') {
     atts = await Attachment.find({ requestId: r._id, deletedAt: null }).sort({ at: -1 }).lean<any[]>()
     for (const a of atts) extraIds.push(a.uploadedBy)
+  } else if (tab === 'invoice') {
+    billSent = await MessageLog.find({ requestId: r._id, channel: 'WHATSAPP', templateKey: { $in: ['patient_bill', 'staff_bill'] } }).sort({ at: -1 }).limit(50).select('at toName to status error fileName').lean<any[]>()
   } else if (tab === 'audit') {
     audits = await AuditLog.find({ entity: 'request', entityId: id }).sort({ serverAt: -1 }).limit(500).lean<any[]>()
   }
@@ -197,6 +201,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
     { key: 'timeline', label: 'Timeline', href: `${base}?tab=timeline` },
     { key: 'assignment', label: 'Assignment', href: `${base}?tab=assignment` },
     { key: 'visit', label: 'Visit data', href: `${base}?tab=visit` },
+    ...(['NEW', 'VERIFIED', 'CANCELLED'].includes(status) && !(r.billing?.invoices ?? []).length ? [] : [{ key: 'invoice', label: `Invoice · ${(r.billing?.invoices ?? []).length}`, href: `${base}?tab=invoice` }]),
     { key: 'messages', label: `Messages · ${msgCount}`, href: `${base}?tab=messages` },
     { key: 'attachments', label: `Attachments · ${attCount}`, href: `${base}?tab=attachments` },
     { key: 'audit', label: `Audit · ${auditCount}`, href: `${base}?tab=audit` },
@@ -259,6 +264,18 @@ export default async function RequestDetailPage({ params, searchParams }: { para
             people={people}
             canResend={canResendMessages(user)}
             compose={{ requestId: id, contact: { name: contactP?.name ?? r.patientSnapshot?.name, email: contactP?.email, phone: contactP?.whatsapp ?? contactP?.phone ?? r.patientSnapshot?.phone }, whatsappLive: waPaired }}
+          />
+        )}
+        {tab === 'invoice' && (
+          <InvoiceTab
+            requestId={id}
+            billing={plain({ status: r.billing?.status ?? null, override: r.billing?.statusOverride ?? null, payable: r.billing?.invoiceAmount ?? 0, paid: r.billing?.paidAmount ?? 0, due: r.billing?.dueAmount ?? 0, invoices: r.billing?.invoices ?? [], estimatedFee: r.billing?.estimatedFee ?? null })}
+            team={[r.primaryStaff, ...(r.secondaryStaff ?? []), r.driver].filter(Boolean).map((p: any) => ({ id: p.id, name: p.name, role: p.role, phone: p.phone }))}
+            patient={{ name: r.patientSnapshot?.name ?? '', phone: lite.wa.phone, optOut: lite.wa.optOut }}
+            sent={plain(billSent)}
+            canEdit={can(user, 'billing.invoice')}
+            canSend={can(user, 'billing.invoice') && can(user, 'messages.send')}
+            waPaired={waPaired}
           />
         )}
         {tab === 'attachments' && <AttachmentsTab requestId={id} atts={plain(atts)} people={people} canUpload={perms.edit} me={{ id: user.id, admin: isCoordinator(user) }} />}

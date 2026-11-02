@@ -267,8 +267,30 @@ const RequestSchema = new Schema<any>(
     billing: {
       estimatedFee: Number,
       billAmount: Number, // Total amount of the patient's bill (staff at check-out)
-      status: { type: String, enum: ['PAID', 'DUE', 'WAIVED'] },
+      status: { type: String, enum: ['PAID', 'PARTIAL', 'DUE', 'WAIVED'] },
+      /** set when a coordinator fixes the status by hand (e.g. WAIVED) — not recalculated from the invoices */
+      statusOverride: { type: String, enum: ['PAID', 'PARTIAL', 'DUE', 'WAIVED'] },
       method: { type: String, enum: PAYMENT_METHODS },
+      // Invoice tab: hospital bills for this visit — uploaded in the admin panel or fetched from H360
+      invoices: [
+        {
+          invoiceNo: String,
+          date: Date,
+          total: Number,
+          discount: Number,
+          payable: Number,
+          paid: Number,
+          due: Number,
+          attachmentId: { type: ObjectId, ref: 'Attachment' },
+          source: { type: String, enum: ['UPLOAD', 'H360'], default: 'UPLOAD' },
+          note: String,
+          addedBy: { type: ObjectId, ref: 'User' },
+          addedAt: Date,
+          updatedAt: Date,
+        },
+      ],
+      paidAmount: Number,
+      dueAmount: Number,
       collectedBy: { type: ObjectId, ref: 'User' },
       collectedAt: Date,
       invoiceNo: String,
@@ -339,7 +361,7 @@ const AttachmentSchema = new Schema<any>(
     ownerType: { type: String, enum: ['REQUEST', 'PATIENT', 'USER', 'CHAT'] },
     ownerId: { type: ObjectId, index: true },
     requestId: { type: ObjectId, ref: 'HomecareRequest', index: true },
-    kind: { type: String, enum: ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'OTHER'] },
+    kind: { type: String, enum: ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'INVOICE', 'REQUISITION', 'GATE_PASS', 'CLAIM', 'RECEIPT', 'OTHER'] },
     filename: String,
     mime: String,
     size: Number,
@@ -390,6 +412,9 @@ const MessageLogSchema = new Schema<any>(
     status: { type: String, enum: ['PREPARED', 'QUEUED', 'SENT', 'SENT_CONFIRMED', 'DELIVERED', 'OPENED', 'FAILED', 'SKIPPED'], default: 'QUEUED' },
     events: [{ _id: false, status: String, at: Date, note: String }],
     providerId: String,
+    // WhatsApp file message: the Attachment sent as a document / image, renderedText is its caption
+    attachmentId: { type: ObjectId, ref: 'Attachment' },
+    fileName: String,
     error: String,
     attempts: { type: Number, default: 0 },
     at: { type: Date, default: Date.now },

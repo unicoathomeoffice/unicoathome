@@ -23,8 +23,9 @@ export async function waStatus() {
   return { paired, phone, queued, failed7d, lastSentAt: m.lastSentAt ?? null, lastError: m.lastError ?? null, lastErrorAt: m.lastErrorAt ?? null, pairedAt: m.pairedAt ?? null }
 }
 
-/** Log a WhatsApp message and deliver it in the background. */
-export async function queueWhatsApp(input: { to: string; toName?: string; text: string; templateKey?: string; requestId?: unknown; patientId?: unknown; initiatedBy?: string }) {
+/** Log a WhatsApp message and deliver it in the background. With attachmentId the file is sent (PDF as a document,
+ *  photo as an image) and `text` becomes its caption. */
+export async function queueWhatsApp(input: { to: string; toName?: string; text: string; templateKey?: string; requestId?: unknown; patientId?: unknown; initiatedBy?: string; attachmentId?: unknown; fileName?: string }) {
   const log = await MessageLog.create({
     channel: 'WHATSAPP',
     provider: PROVIDER,
@@ -35,6 +36,8 @@ export async function queueWhatsApp(input: { to: string; toName?: string; text: 
     requestId: input.requestId,
     patientId: input.patientId,
     initiatedBy: input.initiatedBy,
+    attachmentId: input.attachmentId,
+    fileName: input.fileName,
     status: 'QUEUED',
     events: [{ status: 'QUEUED', at: new Date() }],
   })
@@ -57,7 +60,17 @@ export async function pumpWhatsApp(max = 15): Promise<{ sent: number; failed: nu
     const rows = await MessageLog.find({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED' }).sort({ at: 1 }).limit(max)
     for (const m of rows) {
       try {
-        const res = await conn.sock.sendMessage(`${m.to}@s.whatsapp.net`, { text: m.renderedText })
+        const jid = `${m.to}@s.whatsapp.net`
+        let content: any = { text: m.renderedText }
+        if (m.attachmentId) {
+          const { readFile } = await import('../files')
+          const f = await readFile(m.attachmentId)
+          if (!f) throw new Error('The file to send no longer exists')
+          content = f.mime.startsWith('image/')
+            ? { image: f.data, caption: m.renderedText, mimetype: f.mime }
+            : { document: f.data, mimetype: f.mime, fileName: m.fileName || f.filename, caption: m.renderedText }
+        }
+        const res = await conn.sock.sendMessage(jid, content)
         m.status = 'SENT'
         m.providerId = res?.key?.id
         m.attempts = (m.attempts ?? 0) + 1

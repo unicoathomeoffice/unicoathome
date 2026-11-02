@@ -37,6 +37,10 @@ export const PLACEHOLDERS = [
   'requestLink',
   'trackLink',
   'summary',
+  'invoiceNo',
+  'total',
+  'paid',
+  'due',
 ] as const
 
 export const DEFAULT_TEMPLATES: TemplateDef[] = [
@@ -167,6 +171,22 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     audience: 'Patient',
     subject: 'Your home visit summary · {requestNo}',
     body: '{summary}\nQuestions? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',
+  },
+  {
+    key: 'patient_bill',
+    name: 'Bill copy to patient',
+    channel: ['WHATSAPP'],
+    audience: 'Patient',
+    subject: 'Your bill · {invoiceNo}',
+    body: 'Dear {patientName}, here is your bill for home care visit {requestNo} (invoice {invoiceNo}).\nTotal {total} · Paid {paid} · Due {due}\nQuestions? Call {hospitalPhone}.\n— Unico Hospitals',
+  },
+  {
+    key: 'staff_bill',
+    name: 'Bill copy to care team',
+    channel: ['WHATSAPP'],
+    audience: 'Staff',
+    subject: 'Bill copy · {requestNo}',
+    body: 'Bill copy · {requestNo} · {patientName}\nInvoice {invoiceNo} · Total {total} · Paid {paid} · Due {due}\n— Unico HomeCare',
   },
   {
     key: 'auth_code',

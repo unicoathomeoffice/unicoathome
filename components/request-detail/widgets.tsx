@@ -69,6 +69,8 @@ export function ResendButton({ id }: { id: string }) {
 const KINDS = [
   { value: 'PRESCRIPTION', label: 'Prescription' },
   { value: 'REPORT', label: 'Report' },
+  { value: 'INVOICE', label: 'Invoice (add amounts on the Invoice tab)' },
+  { value: 'RECEIPT', label: 'Receipt' },
   { value: 'OTHER', label: 'Other' },
 ]
 
