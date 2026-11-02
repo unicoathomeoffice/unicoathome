@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2, QrCode, RefreshCw, Send, Unplug, XCircle } from 
 import { api, Toggle, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { ago } from '@/lib/format'
+import { WaQueueDrawer } from './WaQueueDrawer'
 
 export type WaStatus = { paired: boolean; phone: string | null; queued: number; failed7d: number; lastSentAt: string | null; lastError: string | null; lastErrorAt: string | null; pairedAt: string | null }
 
@@ -19,6 +20,7 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
   const [testTo, setTestTo] = useState('')
+  const [list, setList] = useState<null | 'QUEUED' | 'FAILED'>(null)
   const es = useRef<EventSource | null>(null)
 
   useEffect(() => () => es.current?.close(), [])
@@ -140,19 +142,20 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
       </div>
 
       <div className="grid grid-cols-3 gap-2 text-center text-[12px]">
-        <div className="rounded-lg bg-slate-50 p-2">
+        <button type="button" onClick={() => setList('QUEUED')} className="rounded-lg bg-slate-50 p-2 transition hover:bg-primary-50 hover:ring-1 hover:ring-primary/30" title="See and cancel waiting messages">
           <div className="text-[18px] font-bold text-slate-900">{st.queued}</div>
-          queued
-        </div>
-        <div className="rounded-lg bg-slate-50 p-2">
-          <div className="text-[18px] font-bold text-slate-900">{st.failed7d}</div>
-          failed · 7 d
-        </div>
+          queued · <span className="font-semibold text-primary-700">view</span>
+        </button>
+        <button type="button" onClick={() => setList('FAILED')} className="rounded-lg bg-slate-50 p-2 transition hover:bg-primary-50 hover:ring-1 hover:ring-primary/30" title="See failed messages and send them again">
+          <div className={st.failed7d ? 'text-[18px] font-bold text-[#B91C1C]' : 'text-[18px] font-bold text-slate-900'}>{st.failed7d}</div>
+          failed · 7 d · <span className="font-semibold text-primary-700">view</span>
+        </button>
         <div className="rounded-lg bg-slate-50 p-2">
           <div className="text-[13px] font-bold text-slate-900">{st.lastSentAt ? ago(st.lastSentAt) : '—'}</div>
           last sent
         </div>
       </div>
+      {list && <WaQueueDrawer status={list} onClose={() => setList(null)} onChanged={() => (refresh(), router.refresh())} />}
       {st.lastError && (
         <div className="rounded-lg bg-[#FEF3C7] px-3 py-2 text-[12.5px] text-[#92400E]">
           Last problem{st.lastErrorAt ? ` (${ago(st.lastErrorAt)})` : ''}: {st.lastError}
