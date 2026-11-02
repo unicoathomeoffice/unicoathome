@@ -3,8 +3,9 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Check, Copy, KeyRound, Loader2, ShieldCheck, Clock } from 'lucide-react'
 import { api, ChipPicker, Drawer, Segmented, useToast } from '@/components/client'
+import { ApiClientError } from '@/components/client/api'
 import { btnClass } from '@/components/ui'
-import { AVAILABILITY, AVAILABILITY_LABEL, ROLES, ROLE_LABEL, SHIFTS, SKILLS, defaultPlatformAccess, type Role } from '@/lib/constants'
+import { AVAILABILITY, AVAILABILITY_LABEL, ROLE_LABEL, SHIFTS, SKILLS, defaultPlatformAccess, type Role } from '@/lib/constants'
 import { CheckPill, Field, FormError, useFieldErrors } from './form'
 import { PhotoPicker } from '@/components/client/PhotoPicker'
 import { cx } from '@/lib/format'
@@ -44,6 +45,40 @@ export type StaffUser = {
 }
 
 const SHIFT_LABEL: Record<string, string> = { MORNING: 'Morning', EVENING: 'Evening', NIGHT: 'Night', FLEX: 'Flexible' }
+
+/** What each role is for — shown on the role cards so nobody has to guess what ALLIED means. */
+const ROLE_HINT: Record<Role, string> = {
+  DOCTOR: 'Home visits as doctor',
+  NURSE: 'Nursing visits',
+  ALLIED: 'Phlebotomist, physio, lab, technician',
+  DRIVER: 'Drives the Unico car',
+  TRANSPORT_SUPERVISOR: 'Allots cars and drivers',
+  HC_ADMIN: 'Takes requests, assigns staff',
+  FRONT_DESK: 'Registers patients and requests',
+  VIEWER: 'Reports and dashboards only',
+  SUPER_ADMIN: 'Everything, incl. users and settings',
+}
+const ROLE_ORDER: Role[] = ['DOCTOR', 'NURSE', 'ALLIED', 'DRIVER', 'TRANSPORT_SUPERVISOR', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER', 'SUPER_ADMIN']
+
+/** Best guess of the role from the designation title (then the department name). */
+export function suggestRole(designation?: string, department?: string): Role | null {
+  const t = (designation ?? '').toLowerCase()
+  if (t) {
+    if (/phlebotom|physio|lab|technolog|technician|pharm|dietit|therap|radiograph|sonograph|allied/.test(t)) return 'ALLIED'
+    if (/driver/.test(t)) return 'DRIVER'
+    if (/security|transport|car supervisor|fleet/.test(t)) return 'TRANSPORT_SUPERVISOR'
+    if (/coordinat/.test(t)) return 'HC_ADMIN'
+    if (/front ?desk|reception|customer/.test(t)) return 'FRONT_DESK'
+    if (/nurs|sister|brother|midwi|matron/.test(t)) return 'NURSE'
+    if (/doctor|consultant|registrar|medical officer|\brmo\b|\bmo\b|physician|specialist|surgeon|\bdr\b/.test(t)) return 'DOCTOR'
+  }
+  const d = (department ?? '').toLowerCase()
+  if (/nurs/.test(d)) return 'NURSE'
+  if (/lab|patholog|physio|rehab|radiolog|imaging|pharm/.test(d)) return 'ALLIED'
+  if (/transport|security|fleet/.test(d)) return 'TRANSPORT_SUPERVISOR'
+  if (/medicine|doctor|medical|cardio|pediatr|paediatr|surgery|gyn/.test(d)) return 'DOCTOR'
+  return null
+}
 export const skillLabel = (s: string) => s
 
 /** Shown once after create / reset: the temporary password */
@@ -120,6 +155,10 @@ export function UserDrawer({ user, options, canManage, onClose, presetRole }: { 
     return s
   })
   const [accessTouched, setAccessTouched] = useState(editing)
+  // a new user starts with no role picked (it used to silently default to NURSE); the designation suggests one
+  const [roleSet, setRoleSet] = useState(editing || !!presetRole)
+  const [roleTouched, setRoleTouched] = useState(editing || !!presetRole)
+  const [roleSuggested, setRoleSuggested] = useState(false)
   const [busy, setBusy] = useState(false)
   const [done, setDone] = useState<null | { temporaryPassword?: string; pendingApproval?: boolean; name: string }>(null)
   const fe = useFieldErrors()
@@ -134,8 +173,19 @@ export function UserDrawer({ user, options, canManage, onClose, presetRole }: { 
   const isField = ['DOCTOR', 'NURSE', 'ALLIED'].includes(v.role)
   const defaults = defaultPlatformAccess(v.role)
 
-  function setRole(role: Role) {
-    setV((s) => ({ ...s, role, platformAccess: accessTouched ? s.platformAccess : defaultPlatformAccess(role) }))
+  function setRole(role: Role, by: 'user' | 'suggest' = 'user') {
+    setRoleSet(true)
+    if (by === 'user') setRoleTouched(true)
+    setRoleSuggested(by === 'suggest')
+    setV((s) => ({ ...s, role, roles: s.roles.filter((r) => r !== role), platformAccess: accessTouched ? s.platformAccess : defaultPlatformAccess(role) }))
+  }
+  /** Department / designation changed: suggest the role until someone picks one by hand. */
+  function suggestFrom(departmentId: string, designationId: string) {
+    if (roleTouched) return
+    const title = options.designations.find((d) => d._id === designationId)?.title
+    const dept = options.departments.find((d) => d._id === departmentId)?.name
+    const r = suggestRole(title, dept)
+    if (r) setRole(r, 'suggest')
   }
   function toggleAccess(k: 'web' | 'app', on: boolean) {
     setAccessTouched(true)
@@ -144,6 +194,10 @@ export function UserDrawer({ user, options, canManage, onClose, presetRole }: { 
 
   async function save() {
     fe.clear()
+    if (!roleSet) {
+      fe.fromError(new ApiClientError('Pick a role for this user', 400, 'VALIDATION', { role: 'Pick a role' }))
+      return
+    }
     if (!v.platformAccess.length) {
       fe.fromError(new Error('Give at least Web or App access'))
       return
@@ -282,7 +336,14 @@ export function UserDrawer({ user, options, canManage, onClose, presetRole }: { 
           <input className="hc-input" value={v.whatsapp} onChange={set('whatsapp')} placeholder="Same as phone" inputMode="tel" />
         </Field>
         <Field label="Department" error={err('departmentId')}>
-          <select className="hc-input" value={v.departmentId} onChange={(e) => setV((s) => ({ ...s, departmentId: e.target.value, designationId: '' }))}>
+          <select
+            className="hc-input"
+            value={v.departmentId}
+            onChange={(e) => {
+              setV((s) => ({ ...s, departmentId: e.target.value, designationId: '' }))
+              suggestFrom(e.target.value, '')
+            }}
+          >
             <option value="">—</option>
             {options.departments.map((d) => (
               <option key={d._id} value={d._id}>
@@ -292,7 +353,14 @@ export function UserDrawer({ user, options, canManage, onClose, presetRole }: { 
           </select>
         </Field>
         <Field label="Designation" error={err('designationId')}>
-          <select className="hc-input" value={v.designationId} onChange={set('designationId')}>
+          <select
+            className="hc-input"
+            value={v.designationId}
+            onChange={(e) => {
+              setV((s) => ({ ...s, designationId: e.target.value }))
+              suggestFrom(v.departmentId, e.target.value)
+            }}
+          >
             <option value="">—</option>
             {desigs.map((d) => (
               <option key={d._id} value={d._id}>
@@ -301,18 +369,42 @@ export function UserDrawer({ user, options, canManage, onClose, presetRole }: { 
             ))}
           </select>
         </Field>
-        <Field label="Role" error={err('role')} hint={ROLE_LABEL[v.role]}>
-          <select className="hc-input font-mono text-[13px]" value={v.role} onChange={(e) => setRole(e.target.value as Role)}>
-            {ROLES.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
-        </Field>
+        <div className="col-span-2">
+          <span className="hc-label">Role</span>
+          <div>
+            <div role="radiogroup" aria-label="Role" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {ROLE_ORDER.filter((r) => r !== 'SUPER_ADMIN' || canManage || v.role === 'SUPER_ADMIN').map((r) => {
+                const on = roleSet && v.role === r
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => setRole(r)}
+                    className={cx(
+                      'flex min-h-[52px] flex-col items-start justify-center rounded-lg border-[1.5px] px-3 py-2 text-left transition-colors',
+                      on ? 'border-primary bg-primary-50 text-primary-700' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50',
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5 text-[13.5px] font-semibold">
+                      {on && <Check size={14} />} {ROLE_LABEL[r]}
+                    </span>
+                    <span className={cx('text-[11.5px] leading-snug', on ? 'text-primary-700/80' : 'text-slate-500')}>{ROLE_HINT[r]}</span>
+                  </button>
+                )
+              })}
+            </div>
+            {err('role') ? (
+              <span className="mt-1 block text-[12px] font-semibold text-[#B91C1C]">{err('role')}</span>
+            ) : (
+              <span className="mt-1 block text-[12px] text-slate-500">{roleSuggested ? 'Suggested from the designation — pick another if needed' : 'Decides what they can do and where they appear for assignment'}</span>
+            )}
+          </div>
+        </div>
         <Field label="Also acts as (optional)" hint="Extra roles: permissions, notifications and assignment candidates include all of them">
           <ChipPicker
-            options={ROLES.filter((r) => r !== v.role && r !== 'SUPER_ADMIN').map((r) => ({ value: r, label: ROLE_LABEL[r] }))}
+            options={ROLE_ORDER.filter((r) => r !== v.role && r !== 'SUPER_ADMIN').map((r) => ({ value: r, label: ROLE_LABEL[r] }))}
             value={v.roles}
             onChange={(roles) => setV((x) => ({ ...x, roles: roles as Role[] }))}
           />

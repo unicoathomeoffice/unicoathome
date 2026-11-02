@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { route, body, clientMeta, qp, bad } from '@/lib/api'
+import { route, body, clientMeta, qp, bad, forbidden } from '@/lib/api'
 import { User, Designation, Department, Vehicle, Approval } from '@/lib/models'
 import { defaultPlatformAccess, can } from '@/lib/constants'
 import { hashPassword } from '@/lib/auth'
@@ -43,6 +43,7 @@ export const POST = route(
     const password = input.password ?? Math.random().toString(36).slice(2, 10) + 'A1'
     // Only SUPER_ADMIN creates active users directly; coordinators' submissions wait in Approvals.
     const direct = can(user, 'users.manage')
+    if (!direct && (input.role === 'SUPER_ADMIN' || input.roles.includes('SUPER_ADMIN'))) throw forbidden('Only a super admin can create a super admin')
     const u = await User.create({
       ...input,
       roles: input.roles.filter((r) => r !== input.role),
