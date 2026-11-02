@@ -31,6 +31,8 @@ export default async function ConfirmPage({ params }: { params: Promise<{ id: st
         uhid={r.patientSnapshot?.uhid ?? patient?.uhid}
         patientUhid={patient?.uhid}
         tests={r.tests ?? []}
+        testItems={(r.testItems ?? []).map((t: any) => ({ code: t.code ?? '', name: t.name, price: t.price ?? 0, dept: t.dept }))}
+        patientCategory={patient?.category}
         fee={r.billing?.estimatedFee}
         transport={!!r.transport?.needed}
         priority={r.priority}

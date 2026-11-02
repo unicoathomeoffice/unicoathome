@@ -7,8 +7,8 @@ import { db, plain } from '@/lib/db'
 import { AssignmentLog, Attachment, AuditLog, ChatMessage, HomecareRequest, LabResult, MessageLog, Patient, Prescription, User, Vehicle, isOid } from '@/lib/models'
 import { canView, slaInfo, withPeople } from '@/lib/services/requests'
 import { getSettings } from '@/lib/settings'
-import { initialsOf, isoDay, dayRange, dayNum, time, dur, date } from '@/lib/format'
-import { ROLE_LABEL, TRANSPORT_MODE_LABEL, can, canResendMessages, isCoordinator, type Role, type Status } from '@/lib/constants'
+import { initialsOf, isoDay, dayRange, dayNum, time, time24, dur, date } from '@/lib/format'
+import { ROLE_LABEL, TRANSPORT_MODE_LABEL, can, canResendMessages, isCoordinator, type Role, type Status, patientCategoryLabel } from '@/lib/constants'
 import { ActionBar, EditRequestButton, type ReqLite } from '@/components/request-detail/actions'
 import { LivePill } from '@/components/request-detail/widgets'
 import { AssignmentTab, AttachmentsTab, AuditTab, MessagesTab, OverviewTab, TimelineTab, VisitTab } from '@/components/request-detail/tabs'
@@ -24,6 +24,7 @@ import { TransportDocsBox } from '@/components/request-detail/TransportDocsBox'
 import { RidesCard } from '@/components/request-detail/RidesCard'
 import { liveView } from '@/lib/services/tracking'
 import { OverridePanel } from '@/components/request-detail/OverridePanel'
+import { H360BillingSheet } from '@/components/request-detail/H360BillingSheet'
 import { TimeoutBanner } from '@/components/request-detail/TimeoutBanner'
 
 export const metadata = { title: 'Request detail' }
@@ -132,7 +133,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
       area: r.patientSnapshot?.area ?? '',
       reassign: acts.reassign,
       date: r.scheduledAt ? isoDay(r.scheduledAt) : r.preferred?.date || isoDay(),
-      time: r.scheduledAt ? time(r.scheduledAt) : r.preferred?.time || '',
+      time: r.scheduledAt ? time24(r.scheduledAt) : r.preferred?.time || '', // HH:mm for the time input
       slot: r.slot ?? '',
       duration: r.expectedDurationMin ?? 45,
       fee: r.billing?.estimatedFee ?? null,
@@ -172,8 +173,10 @@ export default async function RequestDetailPage({ params, searchParams }: { para
     version: r.version ?? 0,
     priority: r.priority,
     tests: r.tests ?? [],
+    testItems: (r.testItems ?? []).map((t: any) => ({ code: t.code ?? '', name: t.name, price: t.price ?? 0, dept: t.dept })),
+    patientCategory: (patient as any)?.category ?? undefined,
     date: r.scheduledAt ? isoDay(r.scheduledAt) : r.preferred?.date || isoDay(),
-    time: r.scheduledAt ? time(r.scheduledAt) : r.preferred?.time || '',
+    time: r.scheduledAt ? time24(r.scheduledAt) : r.preferred?.time || '', // HH:mm for the time input
     slot: r.slot ?? r.preferred?.slot ?? '',
     expectedDurationMin: r.expectedDurationMin ?? 45,
     estimatedFee: r.billing?.estimatedFee ?? null,
@@ -347,6 +350,15 @@ export default async function RequestDetailPage({ params, searchParams }: { para
             people={people}
             canResend={canResendMessages(user)}
             compose={{ requestId: id, contact: { name: contactP?.name ?? r.patientSnapshot?.name, email: contactP?.email, phone: contactP?.whatsapp ?? contactP?.phone ?? r.patientSnapshot?.phone }, whatsappLive: waPaired }}
+          />
+        )}
+        {tab === 'invoice' && (
+          <H360BillingSheet
+            uhid={patient?.uhid ?? r.patientSnapshot?.uhid ?? ''}
+            category={patientCategoryLabel(patient?.category)}
+            items={(r.testItems ?? []).map((t: any) => ({ code: t.code ?? '', name: t.name, price: t.price ?? 0, dept: t.dept }))}
+            plain={(r.tests ?? []).filter((n: string) => !(r.testItems ?? []).some((t: any) => t.name === n))}
+            services={(r.services ?? []).map((s: any) => s.name)}
           />
         )}
         {tab === 'invoice' && (

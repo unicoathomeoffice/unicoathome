@@ -175,7 +175,7 @@ export function VisitReport({ r, patient, labs, settings, names, signatureId, au
               <>
                 <H className="mb-1.5 mt-3.5">Samples / procedures</H>
                 <div className="text-[12px] leading-[18px]">
-                  {r.tests.join(' · ')}
+                  {(r.testItems ?? []).length > 0 ? r.tests.map((n: string) => { const t = r.testItems.find((x: any) => x.name === n); return t?.code ? `${n} (${t.code})` : n }).join(' · ') : r.tests.join(' · ')}
                   {labs.length > 0 && (
                     <>
                       <br />

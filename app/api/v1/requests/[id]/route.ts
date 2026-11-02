@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { TestItemInput, testNames } from '@/lib/schemas'
 import { route, body, clientMeta, conflict, forbidden } from '@/lib/api'
 import { Patient } from '@/lib/models'
 import { can } from '@/lib/constants'
@@ -21,6 +22,7 @@ const Patch = z.object({
   version: z.number().optional(), // optimistic concurrency
   priority: z.enum(['ROUTINE', 'URGENT', 'EMERGENCY']).optional(),
   tests: z.array(z.string()).optional(),
+  testItems: z.array(TestItemInput).max(60).optional(),
   expectedDurationMin: z.coerce.number().int().positive().optional(),
   complaint: z.string().optional(),
   clinicalNotes: z.string().optional(),
@@ -37,11 +39,14 @@ export const PATCH = route<{ id: string }>(async ({ req, user, params }) => {
   const r = await loadRequest(params.id, user)
   const input = await body(req, Patch)
   const isTeam = [r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])].map(String).includes(user.id)
-  if (!can(user, 'patients.edit') && !(isTeam && Object.keys(input).every((k) => ['tests', 'version'].includes(k)))) throw forbidden()
+  if (!can(user, 'patients.edit') && !(isTeam && Object.keys(input).every((k) => ['tests', 'testItems', 'version'].includes(k)))) throw forbidden()
   if (input.version != null && input.version !== r.version) throw conflict('VERSION_CONFLICT', 'Someone else changed this request. Reload to see the latest version.')
   const before = { transport: !!r.transport?.needed, priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
   if (input.priority) r.priority = input.priority
-  if (input.tests) r.tests = input.tests
+  if (input.testItems) {
+    r.testItems = input.testItems
+    r.tests = testNames(input.testItems, input.tests ?? [])
+  } else if (input.tests) r.tests = input.tests
   if (input.expectedDurationMin) r.expectedDurationMin = input.expectedDurationMin
   if (input.complaint != null) r.set('clinical.complaint', input.complaint)
   if (input.clinicalNotes != null) r.set('clinical.notes', input.clinicalNotes)

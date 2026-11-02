@@ -1,12 +1,14 @@
 'use client'
 import Link from 'next/link'
+import { H360TestPicker } from '@/components/client/H360TestPicker'
+import { testsTotal, type TestItem } from '@/lib/schemas'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Check, ChevronLeft, ChevronRight, Loader2, MapPin, Plus, Search, X } from 'lucide-react'
 import { btnClass, StatusChip } from '@/components/ui'
-import { api, ChipPicker, Segmented, Toggle, useToast } from '@/components/client'
+import { api, Segmented, Toggle, useToast } from '@/components/client'
 import { AddressBlock, ADDRESS_LABELS_EN, composeFull, roadOf } from '@/components/client/AddressBlock'
-import { ACTIVE_STATUSES, PAYMENT_METHOD_LABEL, PAYMENT_METHODS, REQUEST_SOURCES, TESTS_PROCEDURES, type Status } from '@/lib/constants'
+import { ACTIVE_STATUSES, PAYMENT_METHOD_LABEL, PAYMENT_METHODS, REQUEST_SOURCES, type Status } from '@/lib/constants'
 import { ageGender, cx, dayNum, initialsOf, phone as fmtPhone, taka, time as fmtTime } from '@/lib/format'
 import { firstOpen, SlotPicker, slotLabel, type SlotBooking } from './SlotPicker'
 import { openConfirmLink, PatientWhatsAppToggle, reserveTab } from '@/components/request-detail/PatientWhatsApp'
@@ -38,6 +40,7 @@ const blank = (today: string) => ({
   serviceCodes: [] as string[],
   otherService: '',
   tests: [] as string[],
+  testItems: [] as TestItem[], // from H360's catalog (code + price)
   priority: 'ROUTINE' as 'ROUTINE' | 'URGENT' | 'EMERGENCY',
   date: today,
   timeMode: 'slot' as 'slot' | 'time',
@@ -155,7 +158,7 @@ export function RequestForm({
 
   // ---------------------------------------------------------------- derived
   const chosen = services.filter((s) => f.serviceCodes.includes(s.code))
-  const autoFee = chosen.reduce((a, s) => a + s.fee, 0)
+  const autoFee = chosen.reduce((a, s) => a + s.fee, 0) + testsTotal(f.testItems) // services + H360 test prices
   const autoDuration = chosen.length ? Math.max(30, ...chosen.map((s) => s.duration)) : 45
   const fee = f.fee === '' ? autoFee : Number(f.fee)
   const wa = { paired: waPaired, phone: f.mode === 'existing' ? f.patient?.phone ?? '' : f.np.phone.trim(), optOut: false }
@@ -227,6 +230,7 @@ export function RequestForm({
         serviceCodes: f.serviceCodes,
         otherService: f.otherService.trim() || undefined,
         tests: f.tests,
+        testItems: f.testItems.length ? f.testItems : undefined,
         priority: f.priority,
         preferredDate: f.date || undefined,
         preferredSlot: slot,
@@ -672,12 +676,6 @@ function StepPatient({ f, set, setIn, zones, errors, initialQuery }: { f: F; set
 
 // ==================================================================== step 2
 function StepService({ f, set, services, slots, booking, today, errors, autoDuration }: { f: F; set: SetF; services: Service[]; slots: string[]; booking: SlotBooking; today: string; errors: Record<string, string>; autoDuration: number }) {
-  const [testQ, setTestQ] = useState('')
-  const tests = useMemo(() => {
-    const t = testQ.trim().toLowerCase()
-    const all = [...TESTS_PROCEDURES] as string[]
-    return t ? all.filter((x) => x.toLowerCase().includes(t) || f.tests.includes(x)) : all
-  }, [testQ, f.tests])
   const toggle = (code: string) => set('serviceCodes', f.serviceCodes.includes(code) ? f.serviceCodes.filter((c) => c !== code) : [...f.serviceCodes, code])
   return (
     <>
@@ -706,15 +704,18 @@ function StepService({ f, set, services, slots, booking, today, errors, autoDura
           <input className="hc-input" value={f.otherService} onChange={(e) => set('otherService', e.target.value)} placeholder="Describe the service" />
         </Field>
         <div className="mt-4">
-          <div className="mb-1.5 flex items-center justify-between gap-3">
-            <span className="text-[12.5px] font-semibold text-slate-700">
-              Tests / procedures {f.tests.length > 0 && <span className="text-primary-700">· {f.tests.length} selected</span>}
-            </span>
-            <input className="hc-input h-8 max-w-[220px] text-[13px]" placeholder="Filter tests…" value={testQ} onChange={(e) => setTestQ(e.target.value)} aria-label="Filter tests" />
+          <div className="mb-1.5 text-[12.5px] font-semibold text-slate-700">
+            Tests / procedures {f.testItems.length + f.tests.length > 0 && <span className="text-primary-700">· {f.testItems.length + f.tests.length} selected</span>}
+            <span className="ml-1 font-normal text-slate-400">· codes and prices from H360 (view only)</span>
           </div>
-          <div className="max-h-[168px] overflow-y-auto rounded-lg border border-slate-100 p-2">
-            <ChipPicker options={tests} value={f.tests} onChange={(v) => set('tests', v)} />
-          </div>
+          <H360TestPicker
+            value={f.testItems}
+            onChange={(v) => set('testItems', v)}
+            plain={f.tests}
+            onPlainChange={(v) => set('tests', v)}
+            patientType={f.mode === 'existing' ? (f.patient as any)?.category : undefined}
+            corporate={f.mode === 'existing' && /corporate/i.test((f.patient as any)?.category ?? '')}
+          />
         </div>
       </SectionCard>
 
@@ -811,7 +812,7 @@ function StepClinical({ f, set, services, autoFee, fee, errors }: { f: F; set: S
         </SectionCard>
         <SectionCard title="Payment & source">
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Estimated fee (৳)" error={errors.fee} hint={f.fee === '' ? `Auto: sum of service fees (${taka(autoFee)})` : <button type="button" className="font-semibold text-primary-700 hover:underline" onClick={() => set('fee', '')}>Reset to {taka(autoFee)}</button>}>
+            <Field label="Estimated fee (৳)" error={errors.fee} hint={f.fee === '' ? `Auto: services + H360 test prices (${taka(autoFee)})` : <button type="button" className="font-semibold text-primary-700 hover:underline" onClick={() => set('fee', '')}>Reset to {taka(autoFee)}</button>}>
               <input className={cx('hc-input', errCls(errors.fee))} inputMode="numeric" value={f.fee === '' ? String(autoFee) : f.fee} onChange={(e) => set('fee', e.target.value.replace(/[^\d.]/g, ''))} />
             </Field>
             <div>
@@ -845,7 +846,7 @@ function StepClinical({ f, set, services, autoFee, fee, errors }: { f: F; set: S
         <dl className="mt-3 flex flex-col gap-2.5 text-sm">
           <Row k="Patient" v={who || '—'} sub={f.mode === 'new' ? 'New patient' : f.patient ? fmtPhone(f.patient.phone) : undefined} />
           <Row k="Address" v={[f.addr.full, f.addr.area].filter(Boolean).join(', ') || '—'} />
-          <Row k="Services" v={[...services.map((s) => s.name), f.otherService.trim()].filter(Boolean).join(', ') || '—'} sub={f.tests.length ? `${f.tests.length} test${f.tests.length === 1 ? '' : 's'} / procedures` : undefined} />
+          <Row k="Services" v={[...services.map((s) => s.name), f.otherService.trim()].filter(Boolean).join(', ') || '—'} sub={f.tests.length + f.testItems.length ? `${f.tests.length + f.testItems.length} test${f.tests.length + f.testItems.length === 1 ? '' : 's'} / procedures${f.testItems.length ? ` · ${taka(testsTotal(f.testItems))}` : ''}` : undefined} />
           <Row k="Priority" v={f.priority[0] + f.priority.slice(1).toLowerCase()} />
           <Row k="When" v={f.date ? `${dayNum(`${f.date}T12:00:00+06:00`)} · ${f.timeMode === 'slot' ? (f.slot ? slotLabel(f.slot) : 'any slot') : f.time || 'any time'}` : 'ASAP'} />
           <Row k="Transport" v={f.transport ? 'Unico car' : 'Own'} />

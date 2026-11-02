@@ -66,6 +66,7 @@ app/api/v1/...       REST endpoints (see below)
 ## Rules
 - Server components read Mongo directly (`await db()`, lean queries, `plain()` before passing to client components) — no fetch to our own API from the server. Client components mutate via `api()` / `useAction()` / `ActionButton`, then `router.refresh()`.
 - Every mutation goes through a service or route that calls `audit()` (append-only). Never update/delete `audit_logs`.
+- **H360 (hospital HIS) is strictly read-only.** Only search / view: patients, profiles, bills, the service catalog and prices. Never call an H360 save / create / update / delete endpoint and never submit its billing form — billing in H360 stays a person's action. POSTs go through `readOnlyPost()` in `lib/h360-items.ts` (allowlist of search endpoints).
 - Validate input with zod in `lib/schemas.ts` or next to the service. Route files may only export HTTP handlers.
 - Field staff may only see requests where they are on the team (`canView`). Check permissions server-side with `can(role, perm)`.
 - Next 16: `params`/`searchParams` are Promises (`await`), `proxy.ts` replaces middleware, route handler context `{ params: Promise<…> }`.

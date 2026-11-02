@@ -135,7 +135,22 @@ export function OverviewTab({
             </Field>
             {r.tests?.length > 0 && (
               <Field k="Tests / procedures" className="col-span-2">
-                {r.tests.join(' · ')}
+                {(r.testItems ?? []).length > 0 ? (
+                  <>
+                    {r.testItems.map((t: any) => (
+                      <div key={`${t.code}-${t.name}`} className="flex gap-2">
+                        <span className="w-[76px] flex-none font-mono text-[12px] font-semibold text-primary-700">{t.code || '—'}</span>
+                        <span className="min-w-0 flex-1">{t.name}</span>
+                        <span className="font-semibold">{taka(t.price)}</span>
+                      </div>
+                    ))}
+                    {r.tests.filter((n: string) => !r.testItems.some((t: any) => t.name === n)).length > 0 && (
+                      <div className="text-slate-500">{r.tests.filter((n: string) => !r.testItems.some((t: any) => t.name === n)).join(' · ')}</div>
+                    )}
+                  </>
+                ) : (
+                  r.tests.join(' · ')
+                )}
               </Field>
             )}
             {r.transport?.needed && (

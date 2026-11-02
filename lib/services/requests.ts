@@ -23,6 +23,7 @@ import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, da
 import type { SessionUser } from '../auth'
 import { closeOpenReturns, startOut, startReturn, stopTracking } from './tracking'
 import { shortLink } from '../links'
+import { TestItemInput, testNames, testsTotal } from '../schemas'
 
 type Meta = { ip?: string; userAgent?: string; client?: string }
 const url = (id: unknown) => `/requests/${id}`
@@ -247,6 +248,7 @@ export const CreateRequestInput = z.object({
   serviceCodes: z.array(z.string()).default([]),
   otherService: z.string().optional(),
   tests: z.array(z.string()).default([]),
+  testItems: z.array(TestItemInput).max(60).optional(), // H360 catalog picks with code + price
   priority: z.enum(['ROUTINE', 'URGENT', 'EMERGENCY']).default('ROUTINE'),
   preferredDate: z.string().optional(), // YYYY-MM-DD
   preferredTime: z.string().optional(), // HH:mm
@@ -344,7 +346,8 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
     },
     requester: input.requester ?? (hasAnyRole(user, FIELD_ROLES) ? { type: 'STAFF', name: user.name } : { type: 'SELF' }),
     services,
-    tests: input.tests,
+    tests: testNames(input.testItems, input.tests),
+    testItems: input.testItems ?? [],
     priority: input.priority,
     preferred: { date: input.preferredDate, slot: input.preferredSlot, time: input.preferredTime },
     scheduledAt,
@@ -354,7 +357,7 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
     timeline: { requestedAt: now },
     visit: { checklist: await buildChecklist(types.map((t) => t._id)) },
     transport: { needed: !!input.transportNeeded, status: input.transportNeeded ? 'REQUESTED' : undefined },
-    billing: { estimatedFee: input.estimatedFee ?? types.reduce((a, t) => a + (t.fee ?? 0), 0), method: input.paymentMethod },
+    billing: { estimatedFee: input.estimatedFee ?? types.reduce((a, t) => a + (t.fee ?? 0), 0) + testsTotal(input.testItems), method: input.paymentMethod },
     source: input.source ?? (user.client === 'app' ? 'APP' : 'PHONE'),
     remarks: input.remarks,
     carePlanId: input.carePlanId && isOid(input.carePlanId) ? input.carePlanId : undefined,
@@ -396,6 +399,7 @@ export const ConfirmInput = z.object({
   slot: z.string().optional(),
   uhid: z.string().optional(),
   tests: z.array(z.string()).optional(),
+  testItems: z.array(TestItemInput).max(60).optional(),
   estimatedFee: z.coerce.number().nonnegative().optional(),
   transportNeeded: z.boolean().optional(),
   priority: z.enum(['ROUTINE', 'URGENT', 'EMERGENCY']).optional(),
@@ -410,7 +414,10 @@ export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user:
   move(r, 'CONFIRMED', 'confirmedAt')
   if (input.date) r.scheduledAt = dhakaDate(input.date, input.time || slotStart(input.slot))
   if (input.slot) r.slot = input.slot
-  if (input.tests) r.tests = input.tests
+  if (input.testItems) {
+    r.testItems = input.testItems
+    r.tests = testNames(input.testItems, input.tests ?? [])
+  } else if (input.tests) r.tests = input.tests
   if (input.priority) r.priority = input.priority
   if (input.expectedDurationMin) r.expectedDurationMin = input.expectedDurationMin
   if (input.estimatedFee != null) r.set('billing.estimatedFee', input.estimatedFee)

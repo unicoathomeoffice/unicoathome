@@ -1,11 +1,13 @@
 'use client'
 // W04 header action bar + lifecycle dialogs (confirm, reschedule, cancel, close / invoice, email, WhatsApp, edit).
 import { useEffect, useState, type ReactNode } from 'react'
+import { H360TestPicker } from '@/components/client/H360TestPicker'
+import { testsTotal, type TestItem } from '@/lib/schemas'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { CalendarClock, CheckCircle2, FileText, Loader2, Mail, MessageCircle, Pencil, RefreshCw, ShieldCheck, UserPlus, Users, AlertTriangle, Check, Search } from 'lucide-react'
 import { api, useAction, ActionButton, Drawer, Segmented, Toggle, ChipPicker, WhatsAppButton } from '@/components/client'
 import { btnClass, Avatar } from '@/components/ui'
-import { TESTS_PROCEDURES, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Status } from '@/lib/constants'
+import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Status } from '@/lib/constants'
 import { cx, taka, clock } from '@/lib/format'
 import { availableActions, type Perms } from './lib'
 import { AssignDrawer, type AssignProps } from '@/components/assign/AssignDrawer'
@@ -19,6 +21,8 @@ export type ReqLite = {
   version: number
   priority: string
   tests: string[]
+  testItems?: TestItem[]
+  patientCategory?: string
   date: string // YYYY-MM-DD (scheduled or preferred)
   time: string // HH:mm
   slot: string
@@ -187,7 +191,8 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
     time: r.time,
     slot: r.slot,
     uhid: r.uhid,
-    tests: r.tests,
+    tests: plainTests(r),
+    testItems: r.testItems ?? [],
     estimatedFee: r.estimatedFee?.toString() ?? '',
     priority: r.priority,
     transportNeeded: r.transportNeeded,
@@ -231,6 +236,7 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
                       slot: f.slot || undefined,
                       uhid: f.uhid.trim() || undefined,
                       tests: f.tests,
+                      testItems: f.testItems,
                       estimatedFee: f.estimatedFee === '' ? undefined : Number(f.estimatedFee),
                       priority: f.priority,
                       transportNeeded: f.transportNeeded,
@@ -293,10 +299,9 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
           </F>
         </div>
         <div>
-          <span className="hc-label">Tests / procedures {f.tests.length > 0 && <span className="text-slate-500">· {f.tests.length} selected</span>}</span>
-          <div className="max-h-[260px] overflow-y-auto rounded-lg border border-slate-200 p-2.5">
-            <ChipPicker options={[...TESTS_PROCEDURES]} value={f.tests} onChange={(v) => set('tests', v)} />
-          </div>
+          <span className="hc-label">Tests / procedures {f.tests.length + f.testItems.length > 0 && <span className="text-slate-500">· {f.tests.length + f.testItems.length} selected</span>}</span>
+          <H360TestPicker compact value={f.testItems} onChange={(v) => setF((s) => ({ ...s, testItems: v }))} plain={f.tests} onPlainChange={(v) => set('tests', v)} patientType={r.patientCategory} corporate={/corporate/i.test(r.patientCategory ?? '')} />
+          <FeeFromTests items={f.testItems} fee={f.estimatedFee} onUse={(n) => set('estimatedFee', String(n))} />
         </div>
         <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
           <div className="text-[13px]">
@@ -703,7 +708,8 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
     complaint: r.complaint,
     instructions: r.instructions,
     remarks: r.remarks,
-    tests: r.tests,
+    tests: plainTests(r),
+    testItems: r.testItems ?? [],
   })
   const set = (k: keyof typeof f, v: any) => setF((x) => ({ ...x, [k]: v }))
   async function save() {
@@ -722,6 +728,7 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
           instructions: f.instructions,
           remarks: f.remarks,
           tests: f.tests,
+          testItems: f.testItems,
         },
       })
       toast('Request updated', 'ok')
@@ -807,9 +814,8 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
         </F>
         <div>
           <span className="hc-label">Tests / procedures</span>
-          <div className="max-h-[220px] overflow-y-auto rounded-lg border border-slate-200 p-2.5">
-            <ChipPicker options={[...TESTS_PROCEDURES]} value={f.tests} onChange={(v) => set('tests', v)} />
-          </div>
+          <H360TestPicker compact value={f.testItems} onChange={(v) => setF((s) => ({ ...s, testItems: v }))} plain={f.tests} onPlainChange={(v) => set('tests', v)} patientType={r.patientCategory} corporate={/corporate/i.test(r.patientCategory ?? '')} />
+          <FeeFromTests items={f.testItems} fee={f.estimatedFee} onUse={(n) => set('estimatedFee', String(n))} />
         </div>
         <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
           <div className="text-[13px] font-semibold">Transport needed</div>
@@ -817,5 +823,25 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
         </div>
       </div>
     </Drawer>
+  )
+}
+
+/** names in `tests` that aren't H360 picks (the quick-list ones) */
+function plainTests(r: { tests: string[]; testItems?: TestItem[] }) {
+  const h = new Set((r.testItems ?? []).map((t) => t.name))
+  return r.tests.filter((t) => !h.has(t))
+}
+
+/** "Tests total ৳X · use as estimated fee" under the H360 picker */
+function FeeFromTests({ items, fee, onUse }: { items: TestItem[]; fee: string; onUse: (n: number) => void }) {
+  const total = testsTotal(items)
+  if (!total) return null
+  return (
+    <div className="mt-1.5 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-[12.5px]">
+      <span className="text-slate-600">H360 tests total {taka(total)}{fee ? ` · estimate now ${taka(Number(fee))}` : ''}</span>
+      <button type="button" className="font-semibold text-primary-700 hover:underline" onClick={() => onUse(total)}>
+        Use as estimated fee
+      </button>
+    </div>
   )
 }

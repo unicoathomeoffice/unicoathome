@@ -7,6 +7,8 @@ import { SLOTS, TESTS_PROCEDURES } from '@/lib/constants'
 import { cx } from '@/lib/format'
 import { FLabel, FixedBottom, bbtn } from './ui'
 import { CancelRequestButton } from './actions'
+import { H360TestPicker } from '@/components/client/H360TestPicker'
+import { testsTotal, type TestItem } from '@/lib/schemas'
 
 /** Tests & procedures chips with an "Add from 27 …" picker sheet (S2). */
 export function TestsPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
@@ -73,6 +75,8 @@ type Props = {
   uhid?: string
   patientUhid?: string
   tests: string[]
+  testItems?: TestItem[]
+  patientCategory?: string
   fee?: number
   transport: boolean
   priority: 'ROUTINE' | 'URGENT' | 'EMERGENCY'
@@ -89,7 +93,9 @@ export function ConfirmForm(p: Props) {
   const [time, setTime] = useState(p.time)
   const [slot, setSlot] = useState(p.slot ?? '')
   const [uhid, setUhid] = useState(p.uhid ?? '')
-  const [tests, setTests] = useState<string[]>(p.tests)
+  const h360Names = new Set((p.testItems ?? []).map((t) => t.name))
+  const [tests, setTests] = useState<string[]>(p.tests.filter((t) => !h360Names.has(t)))
+  const [testItems, setTestItems] = useState<TestItem[]>(p.testItems ?? [])
   const [fee, setFee] = useState(p.fee != null ? String(p.fee) : '')
   const [transport, setTransport] = useState(p.transport)
   const [priority, setPriority] = useState(p.priority)
@@ -152,7 +158,14 @@ export function ConfirmForm(p: Props) {
         <FLabel req hint="Confirm with patient">
           Test / procedure details
         </FLabel>
-        <TestsPicker value={tests} onChange={setTests} />
+        <div className="rounded-card bg-white px-3.5 py-3 shadow-card">
+          <H360TestPicker value={testItems} onChange={setTestItems} plain={tests} onPlainChange={setTests} patientType={p.patientCategory} corporate={/corporate/i.test(p.patientCategory ?? '')} />
+          {testsTotal(testItems) > 0 && (
+            <button type="button" onClick={() => setFee(String(testsTotal(testItems)))} className="mt-2 text-[13px] font-semibold text-primary-700">
+              Use tests total as the fee
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-[1fr_auto] items-end gap-2.5">
@@ -189,7 +202,7 @@ export function ConfirmForm(p: Props) {
 
       <PatientWhatsAppToggle on={sendWa} onChange={setSendWa} wa={p.wa} requestId={p.id} date={date} slot={slot} />
 
-      <FixedBottom note={missing ? 'Set the date and time of service' : !tests.length ? 'No tests yet — fine for a consultation' : undefined}>
+      <FixedBottom note={missing ? 'Set the date and time of service' : !tests.length && !testItems.length ? 'No tests yet — fine for a consultation' : undefined}>
         <CancelRequestButton id={p.id} requestNo={p.requestNo} kind="r" big className="flex-1" redirect="/m/admin/inbox" />
         <button
           type="button"
@@ -200,7 +213,7 @@ export function ConfirmForm(p: Props) {
             const ok = await run(
               () =>
                 api(`/requests/${p.id}/confirm`, {
-                  body: { date, time, slot: slot || undefined, uhid: uhid || undefined, tests, estimatedFee: fee === '' ? undefined : Number(fee), transportNeeded: transport, priority, notifyPatient: sendWa },
+                  body: { date, time, slot: slot || undefined, uhid: uhid || undefined, tests, testItems, estimatedFee: fee === '' ? undefined : Number(fee), transportNeeded: transport, priority, notifyPatient: sendWa },
                 }),
               sendWa ? `${p.requestNo} confirmed · patient notified` : `${p.requestNo} confirmed`,
               { redirect: p.canAssign ? `/m/admin/requests/${p.id}/assign` : `/m/admin/requests/${p.id}` },

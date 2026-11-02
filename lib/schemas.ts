@@ -1,6 +1,13 @@
 import { z } from 'zod'
 import { ROLES, SHIFTS } from './constants'
 
+/** A test / procedure picked from H360's catalog (lib/h360-items.ts): code + price as H360 bills it. */
+export const TestItemInput = z.object({ code: z.string().max(40), name: z.string().min(1).max(200), price: z.coerce.number().min(0).max(10_000_000), dept: z.string().max(80).optional() })
+export type TestItem = z.infer<typeof TestItemInput>
+/** names for `tests` (labs, reports and messages match on names): the H360 picks plus any plain names */
+export const testNames = (items: { name: string }[] = [], plain: string[] = []) => [...new Set([...items.map((i) => i.name), ...plain])]
+export const testsTotal = (items: { price?: number }[] = []) => items.reduce((a, i) => a + (Number(i.price) || 0), 0)
+
 export const PatientInput = z.object({
   name: z.string().min(2),
   phone: z.string().min(6),

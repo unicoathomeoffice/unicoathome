@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Mic, MicOff, Minus, Plus, Loader2, Trash2 } from 'lucide-react'
 import { useToast, Segmented, Sheet } from '@/components/client'
 import { btnClass } from '@/components/ui'
-import { cx, time } from '@/lib/format'
+import { cx, time, time24 } from '@/lib/format'
 import { sendOrQueue } from './live'
 import { BottomBar, CHeader, Body, bigBtn } from './bar'
 
@@ -143,7 +143,7 @@ export function NotesEditor({
         <div className="mt-1 flex items-center justify-between">
           <div className="text-[13px] font-semibold uppercase tracking-[.06em] text-slate-500">Medications administered</div>
           {editable && (
-            <button type="button" onClick={() => (setMed({ drug: '', dose: '', route: 'Oral', time: time(new Date()) }), setMedOpen(true))} className="flex h-9 items-center gap-1 text-[13px] font-semibold text-primary-700">
+            <button type="button" onClick={() => (setMed({ drug: '', dose: '', route: 'Oral', time: time24(new Date()) }), setMedOpen(true))} className="flex h-9 items-center gap-1 text-[13px] font-semibold text-primary-700">
               <Plus size={16} /> Add
             </button>
           )}

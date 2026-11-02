@@ -14,6 +14,9 @@ const fIso = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', m
 
 /** 2:32 PM (BDT) */
 export const time = (v: D) => (d(v) ? fTime.format(d(v)!) : '—')
+const fTime24 = f({ hour: '2-digit', minute: '2-digit', hour12: false })
+/** 14:32 (BDT) — only for form values (<input type="time">) and stored HH:mm, never for display */
+export const time24 = (v: D) => (d(v) ? fTime24.format(d(v)!) : '')
 
 const h12 = (h: number, m?: string) => `${h % 12 || 12}${m && m !== '00' ? `:${m}` : m ? ':00' : ''} ${h < 12 ? 'AM' : 'PM'}`
 /**

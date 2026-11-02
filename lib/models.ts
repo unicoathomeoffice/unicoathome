@@ -183,6 +183,7 @@ const RequestSchema = new Schema<any>(
     requester: { type: { type: String, enum: ['SELF', 'RELATIVE', 'STAFF'], default: 'SELF' }, name: String, relation: String, phone: String },
     services: [{ _id: false, serviceTypeId: { type: ObjectId, ref: 'ServiceType' }, code: String, name: String }],
     tests: [String], // Test / procedure details (Google Form)
+    testItems: [{ _id: false, code: String, name: String, price: Number, dept: String }], // H360 catalog picks (lib/h360-items.ts)
     priority: { type: String, enum: PRIORITIES, default: 'ROUTINE' },
     status: { type: String, enum: STATUSES, default: 'NEW', index: true },
     preferred: { date: String, slot: String, time: String },
