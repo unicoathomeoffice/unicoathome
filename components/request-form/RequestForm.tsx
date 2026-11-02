@@ -333,7 +333,8 @@ export function RequestForm({
         )}
 
         {/* footer */}
-        <div className="sticky bottom-0 -mx-1 mt-auto flex flex-wrap items-center justify-between gap-3 bg-page px-1 py-3">
+        {/* -bottom-6: the scroll area has 24 px bottom padding, which sticky respects — this makes the bar reach the real bottom edge so nothing shows below it */}
+        <div className="sticky -bottom-6 z-20 -mx-1 mt-auto flex flex-wrap items-center justify-between gap-3 rounded-t-xl border-t border-slate-200 bg-white/95 px-4 pb-6 pt-3 shadow-[0_-6px_18px_rgba(15,23,42,.06)] backdrop-blur">
           <span className="text-[13px] text-slate-500">
             {savedAt ? (
               <>
