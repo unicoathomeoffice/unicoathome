@@ -9,7 +9,7 @@ export function baseUrl() {
   return env.replace(/\/+$/, '')
 }
 
-export type LinkKind = 'TRACK' | 'FEEDBACK' | 'REQUEST' | 'REPORT' | 'LOGIN' | 'DASHBOARD' | 'JOIN' | 'OTHER'
+export type LinkKind = 'TRACK' | 'FEEDBACK' | 'REQUEST' | 'REPORT' | 'LOGIN' | 'DASHBOARD' | 'JOIN' | 'BOOK' | 'OTHER'
 
 /** What a link preview (WhatsApp, Facebook…) shows for each kind of short link. Never patient details. */
 export const LINK_PREVIEW: Record<LinkKind, { title: string; description: string }> = {
@@ -20,6 +20,7 @@ export const LINK_PREVIEW: Record<LinkKind, { title: string; description: string
   LOGIN: { title: 'Sign in · Unico HomeCare', description: 'Staff sign-in for Unico HomeCare.' },
   DASHBOARD: { title: 'Dashboard · Unico HomeCare', description: 'Today’s home care requests, visits and alerts.' },
   JOIN: { title: 'Join Unico HomeCare', description: 'Create your staff account for Unico Hospitals home care.' },
+  BOOK: { title: 'Book a doctor, nurse or lab test at home · Unico HomeCare', description: 'Unico Hospitals Family Medicine comes to your home in Dhaka — doctor visits, nursing, injections, wound care, physiotherapy and sample collection. Book online in a minute.' },
   OTHER: { title: 'Unico HomeCare', description: 'Doctors, nurses, physiotherapy and lab tests at home in Dhaka — Unico Hospitals Family Medicine.' },
 }
 
@@ -53,4 +54,13 @@ export async function shortLink(target: string, o: Opts = {}): Promise<string> {
     console.error('[links] short link failed', target, e)
   }
   return `${base}${target}`
+}
+
+/** The public "book a home visit" link to share on Facebook, WhatsApp, flyers: always /s/book → the booking page. */
+export const BOOKING_CODE = 'book'
+export async function bookingLink(): Promise<{ url: string; clicks: number; lastAt?: Date }> {
+  await db()
+  await ShortLink.updateOne({ _id: BOOKING_CODE }, { $setOnInsert: { target: '/', kind: 'BOOK', clicks: 0, at: new Date() } }, { upsert: true })
+  const row = await ShortLink.findById(BOOKING_CODE).select('clicks lastAt').lean<{ clicks?: number; lastAt?: Date }>()
+  return { url: `${baseUrl()}/s/${BOOKING_CODE}`, clicks: row?.clicks ?? 0, lastAt: row?.lastAt }
 }
