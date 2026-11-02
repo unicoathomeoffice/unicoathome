@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { X, Loader2, MessageCircle } from 'lucide-react'
 import { api, useAction } from './api'
@@ -58,6 +59,22 @@ export function ActionButton({
 }
 
 // ---------------------------------------------------------------- Drawer (web) & Sheet (mobile)
+// Rendered into <body>: a `position: fixed` overlay inside a transformed / filtered / blurred ancestor (hover-lift cards,
+// the page enter animation, blurred bars) is trapped in that box — it dimmed only part of the page and squeezed the drawer.
+let locks = 0
+function Overlay({ children }: { children: ReactNode }) {
+  const [host, setHost] = useState<HTMLElement | null>(null)
+  useEffect(() => {
+    setHost(document.body)
+    // no page scrolling behind an open drawer / sheet (counted, so nested overlays restore it correctly)
+    if (locks++ === 0) document.documentElement.style.overflow = 'hidden'
+    return () => {
+      if (--locks === 0) document.documentElement.style.overflow = ''
+    }
+  }, [])
+  return host ? createPortal(children, host) : null
+}
+
 export function Drawer({ open, onClose, title, sub, children, footer, width = 520 }: { open: boolean; onClose: () => void; title: ReactNode; sub?: ReactNode; children: ReactNode; footer?: ReactNode; width?: number }) {
   useEffect(() => {
     if (!open) return
@@ -67,42 +84,46 @@ export function Drawer({ open, onClose, title, sub, children, footer, width = 52
   }, [open, onClose])
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-slate-900/35" onClick={onClose} />
-      <div className="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-drawer" style={{ maxWidth: width }}>
-        <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-5">
-          <div className="min-w-0 flex-1">
-            <div className="text-lg font-bold">{title}</div>
-            {sub && <div className="mt-0.5 text-[13px] text-slate-500">{sub}</div>}
+    <Overlay>
+      <div className="fixed inset-0 z-50">
+        <div className="absolute inset-0 bg-slate-900/35" onClick={onClose} />
+        <div className="absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-drawer" style={{ maxWidth: width }}>
+          <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-5">
+            <div className="min-w-0 flex-1">
+              <div className="text-lg font-bold">{title}</div>
+              {sub && <div className="mt-0.5 text-[13px] text-slate-500">{sub}</div>}
+            </div>
+            <button onClick={onClose} className="inline-flex size-8 items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50" aria-label="Close">
+              <X size={16} />
+            </button>
           </div>
-          <button onClick={onClose} className="inline-flex size-8 items-center justify-center rounded-md border border-slate-200 text-slate-700 hover:bg-slate-50" aria-label="Close">
-            <X size={16} />
-          </button>
+          <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
+          {footer && <div className="flex items-center gap-3 border-t border-slate-200 px-6 py-4">{footer}</div>}
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        {footer && <div className="flex items-center gap-3 border-t border-slate-200 px-6 py-4">{footer}</div>}
       </div>
-    </div>
+    </Overlay>
   )
 }
 
 export function Sheet({ open, onClose, title, sub, children, footer }: { open: boolean; onClose: () => void; title?: ReactNode; sub?: ReactNode; children: ReactNode; footer?: ReactNode }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
-      <div className="relative flex max-h-[92dvh] w-full max-w-[480px] flex-col rounded-t-2xl bg-white shadow-sheet">
-        <div className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-slate-300" />
-        {(title || sub) && (
-          <div className="px-5 pb-2 pt-3">
-            {title && <div className="text-[19px] font-bold">{title}</div>}
-            {sub && <div className="mt-0.5 text-[13px] text-slate-500">{sub}</div>}
-          </div>
-        )}
-        <div className="flex-1 overflow-y-auto px-5 py-3">{children}</div>
-        {footer && <div className="flex gap-2.5 border-t border-slate-200 px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">{footer}</div>}
+    <Overlay>
+      <div className="fixed inset-0 z-50 flex items-end justify-center">
+        <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
+        <div className="relative flex max-h-[92dvh] w-full max-w-[480px] flex-col rounded-t-2xl bg-white shadow-sheet">
+          <div className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-slate-300" />
+          {(title || sub) && (
+            <div className="px-5 pb-2 pt-3">
+              {title && <div className="text-[19px] font-bold">{title}</div>}
+              {sub && <div className="mt-0.5 text-[13px] text-slate-500">{sub}</div>}
+            </div>
+          )}
+          <div className="flex-1 overflow-y-auto px-5 py-3">{children}</div>
+          {footer && <div className="flex gap-2.5 border-t border-slate-200 px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">{footer}</div>}
+        </div>
       </div>
-    </div>
+    </Overlay>
   )
 }
 
