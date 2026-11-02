@@ -214,7 +214,8 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 /** Branded email shell (E1). Inline styles only, for email clients. */
 export function emailShell(opts: { title: string; bodyText: string; cta?: { label: string; url: string }; footer?: string; preheader?: string }) {
-  const base = process.env.APP_BASE_URL ?? ''
+  // same origin rule as lib/links.ts baseUrl() (this module is also used by client components, so no server import)
+  const base = (process.env.APP_BASE_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '')).replace(/\/+$/, '')
   const paragraphs = esc(opts.bodyText)
     .split(/\n{2,}/)
     .map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:24px;color:#334155">${p.replace(/\n/g, '<br>')}</p>`)

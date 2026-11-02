@@ -22,6 +22,7 @@ import { getSettings, ruleAllows } from '../settings'
 import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, dayRange } from '../format'
 import type { SessionUser } from '../auth'
 import { closeOpenReturns, startOut, startReturn, stopTracking } from './tracking'
+import { shortLink } from '../links'
 
 type Meta = { ip?: string; userAgent?: string; client?: string }
 const url = (id: unknown) => `/requests/${id}`
@@ -83,7 +84,17 @@ export async function templateVars(r: any, staffId?: unknown) {
   const s = await getSettings()
   const staff = staffId ? await User.findById(staffId).select('name designationId').lean<any>() : null
   const desig = staff?.designationId ? await Designation.findById(staff.designationId).select('title').lean<any>() : null
-  const base = process.env.APP_BASE_URL ?? ''
+  // the share token is select:false, so requests loaded for a message button arrive without it
+  let token = r.tracking?.shareToken as string | undefined
+  if (!token && r.tracking?.active && r._id) token = (await HomecareRequest.findById(r._id).select('+tracking.shareToken').lean<any>())?.tracking?.shareToken
+  // short links (/s/…) with a proper preview card instead of long app URLs
+  const [feedbackLink, requestLink, trackLink] = r._id
+    ? await Promise.all([
+        shortLink(`/feedback/${r._id}`, { kind: 'FEEDBACK', requestId: r._id, ttlDays: 120 }),
+        shortLink(`/requests/${r._id}`, { kind: 'REQUEST', requestId: r._id }),
+        token ? shortLink(`/t/${token}`, { kind: 'TRACK', requestId: r._id, ttlDays: 3 }) : '',
+      ])
+    : ['', '', '']
   return {
     patientName: r.patientSnapshot?.name,
     requestNo: r.requestNo,
@@ -97,7 +108,7 @@ export async function templateVars(r: any, staffId?: unknown) {
     age: r.patientSnapshot?.ageYears,
     gender: r.patientSnapshot?.gender,
     notes: r.assignment?.instructions || r.clinical?.complaint || '',
-    feedbackLink: `${base}/feedback/${r._id}`,
+    feedbackLink,
     hospitalPhone: s.general.hospitalPhone,
     checkInAt: fmtTime(r.timeline?.checkInAt),
     checkOutAt: fmtTime(r.timeline?.checkOutAt),
@@ -105,8 +116,8 @@ export async function templateVars(r: any, staffId?: unknown) {
     doneCount: (r.visit?.checklist ?? []).filter((c: any) => c.done).length,
     totalCount: (r.visit?.checklist ?? []).length,
     priority: r.priority ? r.priority[0] + String(r.priority).slice(1).toLowerCase() : '',
-    requestLink: `${base}/requests/${r._id}`,
-    trackLink: r.tracking?.shareToken ? `${base}/t/${r.tracking.shareToken}` : '',
+    requestLink,
+    trackLink,
   }
 }
 
@@ -763,7 +774,7 @@ export async function completeVisit(r: any, user: SessionUser, meta: Meta) {
           templateKey: 'dept_visit_report',
           requestId: r._id,
           initiatedBy: user.id,
-          cta: { label: 'Open visit report', url: `${process.env.APP_BASE_URL ?? ''}/print/report/${r._id}` },
+          cta: { label: 'Open visit report', url: await shortLink(`/print/report/${r._id}`, { kind: 'REPORT', requestId: r._id }) },
         })
     }
   })

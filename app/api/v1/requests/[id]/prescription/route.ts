@@ -7,6 +7,7 @@ import { audit } from '@/lib/audit'
 import { plain } from '@/lib/db'
 import type { SessionUser } from '@/lib/auth'
 import { hasRole } from '@/lib/constants'
+import { shortLink } from '@/lib/links'
 
 const Rx = z.object({
   dx: z.string().max(2000).optional(),
@@ -73,7 +74,7 @@ export const POST = route<{ id: string }>(async ({ req, user, params }) => {
   const p = await Patient.findById(r.patientId).select('name phone consent').lean<any>()
   let wa: { url: string; logId: string } | null = null
   if (p?.phone && p.consent?.whatsapp !== false) {
-    const link = `${process.env.APP_BASE_URL ?? ''}/print/report/${r._id}`
+    const link = await shortLink(`/print/report/${r._id}`, { kind: 'REPORT', requestId: r._id })
     const text = `Dear ${p.name}, your prescription from Unico Hospitals Home Care (${r.requestNo}) is ready. Open it here: ${link}\n— ${user.name}, Family Medicine`
     wa = await prepareWhatsApp({ to: p.phone, toName: p.name, text, templateKey: 'prescription_ready', requestId: r._id, patientId: r.patientId, initiatedBy: user.id })
     rx.sentAt = new Date()

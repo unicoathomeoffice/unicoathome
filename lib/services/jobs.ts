@@ -6,6 +6,7 @@ import { audit } from '../audit'
 import { dayRange, isoDay, date as fmtDate } from '../format'
 import { rankCandidates } from './requests'
 import { deleteBlob } from '../storage'
+import { shortLink } from '../links'
 
 const g = globalThis as unknown as { _hcLastSweep?: number }
 
@@ -136,6 +137,7 @@ export async function dailyDigest() {
   ].join('\n')
   const digestRoles = ['HC_ADMIN', 'VIEWER'].filter((r) => ruleAllows(s.notificationRules, 'DAILY_DIGEST', r, 'email'))
   const admins = await User.find({ $or: [{ role: { $in: digestRoles } }, { roles: { $in: digestRoles } }], status: 'ACTIVE', email: { $exists: true, $ne: null }, 'notificationPrefs.email': { $ne: false } }).select('email name').lean<any[]>()
-  for (const a of admins) await queueEmail({ to: a.email, toName: a.name, subject: `Home care daily digest · ${fmtDate(new Date())}`, text, templateKey: 'admin_daily_digest', cta: { label: 'Open dashboard', url: `${process.env.APP_BASE_URL ?? ''}/dashboard` } })
+  const url = admins.length ? await shortLink('/dashboard', { kind: 'DASHBOARD' }) : ''
+  for (const a of admins) await queueEmail({ to: a.email, toName: a.name, subject: `Home care daily digest · ${fmtDate(new Date())}`, text, templateKey: 'admin_daily_digest', cta: { label: 'Open dashboard', url } })
   return { sent: admins.length }
 }

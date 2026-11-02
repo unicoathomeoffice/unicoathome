@@ -7,6 +7,7 @@ import { audit } from '../audit'
 import { background, notifyRoles, notifyUsers, queueEmail, renderTemplate } from '../messaging'
 import { cancel, decidePettyCash, reschedule } from './requests'
 import { forgetAuth, type SessionUser } from '../auth'
+import { shortLink } from '../links'
 
 type Meta = { ip?: string; userAgent?: string; client?: string }
 
@@ -186,9 +187,9 @@ export async function decideApproval(id: string, input: DecideInput, user: Sessi
 /** "Your account is approved" email with the right sign-in link (web or field app). */
 export async function emailStaffApproved(u: any) {
   if (!u.email) return
-  const base = (process.env.APP_BASE_URL ?? '').replace(/\/$/, '')
-  const t = await renderTemplate('staff_approved', { staffName: u.name, designation: ROLE_LABEL[u.role as Role] ?? u.role, loginLink: `${base}${u.platformAccess?.includes('web') ? '/login' : '/m/login'}` })
-  if (t.active) await queueEmail({ to: u.email, toName: u.name, subject: t.subject, text: t.text, templateKey: 'staff_approved', cta: { label: 'Sign in', url: `${base}${u.platformAccess?.includes('web') ? '/login' : '/m/login'}` } })
+  const loginLink = await shortLink(u.platformAccess?.includes('web') ? '/login' : '/m/login', { kind: 'LOGIN' })
+  const t = await renderTemplate('staff_approved', { staffName: u.name, designation: ROLE_LABEL[u.role as Role] ?? u.role, loginLink })
+  if (t.active) await queueEmail({ to: u.email, toName: u.name, subject: t.subject, text: t.text, templateKey: 'staff_approved', cta: { label: 'Sign in', url: loginLink } })
 }
 
 /** Keep the Approvals queue in step when an admin activates / suspends a pending user straight from Staff. */

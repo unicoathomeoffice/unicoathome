@@ -686,6 +686,25 @@ export const ExpenseClaim = model('ExpenseClaim', ExpenseClaimSchema, 'expense_c
 const WaContactSchema = new Schema<any>({ _id: String, exists: Boolean, checkedAt: Date, optOut: Boolean, optOutAt: Date }, { versionKey: false })
 export const WaContact = model('WaContact', WaContactSchema, 'wa_contacts')
 
+// ---------------------------------------------------------------- short links (/s/<code>, lib/links.ts)
+// _id is the public code; target is an app-relative path. Expired links are removed by the TTL index.
+const ShortLinkSchema = new Schema<any>(
+  {
+    _id: String,
+    target: { type: String, required: true },
+    kind: { type: String, default: 'OTHER' },
+    requestId: { type: ObjectId, ref: 'HomecareRequest' },
+    clicks: { type: Number, default: 0 },
+    lastAt: Date,
+    expiresAt: Date,
+    at: { type: Date, default: Date.now },
+  },
+  { versionKey: false },
+)
+ShortLinkSchema.index({ target: 1 })
+ShortLinkSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, partialFilterExpression: { expiresAt: { $exists: true } } })
+export const ShortLink = model('ShortLink', ShortLinkSchema, 'short_links')
+
 // ---------------------------------------------------------------- live location pings (tracking trail)
 const LocationPingSchema = new Schema<any>(
   {
