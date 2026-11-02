@@ -618,6 +618,46 @@ const IntegrationSecretSchema = new Schema<any>({
 }, opts)
 export const IntegrationSecret = model('IntegrationSecret', IntegrationSecretSchema, 'integration_secrets')
 
+// ---------------------------------------------------------------- expense claims (Bill Submission / Conveyance / Food)
+// One open DRAFT per staff member collects lines any time (e.g. after getting back); Submit makes the hospital's
+// Bill Submission workbook + PDF and sends them to the on-call security supervisor.
+const ClaimLineSchema = new Schema<any>({
+  kind: { type: String, enum: ['CONVEYANCE', 'FOOD', 'OTHER'], required: true },
+  requestId: { type: ObjectId, ref: 'HomecareRequest' },
+  leg: { type: String, enum: ['OUT', 'BACK'] }, // conveyance suggested from a visit
+  at: Date,
+  uhid: String,
+  patientName: String,
+  invoiceNo: String,
+  from: String,
+  to: String,
+  mode: String, // Rickshaw · Uber · Pathao · CNG · Bus · Other (conveyance) / food type (food) / expense head (other)
+  amount: { type: Number, required: true },
+  receiptIds: [{ type: ObjectId, ref: 'Attachment' }],
+  note: String,
+})
+const ExpenseClaimSchema = new Schema<any>(
+  {
+    claimNo: { type: String, required: true, unique: true }, // CL-11432-2611-01
+    userId: { type: ObjectId, ref: 'User', required: true, index: true },
+    status: { type: String, enum: ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'PAID'], default: 'DRAFT' },
+    lines: [ClaimLineSchema],
+    total: { type: Number, default: 0 },
+    submittedAt: Date,
+    decidedBy: { type: ObjectId, ref: 'User' },
+    decidedAt: Date,
+    decisionNote: String,
+    paidAt: Date,
+    paidBy: { type: ObjectId, ref: 'User' },
+    xlsxId: { type: ObjectId, ref: 'Attachment' },
+    pdfId: { type: ObjectId, ref: 'Attachment' },
+    sentAt: Date,
+  },
+  opts,
+)
+ExpenseClaimSchema.index({ status: 1, submittedAt: -1 })
+export const ExpenseClaim = model('ExpenseClaim', ExpenseClaimSchema, 'expense_claims')
+
 // ---------------------------------------------------------------- live location pings (tracking trail)
 const LocationPingSchema = new Schema<any>(
   {

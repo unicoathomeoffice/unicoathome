@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { ChevronRight, HelpCircle, LayoutDashboard, MapPin } from 'lucide-react'
+import { ChevronRight, HelpCircle, LayoutDashboard, MapPin, Receipt } from 'lucide-react'
 import { MScreen } from '@/components/mobile'
 import { Col } from '@/components/field/bar'
 import { FHeader } from '@/components/field'
@@ -101,6 +101,11 @@ export default async function Profile() {
         <PrefsRow initial={{ push: true, email: u?.notificationPrefs?.email !== false, whatsapp: u?.notificationPrefs?.whatsapp !== false, quietHours: u?.notificationPrefs?.quietHours }} />
         <DevicesRow sessions={sess} />
         <PasswordRow />
+        <Link href="/m/claims" className="flex min-h-14 items-center gap-3 px-4 py-3 active:bg-slate-50">
+          <Receipt size={20} className="flex-none text-slate-600" />
+          <span className="flex-1 text-[15px] font-medium">My claims · travel &amp; food</span>
+          <ChevronRight size={18} className="text-slate-400" />
+        </Link>
         <Link href="/m/help" className="flex min-h-14 items-center gap-3 px-4 py-3 active:bg-slate-50">
           <HelpCircle size={20} className="flex-none text-slate-600" />
           <span className="flex-1 text-[15px] font-medium">Help &amp; how to use</span>

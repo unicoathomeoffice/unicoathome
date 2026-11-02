@@ -2,7 +2,7 @@
 import Link, { useLinkStatus } from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Suspense, use, useEffect, useState } from 'react'
-import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X, MapPinned } from 'lucide-react'
+import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X, MapPinned, Receipt } from 'lucide-react'
 import { cx } from '@/lib/format'
 import { api } from '@/components/client/api'
 import type { Permission } from '@/lib/constants'
@@ -19,6 +19,7 @@ const NAV: { href: string; label: string; icon: any; countKey?: string; perm?: P
   { href: '/patients', label: 'Patients', icon: Users, perm: 'requests.readAll' },
   { href: '/staff', label: 'Staff', icon: UserRound, perm: 'users.read' },
   { href: '/reports', label: 'Reports', icon: BarChart3, perm: 'reports.view' },
+  { href: '/claims', label: 'Claims', icon: Receipt, perm: 'approvals.decide' },
   { href: '/messages', label: 'Messages', icon: Mail, perm: (p) => p.includes('requests.readAll') && (p.includes('messages.send') || p.includes('reports.view')) },
   { href: '/notifications', label: 'Notifications', icon: Bell, countKey: 'unread' },
   { href: '/settings', label: 'Settings', icon: Settings },

@@ -354,6 +354,7 @@ export function OverflowMenu({ r, team, canFollowUp, coordinatorPhone }: { r: an
           {team && active && <Row href={`/m/visits/${id}/change`} icon={CalendarClock} label="Request reschedule / cancel / hand over" sub="Goes to the coordinator for approval" />}
           {canFollowUp && <Row href={`/m/new-request?patientId=${r.patientId}&from=${id}`} icon={Repeat2} label="Request follow-up" sub="New request for this patient" />}
           <Row href={`/m/notes?requestId=${id}`} icon={NotebookPen} label="Add note" sub="Shared with the team or coordinator" />
+          {team && ['IN_PROGRESS', 'COMPLETED', 'CLOSED'].includes(r.status) && <Row href={`/m/claims?visit=${id}`} icon={Wallet} label="Add expense (travel / food)" sub="Goes on your Bill Submission claim" />}
           {team && r.status === 'IN_PROGRESS' && <Row href={`/m/visits/${id}/notes`} icon={ClipboardList} label="Visit notes & medications" />}
           {coordinatorPhone && (
             <a href={telUrl(coordinatorPhone)} className="flex min-h-[52px] items-center gap-3 border-t border-slate-100 py-2">
