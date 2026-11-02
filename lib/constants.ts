@@ -213,6 +213,24 @@ export const PAYMENT_METHOD_LABEL = { CASH: 'Cash', BKASH: 'bKash', NAGAD: 'Naga
 /** "Service provided by" in the original Google Form */
 export const TRANSPORT_MODES = ['UNICO_CAR', 'RICKSHAW', 'UBER', 'PATHAO', 'OTHER'] as const
 
+// ---------------------------------------------------------------- patient profile (lists as in H360 registration)
+/** H360 patient types (Registration → Patient Type). Stored as H360 writes them; shown with patientCategoryLabel(). */
+export const PATIENT_CATEGORIES = ['GENERAL', 'CORPORATE', 'STUDENT', 'Unico Hospital-Staff', 'STAFFDEPENDENT', 'STAFFDEPENDENTCHILD', 'New Born Baby', 'Unico Director & Share Holder Family'] as const
+const CATEGORY_LABEL: Record<string, string> = { GENERAL: 'General', CORPORATE: 'Corporate', STUDENT: 'Student', STAFFDEPENDENT: 'Staff dependent', STAFFDEPENDENTCHILD: 'Staff dependent child' }
+export const patientCategoryLabel = (c?: string | null) => (c ? CATEGORY_LABEL[c.toUpperCase()] ?? c : '')
+export const RELATIONS = ['Father', 'Mother', 'Husband', 'Wife', 'Son', 'Daughter', 'Brother', 'Sister', 'Father In Law', 'Friend', 'Colleague', 'Others'] as const
+export const RELIGIONS = ['Islam', 'Hindu', 'Christian', 'Buddha', 'Others'] as const
+export const MARITAL_STATUSES = ['Single', 'Married', 'Separated', 'Widow'] as const
+export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const
+/** Senior citizen: 60 years or older (from the date of birth when known). Not an H360 type — shown as an extra tag. */
+export function isSeniorCitizen(p: { ageYears?: number | null; dob?: string | Date | null }) {
+  if (p.dob) {
+    const b = new Date(p.dob)
+    if (!Number.isNaN(b.getTime())) return Date.now() - b.getTime() >= 60 * 365.25 * 86400_000
+  }
+  return (p.ageYears ?? 0) >= 60
+}
+
 /** What an alert group (Settings → Notification rules) can be WhatsApped about. Car events are for a Unico car. */
 export const ALERT_EVENTS = ['NEW_REQUEST', 'CAR_REQUESTED', 'CAR_ALLOTTED', 'CAR_DOCS', 'CAR_CHANGED', 'CAR_CANCELLED', 'CAR_OUT', 'CAR_BACK', 'CLAIM'] as const
 export type AlertEvent = (typeof ALERT_EVENTS)[number]

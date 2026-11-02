@@ -135,7 +135,21 @@ const PatientSchema = new Schema<any>(
     bloodGroup: String,
     address: { area: String, thana: String, district: { type: String, default: 'Dhaka' }, full: String, house: String, flat: String, landmark: String, lat: Number, lng: Number },
     addressHistory: [{ _id: false, full: String, area: String, from: Date, to: Date }],
-    guardian: { name: String, relation: String, phone: String },
+    guardian: { name: String, relation: String, phone: String }, // emergency contact
+    // profile as in H360 (lib/h360-patient.ts keeps it in step; staff can edit it here too)
+    category: String, // H360 patient type: GENERAL, CORPORATE, STUDENT… (constants PATIENT_CATEGORIES)
+    company: String, // corporate client
+    payer: { type: { type: String }, name: String },
+    religion: String,
+    maritalStatus: String,
+    nationality: String,
+    nid: String,
+    passport: String,
+    occupation: String,
+    permanentAddress: String,
+    family: { father: String, mother: String, spouse: String, guardianName: String },
+    flags: { vip: Boolean, nameMasking: Boolean, handleWithCare: Boolean, fallRisk: Boolean },
+    h360: { patientNo: String, syncedAt: Date, ageText: String, remarks: String },
     allergies: [String],
     conditions: [String],
     consent: { whatsapp: { type: Boolean, default: true }, email: { type: Boolean, default: true }, at: Date, by: { type: ObjectId, ref: 'User' } },

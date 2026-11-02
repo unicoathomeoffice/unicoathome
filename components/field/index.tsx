@@ -7,6 +7,8 @@ import { ContactBar } from '@/components/mobile'
 import { LiveElapsed } from './live'
 import { cx, time, minutesBetween, phone as fmtPhone } from '@/lib/format'
 import { LATE_AFTER_MIN } from '@/lib/constants'
+import { telUrl } from '@/components/ui'
+import { PatientCategoryTags } from '@/components/people/PatientInfoCard'
 
 // ---------------------------------------------------------------- small helpers
 export const svcName = (r: any) => (r.services ?? []).map((s: any) => s.name).join(' + ') || 'Home care visit'
@@ -162,6 +164,7 @@ export function PatientCard({ r, patient, compact }: { r: any; patient: any; com
           <div className="text-[13px] text-slate-500">
             {[ps.ageYears != null ? String(ps.ageYears) : null, GENDER[ps.gender] ?? null, ps.uhid ? `MRN ${ps.uhid}` : null].filter(Boolean).join(' · ')}
           </div>
+          <PatientCategoryTags p={patient} className="mt-1" />
         </div>
         {allergies.length > 0 && (
           <span className="inline-flex min-h-6 max-w-[45%] items-center rounded-full bg-[#FEE2E2] px-2.5 py-0.5 text-[11px] font-bold leading-4 text-[#B91C1C]">Allergy · {allergies.join(', ')}</span>
@@ -173,8 +176,18 @@ export function PatientCard({ r, patient, compact }: { r: any; patient: any; com
           {patient?.address?.landmark ? <span className="text-slate-500"> · near {patient.address.landmark}</span> : null}
           <br />
           {fmtPhone(ps.phone)}
-          {g?.phone ? ` · ${(g.relation ?? '').toLowerCase()} ${g.name?.split(' ')[0] ?? ''} ${fmtPhone(g.phone)}` : ''}
+          {patient?.altPhone && patient.altPhone !== ps.phone ? <span className="text-slate-500"> · alt {fmtPhone(patient.altPhone)}</span> : null}
         </div>
+      )}
+      {!compact && g?.phone && (
+        <a href={telUrl(g.phone)} className="mt-2.5 flex min-h-11 items-center gap-2 rounded-lg bg-[#FEF3C7] px-3 py-2 text-[13.5px] text-[#92400E]">
+          <span className="font-semibold">Emergency contact</span>
+          <span className="min-w-0 flex-1 truncate">
+            {g.name ?? ''}
+            {g.relation ? ` (${g.relation.toLowerCase()})` : ''}
+          </span>
+          <span className="font-bold">{fmtPhone(g.phone)}</span>
+        </a>
       )}
       <div className="mt-3">
         <ContactBar phone={ps.phone} address={address} lat={patient?.address?.lat} lng={patient?.address?.lng} />

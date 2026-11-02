@@ -12,6 +12,9 @@ import { WhatsAppButton } from '@/components/client'
 import { PatientDrawerButton } from '@/components/people/PatientDrawer'
 import { UploadDocButton } from '@/components/people/UploadDocButton'
 import { PhotoPicker } from '@/components/client/PhotoPicker'
+import { PatientCategoryTags, PatientInfoCard } from '@/components/people/PatientInfoCard'
+import { syncPatientQuietly } from '@/lib/h360-patient'
+import { after } from 'next/server'
 import { maskPhone } from '@/components/people/patient-board'
 import { ago, cx, date, dayNum, dateTime, minutesBetween, phone as fmtPhone, taka, time, clock } from '@/lib/format'
 
@@ -43,8 +46,16 @@ export default async function PatientProfile({ params, searchParams }: { params:
   const { id } = await params
   const sp = await searchParams
   if (!isOid(id)) notFound()
-  const patient = await Patient.findOne({ _id: id, deletedAt: null }).lean<any>()
+  let patient = await Patient.findOne({ _id: id, deletedAt: null }).lean<any>()
   if (!patient) notFound()
+  // keep the profile in step with H360 (by UHID): the first view waits briefly for it, later views refresh in the background
+  if (patient.uhid) {
+    const last = patient.h360?.syncedAt ? new Date(patient.h360.syncedAt).getTime() : 0
+    if (!last) {
+      await Promise.race([syncPatientQuietly(id), new Promise((r) => setTimeout(r, 6000))])
+      patient = (await Patient.findById(id).lean<any>()) ?? patient
+    } else if (Date.now() - last > 12 * 3600_000) after(() => syncPatientQuietly(id))
+  }
 
   const coordinatorView = can(user, 'requests.manage')
   const visits = await HomecareRequest.find({ patientId: id, deletedAt: null }).select('-deviceStamps -visit.checklist -visit.medications').sort({ createdAt: -1 }).limit(200).lean<any[]>()
@@ -97,6 +108,7 @@ export default async function PatientProfile({ params, searchParams }: { params:
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-[22px] font-bold tracking-[-.01em]">{patient.name}</h2>
+            <PatientCategoryTags p={patient} />
             {(patient.tags ?? []).map((t: string) => (
               <Tag key={t} tone="blue">
                 {t}
@@ -137,7 +149,7 @@ export default async function PatientProfile({ params, searchParams }: { params:
               <dd>{ph(patient.altPhone)}</dd>
               <dt className="text-slate-500">Email</dt>
               <dd className="break-all">{masked ? (patient.email ? '•••' : '—') : (patient.email ?? '—')}</dd>
-              <dt className="text-slate-500">Guardian</dt>
+              <dt className="text-slate-500">Emergency</dt>
               <dd>
                 {patient.guardian?.name ? (
                   <>
@@ -236,8 +248,9 @@ export default async function PatientProfile({ params, searchParams }: { params:
         </div>
 
 
-        {/* main column: visits, documents & notes, labs */}
+        {/* main column: profile, visits, documents & notes, labs */}
         <div className="flex min-w-0 flex-col gap-5">
+          <PatientInfoCard p={patient} masked={masked} canRefresh={canEdit || coordinatorView} />
           <Card pad={false} className="p-5">
             <div className="mb-3 flex flex-wrap items-center gap-3">
               <div className="flex-1 text-[15px] font-bold">Visits · {visits.length}</div>

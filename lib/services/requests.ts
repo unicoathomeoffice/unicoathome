@@ -352,6 +352,8 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
   // heads of department hear about every new request except visits generated from a care plan
   if (!r.carePlanId) background(() => notifyHods(r))
   if (r.transport?.needed) background(() => carRequestedLazy(r._id, user.id)) // requisition → security supervisor
+  // full profile from H360 (category, DOB, religion, emergency contact…) for patients with a UHID
+  if (patient.uhid) background(async () => (await import('../h360-patient')).syncPatientQuietly(patient._id))
   background(() =>
     notifyRoles(
       ['HC_ADMIN'],

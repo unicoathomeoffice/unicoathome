@@ -9,6 +9,7 @@ import { ago, cx, date, dateTime, dayNum, dur, minutesBetween, phone, taka, time
 import { directionsUrl } from '@/lib/maps'
 import { Field, MetricsTable, Panel, Stepper, SubTitle, VitalTiles } from './ui'
 import { bytes, GENDER, lifecycleSteps, timingMetrics, vitalRows, who, whoInitials, type People, type Sla, whoPhoto } from './lib'
+import { PatientCategoryTags } from '@/components/people/PatientInfoCard'
 import { Expander, EmailPreview, ResendButton, AttachmentUploader, DeleteAttachment } from './widgets'
 import { PettyTag } from './actions'
 import { ComposeButton } from '@/components/comms/Compose'
@@ -66,6 +67,7 @@ export function OverviewTab({
               <div className="text-[13px] text-slate-500">
                 {[p.ageYears ?? r.patientSnapshot?.ageYears, GENDER[p.gender ?? r.patientSnapshot?.gender], (p.uhid ?? r.patientSnapshot?.uhid) && `MRN ${p.uhid ?? r.patientSnapshot?.uhid}`, p.bloodGroup].filter((x) => x != null && x !== '').join(' · ')}
               </div>
+              <PatientCategoryTags p={p} className="mt-1" />
             </div>
           </div>
           <div className="mt-4 grid grid-cols-2 gap-3">
@@ -89,13 +91,15 @@ export function OverviewTab({
               WhatsApp {p.consent?.whatsapp === false ? '✕' : '✓'} · Email {p.consent?.email === false ? '✕' : '✓'}
               {p.consent?.at && ` (${time(p.consent.at)})`}
             </Field>
-            {p.guardian?.name && (
-              <Field k="Guardian" className="col-span-2">
+            {(p.guardian?.name || p.guardian?.phone) && (
+              <Field k="Emergency contact" className="col-span-2">
                 {p.guardian.name}
                 {p.guardian.relation && ` (${p.guardian.relation})`}
                 {p.guardian.phone && ` · ${phone(p.guardian.phone)}`}
               </Field>
             )}
+            {p.email && <Field k="Email">{p.email}</Field>}
+            {(p.religion || p.maritalStatus) && <Field k="Religion · marital">{[p.religion, p.maritalStatus].filter(Boolean).join(' · ')}</Field>}
           </div>
           <VisitMap intake={r.intake} lat={p.address?.lat} lng={p.address?.lng} address={p.address?.full ? [p.address.full, p.address.landmark, p.address.area].filter(Boolean).join(', ') : r.patientSnapshot?.address} />
           <div className="mt-4 border-t border-slate-100 pt-3.5">

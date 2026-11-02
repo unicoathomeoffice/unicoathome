@@ -5,6 +5,7 @@ import { Loader2, Pencil, Plus } from 'lucide-react'
 import { api, Drawer, Toggle, useToast } from '@/components/client'
 import { btnClass, type BtnKind } from '@/components/ui'
 import { Field, FormError, splitList, useFieldErrors } from './form'
+import { MARITAL_STATUSES, PATIENT_CATEGORIES, RELATIONS, RELIGIONS, patientCategoryLabel } from '@/lib/constants'
 
 export type PatientFormValue = {
   _id?: string
@@ -19,6 +20,15 @@ export type PatientFormValue = {
   bloodGroup?: string
   address?: { area?: string; thana?: string; full?: string; landmark?: string }
   guardian?: { name?: string; relation?: string; phone?: string }
+  category?: string
+  company?: string
+  religion?: string
+  maritalStatus?: string
+  nationality?: string
+  nid?: string
+  occupation?: string
+  permanentAddress?: string
+  family?: { father?: string; mother?: string; spouse?: string }
   allergies?: string[]
   conditions?: string[]
   consent?: { whatsapp?: boolean; email?: boolean }
@@ -46,6 +56,17 @@ function initial(p?: PatientFormValue) {
     gName: p?.guardian?.name ?? '',
     gRelation: p?.guardian?.relation ?? '',
     gPhone: p?.guardian?.phone ?? '',
+    category: p?.category ?? 'GENERAL',
+    company: p?.company ?? '',
+    religion: p?.religion ?? '',
+    maritalStatus: p?.maritalStatus ?? '',
+    nationality: p?.nationality ?? '',
+    nid: p?.nid ?? '',
+    occupation: p?.occupation ?? '',
+    permanentAddress: p?.permanentAddress ?? '',
+    father: p?.family?.father ?? '',
+    mother: p?.family?.mother ?? '',
+    spouse: p?.family?.spouse ?? '',
     allergies: (p?.allergies ?? []).join(', '),
     conditions: (p?.conditions ?? []).join(', '),
     waConsent: p?.consent?.whatsapp ?? true,
@@ -95,6 +116,15 @@ function PatientDrawer({ patient, zones, onClose, redirectOnCreate }: { patient?
       bloodGroup: v.bloodGroup || undefined,
       address: { area: v.area || undefined, thana: v.thana.trim() || undefined, full: v.full.trim(), landmark: v.landmark.trim() || undefined },
       guardian: { name: v.gName.trim() || undefined, relation: v.gRelation.trim() || undefined, phone: v.gPhone.trim() || undefined },
+      category: v.category || undefined,
+      company: v.company.trim() || undefined,
+      religion: v.religion || undefined,
+      maritalStatus: v.maritalStatus || undefined,
+      nationality: v.nationality.trim() || undefined,
+      nid: v.nid.trim() || undefined,
+      occupation: v.occupation.trim() || undefined,
+      permanentAddress: v.permanentAddress.trim() || undefined,
+      family: { father: v.father.trim() || undefined, mother: v.mother.trim() || undefined, spouse: v.spouse.trim() || undefined },
       allergies: splitList(v.allergies),
       conditions: splitList(v.conditions),
       consent: { whatsapp: v.waConsent, email: v.emailConsent },
@@ -183,6 +213,46 @@ function PatientDrawer({ patient, zones, onClose, redirectOnCreate }: { patient?
           </Field>
         </div>
 
+        <Field label="Patient category" hint="As in H360 · filled from H360 by UHID" error={err('category')}>
+          <select className="hc-input" value={v.category} onChange={set('category')}>
+            {[...new Set([...PATIENT_CATEGORIES, ...(v.category ? [v.category] : [])])].map((c) => (
+              <option key={c} value={c}>
+                {patientCategoryLabel(c)}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Company (corporate)" error={err('company')}>
+          <input className="hc-input" value={v.company} onChange={set('company')} placeholder="e.g. Grameenphone Ltd." />
+        </Field>
+        <div className="col-span-2 grid grid-cols-3 gap-3">
+          <Field label="Religion" error={err('religion')}>
+            <select className="hc-input" value={v.religion} onChange={set('religion')}>
+              <option value="">—</option>
+              {[...new Set([...RELIGIONS, ...(v.religion ? [v.religion] : [])])].map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Marital status" error={err('maritalStatus')}>
+            <select className="hc-input" value={v.maritalStatus} onChange={set('maritalStatus')}>
+              <option value="">—</option>
+              {[...new Set([...MARITAL_STATUSES, ...(v.maritalStatus ? [v.maritalStatus] : [])])].map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Nationality" error={err('nationality')}>
+            <input className="hc-input" value={v.nationality} onChange={set('nationality')} placeholder="Bangladeshi" />
+          </Field>
+        </div>
+        <Field label="NID" error={err('nid')}>
+          <input className="hc-input" value={v.nid} onChange={set('nid')} inputMode="numeric" />
+        </Field>
+        <Field label="Occupation" error={err('occupation')}>
+          <input className="hc-input" value={v.occupation} onChange={set('occupation')} />
+        </Field>
+
         <div className="col-span-2 mt-2 text-[13px] font-bold text-slate-900">Address</div>
         <Field label="Zone / area" error={err('address.area')}>
           <select className="hc-input" value={v.area} onChange={set('area')}>
@@ -201,17 +271,38 @@ function PatientDrawer({ patient, zones, onClose, redirectOnCreate }: { patient?
         <Field label="Landmark" error={err('address.landmark')} className="col-span-2">
           <input className="hc-input" value={v.landmark} onChange={set('landmark')} placeholder="Opposite Dhanmondi Lake gate 3" />
         </Field>
+        <Field label="Permanent address" error={err('permanentAddress')} className="col-span-2">
+          <input className="hc-input" value={v.permanentAddress} onChange={set('permanentAddress')} placeholder="Village, upazila, district" />
+        </Field>
 
-        <div className="col-span-2 mt-2 text-[13px] font-bold text-slate-900">Guardian</div>
+        <div className="col-span-2 mt-2 text-[13px] font-bold text-slate-900">Emergency contact</div>
         <Field label="Name" error={err('guardian.name')}>
           <input className="hc-input" value={v.gName} onChange={set('gName')} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Relation" error={err('guardian.relation')}>
-            <input className="hc-input" value={v.gRelation} onChange={set('gRelation')} placeholder="son" />
+            <select className="hc-input" value={v.gRelation} onChange={set('gRelation')}>
+              <option value="">—</option>
+              {[...new Set([...RELATIONS, ...(v.gRelation ? [v.gRelation] : [])])].map((x) => (
+                <option key={x}>{x}</option>
+              ))}
+            </select>
           </Field>
           <Field label="Phone" error={err('guardian.phone')}>
             <input className="hc-input" value={v.gPhone} onChange={set('gPhone')} inputMode="tel" />
+          </Field>
+        </div>
+
+        <div className="col-span-2 mt-2 text-[13px] font-bold text-slate-900">Family</div>
+        <div className="col-span-2 grid grid-cols-3 gap-3">
+          <Field label="Father" error={err('family.father')}>
+            <input className="hc-input" value={v.father} onChange={set('father')} />
+          </Field>
+          <Field label="Mother" error={err('family.mother')}>
+            <input className="hc-input" value={v.mother} onChange={set('mother')} />
+          </Field>
+          <Field label="Spouse" error={err('family.spouse')}>
+            <input className="hc-input" value={v.spouse} onChange={set('spouse')} />
           </Field>
         </div>
 
