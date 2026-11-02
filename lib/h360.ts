@@ -2,14 +2,14 @@ import 'server-only'
 import { parse, type HTMLElement } from 'node-html-parser'
 import { IntegrationSecret, Setting } from './models'
 import { decryptIntegration, encryptIntegration } from './integration-secrets'
-import { memo } from './memo'
+import { forget, memo } from './memo'
 
 // Connector to the hospital HIS "H360" (his.unicohospitals.com, Laravel / PHP). The login is saved by a super admin in
 // Settings → Integrations (encrypted, never sent back to the browser). We sign in like a browser (CSRF token + session
 // cookie), keep the session for ~9 h, and read the Patient List search. Read-only: nothing is ever written to H360.
 
 export type H360Config = { baseUrl: string; username: string; password: string }
-export type H360Patient = { uhid: string; name: string; dob?: string; ageYears?: number; gender?: string; ageGender?: string; company?: string; phone?: string; address?: string; guardianName?: string; regType?: string }
+export type H360Patient = { uhid: string; name: string; dob?: string; ageYears?: number; gender?: string; ageGender?: string; company?: string; phone?: string; altPhone?: string; email?: string; address?: string; guardianName?: string; regType?: string; category?: string }
 
 const AAD = 'h360:v1'
 const TIMEOUT = 10_000
@@ -204,8 +204,88 @@ function rowsFromHtml(html: string, fallbackHeaders: string[]) {
     .filter((x): x is H360Patient => !!x)
 }
 
-/** Live search in H360's Patient List: 10+ digits → mobile, other numbers → UHID, else name. Max 10 results. */
+// The "UHID / Name" and "Mobile #" boxes on H360's Patient List are typeahead fields that POST `search_data` to
+// /patient-info-autocomplete (Laravel, CSRF token from the page) and get JSON rows back — UHID, phone or name.
+const AUTOCOMPLETE = '/patient-info-autocomplete'
+
+/** CSRF token for H360's AJAX calls, read from a page's <meta name="csrf-token"> (30 min, renewed on 419). */
+function csrfToken() {
+  return memo('h360:csrf', 30 * 60_000, async () => {
+    const res = await h360(PATIENT_LIST)
+    const doc = parse(await res.text())
+    const t = doc.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? doc.querySelector('input[name="_token"]')?.getAttribute('value')
+    if (!t) throw new H360Error('PARSE', 'H360 page has no CSRF token')
+    return t
+  })
+}
+
+const str = (v: unknown) => (v == null ? '' : String(v).trim())
+/** One row of H360's autocomplete → our patient shape. */
+function fromAutocomplete(it: any): H360Patient | null {
+  const uhid = str(it.patient_code)
+  const name = str(it.patient_name)
+  if (!uhid && !name) return null
+  const g = str(it.gender)
+  const gender = /^f/i.test(g) ? 'F' : /^m/i.test(g) ? 'M' : g ? 'O' : undefined
+  const yy = Number(it.age_yy)
+  const ageYears = Number.isFinite(yy) && str(it.age_yy) !== '' ? yy : Number(str(it.pat_age).match(/^(\d{1,3})/)?.[1]) || undefined
+  return {
+    uhid,
+    name,
+    category: str(it.patient_type_code) || undefined,
+    regType: str(it.patient_type_code) || undefined,
+    gender,
+    ageYears,
+    ageGender: [str(it.pat_age).replace(/\s+0 D$/, ''), g].filter(Boolean).join(' · ') || undefined,
+    dob: str(it.dob) || undefined,
+    phone: str(it.phone_mobile).replace(/[^\d+]/g, '') || undefined,
+    altPhone: str(it.alt_phone_mobile).replace(/[^\d+]/g, '') || undefined,
+    email: /@/.test(str(it.email)) ? str(it.email) : undefined,
+    company: str(it.ccm_client_name) || undefined,
+    guardianName: str(it.spouse_name) || str(it.contact_person) || undefined,
+    address: [str(it.pr_addr_thana), str(it.present_district)].filter(Boolean).join(', ') || undefined,
+  }
+}
+
+async function autocomplete(term: string, retry = true): Promise<H360Patient[] | null> {
+  const token = await csrfToken()
+  const res = await h360(AUTOCOMPLETE, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8', 'x-csrf-token': token, 'x-requested-with': 'XMLHttpRequest', accept: 'application/json' },
+    body: new URLSearchParams({ search_data: term }).toString(),
+  })
+  if ((res.status === 419 || res.status === 401) && retry) {
+    forget('h360:csrf') // token from an older session
+    return autocomplete(term, false)
+  }
+  if (res.status === 404) return null // this H360 has no autocomplete endpoint → use the list fallback
+  if (!res.ok) throw new H360Error('DOWN', `H360 search answered ${res.status}`)
+  const body = await res.text()
+  try {
+    const json = JSON.parse(body)
+    const rows: any[] = Array.isArray(json) ? json : json.data ?? []
+    return rows.map(fromAutocomplete).filter((x): x is H360Patient => !!x)
+  } catch {
+    throw new H360Error('PARSE', 'H360 search did not return a patient list')
+  }
+}
+
+/** Live search in H360 by UHID, mobile number or name (min. 3 characters). Max 10 results, cached 60 s. */
 export async function searchPatients(q: string): Promise<H360Patient[]> {
+  const term = q.trim()
+  if (term.length < 3) return []
+  return memo(`h360:pat:${term.toLowerCase()}`, 60_000, async () => {
+    const digits = term.replace(/\D/g, '')
+    // phone numbers as H360 stores them (01XXXXXXXXX), whatever the user typed (+880 …, spaces)
+    const query = digits.length >= 10 && digits.length === term.replace(/[\s+()-]/g, '').length ? `0${digits.slice(-10)}` : term
+    const hits = await autocomplete(query)
+    if (hits) return hits.slice(0, 10)
+    return (await searchPatientsByList(term)).slice(0, 10)
+  })
+}
+
+/** Fallback: read the Patient List page's DataTables endpoint or search form (older H360 layouts). */
+async function searchPatientsByList(q: string): Promise<H360Patient[]> {
   const term = q.trim()
   if (term.length < 3) return []
   return memo(`h360:pat:${term.toLowerCase()}`, 60_000, async () => {
@@ -258,17 +338,19 @@ export async function testH360(sample?: string) {
   const cfg = await getH360Config()
   try {
     jar = null
+    forget('h360:')
     await IntegrationSecret.deleteOne({ _id: 'h360:session' })
     await session(true)
-    const meta = await memo('h360:patient-list-meta:test', 1, async () => {
-      const res = await h360(PATIENT_LIST)
-      const doc = parse(await res.text())
-      return { forms: doc.querySelectorAll('form').length, inputs: doc.querySelectorAll('form input, form select').map((i) => i.getAttribute('name')).filter(Boolean), headers: doc.querySelectorAll('table thead th').map((th) => text(th)), scripts: doc.querySelectorAll('script').length }
-    })
+    await csrfToken()
     let found: number | null = null
-    if (sample) found = (await searchPatients(sample)).length
+    let first: string | null = null
+    if (sample) {
+      const hits = await searchPatients(sample)
+      found = hits.length
+      first = hits[0] ? `${hits[0].name} · UHID ${hits[0].uhid}` : null
+    }
     await setStatus({ ok: true, username: cfg?.username, baseUrl: cfg?.baseUrl, error: null })
-    return { ok: true, meta, found }
+    return { ok: true, endpoint: AUTOCOMPLETE, found, first }
   } catch (e: any) {
     await setStatus({ ok: false, username: cfg?.username, baseUrl: cfg?.baseUrl, error: e?.message ?? String(e) })
     return { ok: false, error: e?.message ?? String(e) }

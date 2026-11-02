@@ -15,7 +15,7 @@ export function H360Card({ initial }: { initial: Status }) {
   const [v, setV] = useState({ baseUrl: initial.baseUrl, username: initial.username ?? '', password: '' })
   const [sample, setSample] = useState('')
   const [busy, setBusy] = useState<null | 'save' | 'test' | 'remove'>(null)
-  const [result, setResult] = useState<null | { ok: boolean; error?: string; found?: number | null; meta?: { forms: number; inputs: string[]; headers: string[] } }>(null)
+  const [result, setResult] = useState<null | { ok: boolean; error?: string; found?: number | null; first?: string | null; endpoint?: string }>(null)
   const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '')
 
   async function save() {
@@ -70,7 +70,8 @@ export function H360Card({ initial }: { initial: Status }) {
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="sm:col-span-2">
           <span className="hc-label">H360 address</span>
-          <input className="hc-input" value={v.baseUrl} onChange={(e) => setV({ ...v, baseUrl: e.target.value })} />
+          <input className="hc-input" value={v.baseUrl} onChange={(e) => setV({ ...v, baseUrl: e.target.value })} placeholder="http://115.127.139.2:8085" />
+          {/^http:\/\//.test(v.baseUrl) && <span className="mt-1 block text-[12px] text-[#B45309]">http:// is not encrypted between HomeCare and H360 — use https:// if H360 offers it.</span>}
         </label>
         <label>
           <span className="hc-label">User name</span>
@@ -110,8 +111,8 @@ export function H360Card({ initial }: { initial: Status }) {
           </div>
           {result.ok && (
             <div className="mt-1 text-[12px] text-slate-600">
-              Patient list: {result.meta?.forms ?? 0} form · fields {(result.meta?.inputs ?? []).join(', ') || '—'} · columns {(result.meta?.headers ?? []).join(', ') || '—'}
-              {result.found != null && <> · test search found {result.found}</>}
+              Live search via {result.endpoint ?? 'H360'}
+              {result.found != null ? <> · test search found {result.found}{result.first ? ` — ${result.first}` : ''}</> : ' · type a UHID or mobile in the box to test a search'}
             </div>
           )}
         </div>

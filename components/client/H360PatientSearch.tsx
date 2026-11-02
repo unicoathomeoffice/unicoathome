@@ -6,7 +6,7 @@ import { Building2, Check, Loader2 } from 'lucide-react'
 import { api } from './api'
 import { cx } from '@/lib/format'
 
-export type H360Hit = { uhid: string; name: string; dob?: string; ageYears?: number; gender?: string; ageGender?: string; company?: string; phone?: string; address?: string; guardianName?: string; regType?: string; linkedPatientId: string | null }
+export type H360Hit = { uhid: string; name: string; dob?: string; ageYears?: number; gender?: string; ageGender?: string; company?: string; phone?: string; altPhone?: string; email?: string; address?: string; guardianName?: string; regType?: string; category?: string; linkedPatientId: string | null }
 
 export function H360PatientSearch({ q, onUse, useLabel = 'Use', className }: { q: string; onUse: (p: H360Hit) => void; useLabel?: string; className?: string }) {
   const [state, setState] = useState<{ loading: boolean; items: H360Hit[]; error?: string; offline?: boolean; code?: string }>({ loading: false, items: [] })
@@ -42,7 +42,13 @@ export function H360PatientSearch({ q, onUse, useLabel = 'Use', className }: { q
         {state.loading && <Loader2 size={13} className="ml-auto animate-spin" />}
       </div>
       {state.offline ? (
-        <div className="px-3.5 py-3 text-[13px] text-[#B45309]">H360 is not answering — showing HomeCare results only{state.error ? ` (${state.error})` : ''}.</div>
+        <div className="px-3.5 py-3 text-[13px] text-[#B45309]">
+          {state.code === 'AUTH'
+            ? 'H360 login failed — a super admin can check it in Settings → Integrations.'
+            : state.code === 'PARSE'
+              ? `Couldn’t read H360’s search${state.error ? ` (${state.error})` : ''} — showing HomeCare results only.`
+              : `H360 is not answering — showing HomeCare results only${state.error ? ` (${state.error})` : ''}.`}
+        </div>
       ) : !state.loading && !state.items.length ? (
         <div className="px-3.5 py-3 text-[13px] text-slate-500">No match in H360 for “{term}”.</div>
       ) : (
@@ -50,12 +56,13 @@ export function H360PatientSearch({ q, onUse, useLabel = 'Use', className }: { q
           <div key={`${p.uhid}-${i}`} className="flex items-center gap-3 border-t border-slate-100 px-3.5 py-2.5">
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold">
-                {p.name}{' '}
+                {p.name}
+                {p.category && <span className="font-normal text-slate-500"> ({p.category})</span>}{' '}
                 <span className="font-normal text-slate-500">
                   {[p.ageGender || (p.ageYears != null ? `${p.ageYears}${p.gender ? ` ${p.gender}` : ''}` : ''), p.uhid && `UHID ${p.uhid}`].filter(Boolean).map((x) => ` · ${x}`)}
                 </span>
               </div>
-              <div className="truncate text-[12px] text-slate-500">{[p.phone, p.address, p.guardianName && `Guardian ${p.guardianName}`, p.regType].filter(Boolean).join(' · ')}</div>
+              <div className="truncate text-[12px] text-slate-500">{[p.phone, p.address, p.guardianName && `Guardian ${p.guardianName}`, p.company].filter(Boolean).join(' · ')}</div>
             </div>
             {p.linkedPatientId && (
               <span className="inline-flex items-center gap-1 rounded-full bg-[#DCFCE7] px-2 py-0.5 text-[11px] font-bold text-[#15803D]">

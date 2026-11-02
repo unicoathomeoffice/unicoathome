@@ -31,7 +31,7 @@ export const POST = route(
     const prev = await getH360Config().catch(() => null)
     const password = input.password || prev?.password
     if (!password) throw bad('Enter the H360 password', { password: 'Required' })
-    if (!/^https:\/\//.test(input.baseUrl)) throw bad('Use the https:// address of H360')
+    if (!/^https?:\/\/[^/\s]+/.test(input.baseUrl)) throw bad('Use the http:// or https:// address of H360 (e.g. http://115.127.139.2:8085)')
     await saveH360Config({ baseUrl: input.baseUrl.replace(/\/+$/, ''), username: input.username, password }, user.id)
     await audit(user, 'settings.h360_update', 'settings', 'h360', { after: { baseUrl: input.baseUrl, username: input.username, passwordChanged: !!input.password } }, meta)
     return { ok: true }

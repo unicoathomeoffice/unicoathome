@@ -470,7 +470,7 @@ function StepPatient({ f, set, setIn, zones, errors, initialQuery }: { f: F; set
     const age = h.ageYears ?? (h.dob && !isNaN(Date.parse(h.dob)) ? Math.floor((Date.now() - Date.parse(h.dob)) / (365.25 * 86400_000)) : undefined)
     set('mode', 'new')
     set('patient', null)
-    setIn('np', { name: h.name, phone: h.phone ?? '', ageYears: age != null ? String(age) : '', gender: (h.gender as 'M' | 'F' | 'O' | undefined) ?? '', uhid: h.uhid ?? '' })
+    setIn('np', { name: h.name, phone: h.phone ?? '', ageYears: age != null ? String(age) : '', gender: (h.gender as 'M' | 'F' | 'O' | undefined) ?? '', uhid: h.uhid ?? '', altPhone: h.altPhone ?? '', email: h.email ?? '' })
     if (h.address) set('addr', { ...f.addr, full: h.address })
     if (h.guardianName) setIn('requester', { type: 'RELATIVE', name: h.guardianName })
     setQ('')
