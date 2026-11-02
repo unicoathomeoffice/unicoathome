@@ -437,7 +437,7 @@ export function AssignmentTab({ r, people, logs }: { r: any; people: People; log
       <section className={cx(card, 'overflow-hidden')}>
         <div className="px-5 pt-5 text-[15px] font-bold">Assignment history</div>
         <div className="px-5 pb-3 text-[13px] text-slate-500">Every assign, reassign, accept, decline and timeout</div>
-        <div className="grid h-11 grid-cols-[130px_100px_1fr_1fr_120px] items-center border-y border-slate-200 bg-slate-50 px-5 text-[11.5px] font-bold uppercase tracking-[.05em] text-slate-500">
+        <div className="grid h-11 grid-cols-[140px_150px_1fr_1fr_120px] items-center border-y border-slate-200 bg-slate-50 px-5 text-[11.5px] font-bold uppercase tracking-[.05em] text-slate-500">
           <div>When</div>
           <div>Action</div>
           <div>Staff</div>
@@ -448,10 +448,10 @@ export function AssignmentTab({ r, people, logs }: { r: any; people: People; log
           <div className="px-5 py-12 text-center text-sm text-slate-400">No assignment activity yet</div>
         ) : (
           logs.map((l) => (
-            <div key={l._id} className="grid min-h-12 grid-cols-[130px_100px_1fr_1fr_120px] items-center border-t border-slate-100 px-5 py-2 text-[13px] first:border-t-0">
+            <div key={l._id} className="grid min-h-12 grid-cols-[140px_150px_1fr_1fr_120px] items-center border-t border-slate-100 px-5 py-2 text-[13px] first:border-t-0">
               <div className="text-slate-600">{dateTime(l.at)}</div>
               <div>
-                <Tag tone={LOG_TONE[l.action] ?? 'slate'}>{l.action === 'ACCEPT_BY_OVERRIDE' ? 'ACCEPTED FOR STAFF' : l.action}</Tag>
+                <Tag tone={LOG_TONE[l.action] ?? 'slate'}>{l.action === 'ACCEPT_BY_OVERRIDE' ? 'FORCE ACCEPTED' : l.action}</Tag>
               </div>
               <div className="min-w-0 pr-3">
                 {l.fromStaffId && l.toStaffId ? (
