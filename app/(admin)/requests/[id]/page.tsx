@@ -20,6 +20,7 @@ import { LiveTrackingCard } from '@/components/request-detail/LiveTrackingCard'
 import { VisitUpdateCard } from '@/components/request-detail/VisitUpdateCard'
 import { InvoiceTab } from '@/components/request-detail/InvoiceTab'
 import { TransportDocsBox } from '@/components/request-detail/TransportDocsBox'
+import { RidesCard } from '@/components/request-detail/RidesCard'
 import { liveView } from '@/lib/services/tracking'
 
 export const metadata = { title: 'Request detail' }
@@ -239,6 +240,15 @@ export default async function RequestDetailPage({ params, searchParams }: { para
             sentAt={r.transport.requisitionSentAt ? new Date(r.transport.requisitionSentAt).toISOString() : null}
             sent={plain(await MessageLog.find({ requestId: r._id, channel: 'WHATSAPP', templateKey: { $in: ['vehicle_requisition', 'gate_pass'] } }).sort({ at: -1 }).limit(20).select('to status at templateKey').lean<any[]>())}
             canSend={can(user, 'requests.manage') || can(user, 'transport.manage')}
+          />
+        )}
+        {tab === 'overview' && r.transport?.mode !== 'UNICO_CAR' && ((r.rides ?? []).length > 0 || ['ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED', 'CLOSED'].includes(status)) && (
+          <RidesCard
+            requestId={id}
+            rides={plain(r.rides ?? [])}
+            team={[r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean).map((p: any) => ({ id: String(p.id), name: p.name }))}
+            me={user.id}
+            canPickPayer={can(user, 'requests.manage')}
           />
         )}
         {tab === 'overview' && r.tracking?.phase && (

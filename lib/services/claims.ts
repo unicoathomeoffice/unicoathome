@@ -41,7 +41,7 @@ export const LinePatch = LineInput.partial()
 const total = (c: any) => (c.lines ?? []).reduce((a: number, l: any) => a + (l.amount ?? 0), 0)
 
 /** The user's open claim (created on first use). Claim no: CL-<employee>-<yymm>-<n>. */
-export async function draftOf(user: SessionUser) {
+export async function draftOf(user: { id: string; employeeId: string }) {
   const open = await ExpenseClaim.findOne({ userId: user.id, status: 'DRAFT' })
   if (open) return open
   const ym = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', year: '2-digit', month: '2-digit' }).format(new Date()).split('/').reverse().join('')

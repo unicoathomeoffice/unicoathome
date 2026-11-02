@@ -9,6 +9,7 @@ import { loadVisit, coordinatorOnDuty } from '@/components/field/data'
 import { VisitActionBar, OverflowMenu, TimerWidget, PettyCash } from '@/components/field/visit'
 import { isPaired } from '@/lib/wa/status'
 import { TestsCard } from '@/components/field/tests'
+import { RidesCard } from '@/components/request-detail/RidesCard'
 import { LabResult, User } from '@/lib/models'
 import { can, TRANSPORT_MODE_LABEL, PAYMENT_METHOD_LABEL, STATUS_LABEL } from '@/lib/constants'
 import { getSettings } from '@/lib/settings'
@@ -241,6 +242,19 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
       ) : null}
 
       <PettyCash r={r} team={team} />
+
+      {(team || can(user, 'requests.manage')) && ['ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED', 'CLOSED'].includes(r.status) && r.transport?.mode !== 'UNICO_CAR' && (
+        <div id="rides">
+          <RidesCard
+            mobile
+            requestId={id}
+            rides={plain(r.rides ?? [])}
+            team={[r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean).map((p: any) => ({ id: String(p.id), name: p.name }))}
+            me={user.id}
+            canPickPayer={can(user, 'requests.manage')}
+          />
+        </div>
+      )}
 
       <div className="rounded-card bg-white px-4 py-3.5 shadow-card">
         <div className="flex items-center justify-between">

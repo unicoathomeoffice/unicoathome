@@ -333,6 +333,25 @@ const RequestSchema = new Schema<any>(
     },
     // the way back after check-out (Settings → General → hospital location)
     returnTrip: { _id: false, startedAt: Date, reachedAt: Date, reachedBy: { type: String, enum: ['geofence', 'button', 'next_visit', 'timeout'] }, distanceKm: Number, durationMin: Number },
+    // own rides (Uber / Pathao / CNG / rickshaw…) with screenshots — sent to security with the requisition form and
+    // added to the payer's conveyance claim (lib/services/rides.ts); can be added any time after the visit
+    rides: [
+      {
+        userId: { type: ObjectId, ref: 'User' }, // who paid
+        leg: { type: String, enum: ['OUT', 'BACK', 'OTHER'], default: 'OUT' },
+        mode: String,
+        amount: Number,
+        at: Date,
+        attachmentIds: [{ type: ObjectId, ref: 'Attachment' }],
+        note: String,
+        claimId: { type: ObjectId, ref: 'ExpenseClaim' },
+        claimLineId: { type: ObjectId },
+        requisitionId: { type: ObjectId, ref: 'Attachment' },
+        sentAt: Date,
+        addedBy: { type: ObjectId, ref: 'User' },
+        addedAt: Date,
+      },
+    ],
     createdBy: { type: ObjectId, ref: 'User' },
     version: { type: Number, default: 0 },
     deletedAt: Date,
