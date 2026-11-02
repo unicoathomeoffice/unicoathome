@@ -4,10 +4,10 @@
 // Every action asks first and is audited "on behalf".
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Car, CheckCircle2, Loader2, MapPin, Navigation, ShieldAlert, UserCheck } from 'lucide-react'
+import { Banknote, Car, CheckCircle2, Loader2, MapPin, Navigation, ShieldAlert, UserCheck } from 'lucide-react'
 import { api, Drawer, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
-import { cx } from '@/lib/format'
+import { cx, taka } from '@/lib/format'
 
 export type CarLite = { id: string; name: string; plate: string; driverId?: string; status?: string }
 export type DriverLite = { id: string; name: string; phone?: string }
@@ -24,7 +24,21 @@ type Props = {
   cars: CarLite[]
   drivers: DriverLite[]
   openChecklist: number
+  /** "Car not available": team members who can get the petty cash, the patient's area, the usual amount, last given */
+  team?: { id: string; name: string }[]
+  area?: string
+  defaultAmount?: number
+  cashGiven?: { amount: number; mode?: string } | null
 }
+
+const OWN_MODES = [
+  ['UBER', 'Uber'],
+  ['PATHAO', 'Pathao'],
+  ['CNG', 'CNG'],
+  ['RICKSHAW', 'Rickshaw'],
+  ['OTHER', 'Other'],
+] as const
+const MODE_LABEL: Record<string, string> = Object.fromEntries(OWN_MODES)
 
 const STEP: Record<string, { action: string; label: string; icon: typeof UserCheck } | undefined> = {
   ASSIGNED: { action: 'accept', label: 'Accept for', icon: UserCheck },
@@ -40,7 +54,9 @@ export function OverridePanel(p: Props) {
   const step = STEP[p.status]
   const who = p.staffName ?? 'the team'
   const active = ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS'].includes(p.status)
-  const showCar = p.canCar && p.transport.needed && (!p.transport.mode || p.transport.mode === 'UNICO_CAR') && !['COMPLETED', 'CLOSED', 'CANCELLED'].includes(p.status)
+  // car & driver, or (no car free) own transport + petty cash — both from the same drawer
+  const showCar = p.canCar && p.transport.needed && !['COMPLETED', 'CLOSED', 'CANCELLED'].includes(p.status)
+  const own = !!p.transport.mode && p.transport.mode !== 'UNICO_CAR'
   if (!(p.canOverride && active) && !showCar) return null
 
   async function doStep() {
@@ -76,7 +92,7 @@ export function OverridePanel(p: Props) {
         )}
         {showCar && (
           <button type="button" disabled={!!busy} onClick={() => setDlg('car')} className={btnClass('o', 'sm', 'bg-white')}>
-            <Car size={14} /> {p.transport.vehicleId ? 'Change car & driver' : 'Car & driver'}
+            <Car size={14} /> {own ? `Transport · ${MODE_LABEL[p.transport.mode!] ?? 'own'}${p.cashGiven ? ` · ${taka(p.cashGiven.amount)} given` : ''}` : p.transport.vehicleId ? 'Change car & driver' : 'Car & driver'}
           </button>
         )}
       </div>
@@ -160,9 +176,35 @@ function CompleteNow({ requestId, requestNo, status, who, openChecklist, onClose
   )
 }
 
-function CarDriver({ requestId, requestNo, transport, cars, drivers, onClose }: Props & { onClose: () => void }) {
+function CarDriver({ requestId, requestNo, transport, cars, drivers, team = [], area, defaultAmount, onClose }: Props & { onClose: () => void }) {
   const router = useRouter()
   const toast = useToast()
+  // "Car not available" → own transport + petty cash (approved at once, voucher on WhatsApp)
+  const [kind, setKind] = useState<'car' | 'own'>(transport.mode && transport.mode !== 'UNICO_CAR' ? 'own' : cars.length ? 'car' : 'own')
+  const [mode, setMode] = useState<string>(transport.mode && transport.mode !== 'UNICO_CAR' ? transport.mode : 'UBER')
+  const [forUser, setForUser] = useState(team[0]?.id ?? '')
+  const [amount, setAmount] = useState(defaultAmount ? String(defaultAmount) : '')
+  const [purposeEdited, setPurposeEdited] = useState<string | null>(null)
+  const [note, setNote] = useState('')
+  const purpose = purposeEdited ?? `Transport · ${MODE_LABEL[mode] ?? mode} to ${area || "the patient's home"} and back`
+  async function giveCash() {
+    const who = team.find((t) => t.id === forUser)
+    const amt = Number(amount)
+    if (!who) return toast('Pick who gets the petty cash', 'err')
+    if (!(amt > 0)) return toast('Enter the amount', 'err')
+    if (!confirm(`No car for ${requestNo}: the team goes by ${MODE_LABEL[mode]}.\n\nGive ${who.name} petty cash ৳${amt.toLocaleString('en-IN')} (approved now)?\nThe voucher goes on WhatsApp to them and the cash counter; Security / Transport are told no car is going.`)) return
+    setBusy(true)
+    try {
+      const r = await api<{ voucherNo: string }>(`/requests/${requestId}/own-transport`, { body: { mode, amount: amt, forUserId: forUser, purpose: purpose.trim(), note: note.trim() || undefined } })
+      toast(`Petty cash ৳${amt.toLocaleString('en-IN')} given · voucher ${r.voucherNo} on its way`, 'ok')
+      router.refresh()
+      onClose()
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
   const first = cars.find((c) => c.id === transport.vehicleId) ?? cars.find((c) => c.status !== 'IN_SERVICE') ?? cars[0]
   const [car, setCar] = useState(first?.id ?? '')
   const [driver, setDriver] = useState(transport.driverId ?? first?.driverId ?? '')
@@ -191,19 +233,80 @@ function CarDriver({ requestId, requestNo, transport, cars, drivers, onClose }: 
       open
       onClose={onClose}
       title="Car & driver"
-      sub={`${requestNo} · pick any car and any active driver`}
+      sub={kind === 'car' ? `${requestNo} · pick any car and any active driver` : `${requestNo} · no car free: own transport + petty cash`}
       width={480}
       footer={
         <div className="flex w-full justify-end gap-2.5">
           <button type="button" className={btnClass('o')} onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className={btnClass('p')} disabled={busy || !chosen || !drv} onClick={go}>
-            {busy ? <Loader2 size={16} className="animate-spin" /> : <Car size={16} />} Assign car & driver
-          </button>
+          {kind === 'car' ? (
+            <button type="button" className={btnClass('p')} disabled={busy || !chosen || !drv} onClick={go}>
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <Car size={16} />} Assign car & driver
+            </button>
+          ) : (
+            <button type="button" className={btnClass('g')} disabled={busy || !forUser || !(Number(amount) > 0)} onClick={giveCash}>
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <Banknote size={16} />} Give petty cash & send voucher
+            </button>
+          )}
         </div>
       }
     >
+      <div className="mb-4 flex gap-[3px] rounded-[10px] bg-slate-200 p-[3px]">
+        {(
+          [
+            ['car', 'Unico car'],
+            ['own', 'Car not available'],
+          ] as const
+        ).map(([k, l]) => (
+          <button key={k} type="button" onClick={() => setKind(k)} className={cx('flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg text-sm font-semibold', kind === k ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,.1)]' : 'text-slate-500')}>
+            {k === 'car' ? <Car size={15} /> : <Banknote size={15} />} {l}
+          </button>
+        ))}
+      </div>
+      {kind === 'own' ? (
+        <div className="flex flex-col gap-3.5">
+          <div>
+            <span className="hc-label">The team goes by</span>
+            <div className="flex flex-wrap gap-2">
+              {OWN_MODES.map(([k, l]) => (
+                <button key={k} type="button" onClick={() => setMode(k)} className={cx('h-9 rounded-full px-4 text-[13.5px] font-semibold ring-1', mode === k ? 'bg-primary text-white ring-primary' : 'bg-white text-slate-700 ring-slate-300 hover:bg-slate-50')}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-[1fr_140px] gap-3">
+            <label>
+              <span className="hc-label">Petty cash for</span>
+              <select className="hc-input" value={forUser} onChange={(e) => setForUser(e.target.value)}>
+                {!team.length && <option value="">Assign the team first</option>}
+                {team.map((t, i) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                    {i === 0 ? ' (primary)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="hc-label">Amount (৳)</span>
+              <input className="hc-input" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/\D/g, ''))} placeholder="600" />
+            </label>
+          </div>
+          <label>
+            <span className="hc-label">Purpose</span>
+            <input className="hc-input" value={purpose} onChange={(e) => setPurposeEdited(e.target.value)} />
+          </label>
+          <label>
+            <span className="hc-label">Note (optional)</span>
+            <input className="hc-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. car in workshop" />
+          </label>
+          <div className="rounded-lg bg-[#F0FDF4] px-3 py-2.5 text-[12.5px] text-[#166534]">
+            Approved at once (it won’t hold up closing the request). A petty cash voucher PDF is made — sent on WhatsApp to the staff member and the cash counter (Settings → Fleet & drivers) — and the Security / Transport groups are told no hospital car is going.
+          </div>
+        </div>
+      ) : (
       <div className="flex flex-col gap-3.5">
         <div>
           <span className="hc-label">Car</span>
@@ -256,6 +359,7 @@ function CarDriver({ requestId, requestNo, transport, cars, drivers, onClose }: 
         </div>
         <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-[12.5px] text-slate-600">The vehicle requisition is updated with the car (Section B) and the gate pass is made — both go to the on-call security supervisor, the gate pass also to the driver.</div>
       </div>
+      )}
     </Drawer>
   )
 }

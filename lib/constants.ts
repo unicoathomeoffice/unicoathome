@@ -213,7 +213,7 @@ export const PAYMENT_METHODS = ['CASH', 'BKASH', 'NAGAD', 'CARD'] as const
 export const PAYMENT_METHOD_LABEL = { CASH: 'Cash', BKASH: 'bKash', NAGAD: 'Nagad', CARD: 'Card' } as const
 
 /** "Service provided by" in the original Google Form */
-export const TRANSPORT_MODES = ['UNICO_CAR', 'RICKSHAW', 'UBER', 'PATHAO', 'OTHER'] as const
+export const TRANSPORT_MODES = ['UNICO_CAR', 'UBER', 'PATHAO', 'CNG', 'RICKSHAW', 'OTHER'] as const
 
 // ---------------------------------------------------------------- patient profile (lists as in H360 registration)
 /** H360 patient types (Registration → Patient Type). Stored as H360 writes them; shown with patientCategoryLabel(). */
@@ -234,13 +234,14 @@ export function isSeniorCitizen(p: { ageYears?: number | null; dob?: string | Da
 }
 
 /** What an alert group (Settings → Notification rules) can be WhatsApped about. Car events are for a Unico car. */
-export const ALERT_EVENTS = ['NEW_REQUEST', 'CAR_REQUESTED', 'CAR_ALLOTTED', 'CAR_DOCS', 'CAR_CHANGED', 'CAR_CANCELLED', 'CAR_OUT', 'CAR_BACK', 'CLAIM'] as const
+export const ALERT_EVENTS = ['NEW_REQUEST', 'CAR_REQUESTED', 'CAR_ALLOTTED', 'CAR_DOCS', 'CAR_OWN', 'CAR_CHANGED', 'CAR_CANCELLED', 'CAR_OUT', 'CAR_BACK', 'CLAIM'] as const
 export type AlertEvent = (typeof ALERT_EVENTS)[number]
 export const ALERT_EVENT_LABEL: Record<AlertEvent, string> = {
   NEW_REQUEST: 'New request',
   CAR_REQUESTED: 'Car requested',
   CAR_ALLOTTED: 'Car & driver allotted',
   CAR_DOCS: 'Requisition & gate pass (PDF)',
+  CAR_OWN: 'No car · own transport + petty cash',
   CAR_CHANGED: 'Trip time changed',
   CAR_CANCELLED: 'Trip cancelled',
   CAR_OUT: 'Car left hospital',
@@ -248,9 +249,10 @@ export const ALERT_EVENT_LABEL: Record<AlertEvent, string> = {
   CLAIM: 'Expense claims (PDF)',
 }
 /** the transport + security events (everything except new requests) */
-export const CAR_EVENTS: AlertEvent[] = ['CAR_REQUESTED', 'CAR_ALLOTTED', 'CAR_DOCS', 'CAR_CHANGED', 'CAR_CANCELLED', 'CAR_OUT', 'CAR_BACK', 'CLAIM']
+export const CAR_EVENTS: AlertEvent[] = ['CAR_REQUESTED', 'CAR_ALLOTTED', 'CAR_DOCS', 'CAR_OWN', 'CAR_CHANGED', 'CAR_CANCELLED', 'CAR_OUT', 'CAR_BACK', 'CLAIM']
 export const TRANSPORT_MODE_LABEL = {
   UNICO_CAR: 'Unico @ Home car',
+  CNG: 'CNG',
   RICKSHAW: 'Rickshaw',
   UBER: 'Uber',
   PATHAO: 'Pathao',

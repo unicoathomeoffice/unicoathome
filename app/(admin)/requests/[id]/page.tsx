@@ -151,7 +151,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   // ---- "Act for the team" (override) + car & any driver
   const canOverride = can(user, 'requests.override')
   const canCar = canOverride || can(user, 'transport.manage')
-  const carRelevant = canCar && r.transport?.needed && (!r.transport.mode || r.transport.mode === 'UNICO_CAR')
+  const carRelevant = canCar && r.transport?.needed // own transport can switch back to a car, so load cars either way
   const [carList, driverList] =
     carRelevant || canOverride
       ? await Promise.all([
@@ -283,6 +283,13 @@ export default async function RequestDetailPage({ params, searchParams }: { para
           cars={carList.map((c: any) => ({ id: String(c._id), name: c.name, plate: c.plate, driverId: c.driverId ? String(c.driverId) : undefined, status: c.status }))}
           drivers={driverList.map((d: any) => ({ id: String(d._id), name: d.name, phone: d.phone }))}
           openChecklist={(r.visit?.checklist ?? []).filter((c: any) => c.mandatory && !c.done).length}
+          team={[r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean).map((t: any) => ({ id: String(t.id), name: t.name }))}
+          area={r.patientSnapshot?.area}
+          defaultAmount={(settings.transportDocs as any)?.pettyCash?.defaultAmount}
+          cashGiven={(() => {
+            const g = [...(r.pettyCash ?? [])].reverse().find((x: any) => x.voucherNo && x.status === 'APPROVED')
+            return g ? { amount: g.amount, mode: g.mode } : null
+          })()}
         />
         {tab === 'overview' && r.transport?.needed && (!r.transport.mode || r.transport.mode === 'UNICO_CAR') && status !== 'CANCELLED' && (
           <TransportDocsBox

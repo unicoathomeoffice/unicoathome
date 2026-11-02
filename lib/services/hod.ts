@@ -1,7 +1,7 @@
 import 'server-only'
 import { HomecareRequest, MessageLog, ServiceType, User, Vehicle } from '../models'
 import { getSettings, HOD_CATEGORIES, type HodContact, type HodGroup } from '../settings'
-import { CAR_EVENTS, type AlertEvent } from '../constants'
+import { CAR_EVENTS, TRANSPORT_MODE_LABEL, type AlertEvent } from '../constants'
 import { getTemplate, renderTemplate, waNumber } from '../messaging'
 import { canQueue } from '../wa/status'
 import { time as fmtTime } from '../format'
@@ -19,7 +19,11 @@ const SYSTEM_GROUPS: HodGroup[] = [
 ]
 
 /** What a group hears about; groups saved before events existed get new requests only. */
-export const eventsOf = (g: HodGroup): AlertEvent[] => (g.events?.length ? g.events : ['NEW_REQUEST'])
+export const eventsOf = (g: HodGroup): AlertEvent[] => {
+  const ev: AlertEvent[] = g.events?.length ? g.events : ['NEW_REQUEST']
+  // groups saved before "own transport" existed: whoever hears about a cancelled trip also hears that no car goes
+  return ev.includes('CAR_CANCELLED') && !ev.includes('CAR_OWN') ? [...ev, 'CAR_OWN'] : ev
+}
 
 /** Groups + contacts, upgrading the first version (contacts keyed by category, no groups) on the fly. */
 export function hodConfig(cfg: { enabled: boolean; groups?: HodGroup[]; contacts: HodContact[] }) {
@@ -54,8 +58,9 @@ export async function groupRecipients(event: Exclude<AlertEvent, 'NEW_REQUEST'>)
   return out
 }
 
-export type CarEvent = 'CAR_REQUESTED' | 'CAR_ALLOTTED' | 'CAR_CHANGED' | 'CAR_CANCELLED' | 'CAR_OUT' | 'CAR_BACK'
+export type CarEvent = 'CAR_REQUESTED' | 'CAR_ALLOTTED' | 'CAR_CHANGED' | 'CAR_CANCELLED' | 'CAR_OUT' | 'CAR_BACK' | 'CAR_OWN'
 const CAR_TEMPLATE: Record<CarEvent, string> = {
+  CAR_OWN: 'car_own',
   CAR_REQUESTED: 'car_requested',
   CAR_ALLOTTED: 'car_allotted',
   CAR_CHANGED: 'car_changed',
@@ -68,11 +73,11 @@ const CAR_TEMPLATE: Record<CarEvent, string> = {
  * WhatsApp the Security / Transport (or any) groups about a Unico car event on a request. CAR_OUT / CAR_BACK go once
  * per request and number (the driver's leg stamp and the team's live tracking can both report them).
  */
-export async function carAlert(event: CarEvent, requestId: unknown, extra: { reason?: string; at?: Date } = {}) {
+export async function carAlert(event: CarEvent, requestId: unknown, extra: { reason?: string; at?: Date; amount?: string } = {}) {
   const key = CAR_TEMPLATE[event]
   const r = await HomecareRequest.findById(requestId).lean<any>()
   if (!r?.transport?.needed) return 0
-  if (r.transport.mode && r.transport.mode !== 'UNICO_CAR') return 0 // own transport: no hospital car involved
+  if (event !== 'CAR_OWN' && r.transport.mode && r.transport.mode !== 'UNICO_CAR') return 0 // own transport: no hospital car involved
   const to = await groupRecipients(event)
   if (!to.length || !(await canQueue())) return 0
   if ((await getTemplate(key)).isActive === false) return 0
@@ -90,6 +95,8 @@ export async function carAlert(event: CarEvent, requestId: unknown, extra: { rea
     returnTime: r.transport.returnAt ? fmtTime(r.transport.returnAt) : '—',
     eventTime: fmtTime(extra.at ?? new Date()),
     reason: extra.reason ?? r.cancellation?.reason ?? '',
+    transportMode: (TRANSPORT_MODE_LABEL as Record<string, string>)[r.transport.mode] ?? r.transport.mode ?? '',
+    amount: extra.amount ?? '',
   }
   const { queueWhatsApp } = await import('../wa/service')
   let sent = 0

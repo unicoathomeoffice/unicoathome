@@ -681,8 +681,19 @@ export function VisitTab({
                     <div className="text-slate-500">
                       {who(people, p.requestedBy)} · {dateTime(p.requestedAt)}
                       {p.note && ` · ${p.note}`}
-                      {p.decidedBy && ` · ${p.status.toLowerCase()} by ${who(people, p.decidedBy)}`}
+                      {p.decidedBy && ` · ${p.voucherNo ? 'given' : p.status.toLowerCase()} by ${who(people, p.decidedBy)}`}
                     </div>
+                    {p.voucherNo && (
+                      <div className="mt-0.5">
+                        {p.voucherId ? (
+                          <a href={`/api/v1/attachments/${p.voucherId}`} target="_blank" rel="noreferrer" className="font-semibold text-primary-700 hover:underline">
+                            Voucher {p.voucherNo} (PDF)
+                          </a>
+                        ) : (
+                          <span className="text-slate-500">Voucher {p.voucherNo} · being made…</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {p.status === 'PENDING' && canDecide ? (
                     <>

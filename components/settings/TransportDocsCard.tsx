@@ -9,7 +9,7 @@ import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
 
 type Sup = { id: string; name: string; phone: string; from: string; to: string; active: boolean }
-type Cfg = { sendRequisition: boolean; sendGatePass: boolean; vehicleType: 'Car' | 'Micro' | 'Ambulance'; approverId: string; emailCopy: string; supervisors: Sup[] }
+type Cfg = { sendRequisition: boolean; sendGatePass: boolean; vehicleType: 'Car' | 'Micro' | 'Ambulance'; approverId: string; emailCopy: string; supervisors: Sup[]; pettyCash: { name: string; phone: string; defaultAmount: number } }
 const newId = () => Math.random().toString(36).slice(2, 10)
 
 export function TransportDocsCard({ initial, approvers, waPaired, approverSigned }: { initial: Cfg; approvers: { id: string; name: string; sub: string }[]; waPaired: boolean; approverSigned: boolean | null }) {
@@ -24,7 +24,7 @@ export function TransportDocsCard({ initial, approvers, waPaired, approverSigned
   async function save() {
     setBusy(true)
     try {
-      await api('/settings', { method: 'PATCH', body: { key: 'transportDocs', value: { ...v, emailCopy: v.emailCopy.trim(), supervisors: v.supervisors.map((s) => ({ ...s, name: s.name.trim(), phone: s.phone.trim() })) } } })
+      await api('/settings', { method: 'PATCH', body: { key: 'transportDocs', value: { ...v, emailCopy: v.emailCopy.trim(), pettyCash: { name: v.pettyCash.name.trim(), phone: v.pettyCash.phone.trim(), defaultAmount: Math.round(v.pettyCash.defaultAmount || 0) }, supervisors: v.supervisors.map((s) => ({ ...s, name: s.name.trim(), phone: s.phone.trim() })) } } })
       toast('Car requisition settings saved', 'ok')
       router.refresh()
     } catch (e: any) {
@@ -108,6 +108,25 @@ export function TransportDocsCard({ initial, approvers, waPaired, approverSigned
           <span className="hc-label">Email copy (optional)</span>
           <input className="hc-input" type="email" value={v.emailCopy} onChange={(e) => setV({ ...v, emailCopy: e.target.value })} placeholder="ruhul.security@unicohospitals.com" />
         </label>
+      </div>
+      <div className="mt-4 rounded-lg bg-slate-50 p-3.5">
+        <div className="text-[14px] font-semibold">Petty cash · when no car is free</div>
+        <div className="mb-2 text-[12px] text-slate-500">Request page → Car & driver → “Car not available”: the voucher PDF goes on WhatsApp to the staff member and to this cash counter.</div>
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_140px]">
+          <label>
+            <span className="hc-label">Cash counter / accounts</span>
+            <input className="hc-input" value={v.pettyCash.name} onChange={(e) => setV({ ...v, pettyCash: { ...v.pettyCash, name: e.target.value } })} placeholder="Accounts / cash counter" />
+          </label>
+          <label>
+            <span className="hc-label">Their WhatsApp</span>
+            <input className="hc-input" inputMode="tel" value={v.pettyCash.phone} onChange={(e) => setV({ ...v, pettyCash: { ...v.pettyCash, phone: e.target.value } })} placeholder="01XXXXXXXXX" />
+          </label>
+          <label>
+            <span className="hc-label">Usual amount (৳)</span>
+            <input className="hc-input" inputMode="numeric" value={String(v.pettyCash.defaultAmount ?? '')} onChange={(e) => setV({ ...v, pettyCash: { ...v.pettyCash, defaultAmount: Number(e.target.value.replace(/\D/g, '') || 0) } })} />
+          </label>
+        </div>
+        {v.pettyCash.phone && v.pettyCash.phone.replace(/\D/g, '').length < 10 && <div className="mt-1 text-[12px] text-[#B91C1C]">Enter a full mobile number.</div>}
       </div>
       {bad.length > 0 && <div className="mt-2 text-[12.5px] text-[#B91C1C]">Give every supervisor a name and a full mobile number.</div>}
       <button type="button" onClick={save} disabled={busy || !dirty || bad.length > 0} className={btnClass('p', 'md', 'mt-4')}>

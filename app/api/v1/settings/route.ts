@@ -123,6 +123,11 @@ export const PATCH = route(
           approverId: z.string().max(40),
           emailCopy: z.union([z.string().email(), z.literal('')]),
           supervisors: z.array(z.object({ id: z.string().min(1).max(40), name: z.string().trim().min(2).max(80), phone: z.string().trim().refine((v) => v.replace(/[^0-9]/g, '').length >= 10, 'Enter a full mobile number'), from: HM2, to: HM2, active: z.boolean() })).max(20),
+          pettyCash: z.object({
+            name: z.string().trim().max(80),
+            phone: z.string().trim().refine((v) => !v || v.replace(/[^0-9]/g, '').length >= 10, 'Enter a full mobile number'),
+            defaultAmount: z.number().int().min(0).max(50000),
+          }),
         })
         .partial()
         .strict()

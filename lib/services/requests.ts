@@ -931,7 +931,7 @@ export async function decidePettyCash(r: any, pettyCashId: string, approve: bool
 
 // ============================================================== transport
 export const TransportInput = z.object({
-  mode: z.enum(['UNICO_CAR', 'RICKSHAW', 'UBER', 'PATHAO', 'OTHER']),
+  mode: z.enum(['UNICO_CAR', 'UBER', 'PATHAO', 'CNG', 'RICKSHAW', 'OTHER']),
   vehicleId: z.string().optional(),
   driverId: z.string().optional(),
   pickupTime: z.string().optional(), // HH:mm (same day as visit)

@@ -287,6 +287,10 @@ const RequestSchema = new Schema<any>(
         status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'], default: 'PENDING' },
         decidedBy: { type: ObjectId, ref: 'User' },
         decidedAt: Date,
+        // given by a coordinator when no hospital car is free (lib/services/pettycash.ts): own transport + voucher
+        mode: String,
+        voucherNo: String,
+        voucherId: { type: ObjectId, ref: 'Attachment' },
       },
     ],
     billing: {
@@ -412,7 +416,7 @@ const AttachmentSchema = new Schema<any>(
     ownerType: { type: String, enum: ['REQUEST', 'PATIENT', 'USER', 'CHAT'] },
     ownerId: { type: ObjectId, index: true },
     requestId: { type: ObjectId, ref: 'HomecareRequest', index: true },
-    kind: { type: String, enum: ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'INVOICE', 'REQUISITION', 'GATE_PASS', 'CLAIM', 'RECEIPT', 'AVATAR', 'OTHER'] },
+    kind: { type: String, enum: ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'INVOICE', 'REQUISITION', 'GATE_PASS', 'CLAIM', 'RECEIPT', 'AVATAR', 'VOUCHER', 'OTHER'] },
     filename: String,
     mime: String,
     size: Number,

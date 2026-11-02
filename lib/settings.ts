@@ -96,6 +96,8 @@ export const DEFAULT_SETTINGS = {
     emailCopy: '' as string, // e.g. ruhul.security@unicohospitals.com
     /** on-call security supervisors; from/to = shift (HH:MM, may cross midnight); empty = always on call */
     supervisors: [] as { id: string; name: string; phone: string; from: string; to: string; active: boolean }[],
+    /** no car free → own transport: who pays the petty cash (gets the voucher on WhatsApp) and the usual amount */
+    pettyCash: { name: 'Accounts / cash counter', phone: '', defaultAmount: 600 },
   },
   /** WhatsApp sending safety for the QR-paired hospital number (lib/wa/guard.ts) — keeps it looking like a careful
    *  person: rate limits with a warm-up, pauses and "typing…", number check, no duplicates, quiet hours, STOP opt-out,

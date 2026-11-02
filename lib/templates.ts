@@ -47,6 +47,9 @@ export const PLACEHOLDERS = [
   'pickupTime',
   'returnTime',
   'eventTime',
+  'transportMode',
+  'amount',
+  'cashCounter',
 ] as const
 
 export const DEFAULT_TEMPLATES: TemplateDef[] = [
@@ -193,6 +196,22 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     audience: 'Department',
     subject: 'Trip cancelled · {requestNo}',
     body: 'Trip CANCELLED · {requestNo}\nThe home visit on {date} ({slot}) is cancelled — the car is not needed.\nVehicle: {vehicle} · driver {driverName}\nReason: {reason}\n— Unico HomeCare',
+  },
+  {
+    key: 'car_own',
+    name: 'No car · own transport → Security / Transport',
+    channel: ['WHATSAPP'],
+    audience: 'Department',
+    subject: 'No hospital car · {requestNo}',
+    body: 'No hospital car for {requestNo} — the team goes by {transportMode}.\nVisit: {date}, {slot}\nTo: {address}\nPetty cash: {amount} given\n— Unico HomeCare',
+  },
+  {
+    key: 'petty_cash',
+    name: 'Petty cash given → staff',
+    channel: ['WHATSAPP'],
+    audience: 'Staff',
+    subject: 'Petty cash {amount} · {requestNo}',
+    body: 'Dear {staffName}, petty cash {amount} is approved for your transport ({transportMode}) to the home visit on {date}, {slot}.\nTo: {address}\nCollect it from {cashCounter} with the voucher attached.\n— Unico HomeCare',
   },
   {
     key: 'car_out',

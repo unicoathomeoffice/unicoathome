@@ -234,7 +234,15 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
               </span>
               <div>
                 <div className="font-semibold">{r.transport.status === 'REQUESTED' ? 'Car requested' : r.transport.mode ? TRANSPORT_MODE_LABEL[r.transport.mode as 'UBER'] : 'Own transport'}</div>
-                <div className="text-[12px] text-slate-500">{r.transport.status === 'REQUESTED' ? 'Waiting for the car supervisor to assign a car' : 'Own arrangement · claim fare via petty cash if needed'}</div>
+                <div className="text-[12px] text-slate-500">
+                  {r.transport.status === 'REQUESTED'
+                    ? 'Waiting for the car supervisor to assign a car'
+                    : (() => {
+                        // petty cash given by the coordinator when no car was free (voucher on WhatsApp)
+                        const g = [...(r.pettyCash ?? [])].reverse().find((x: any) => x.voucherNo && x.status === 'APPROVED')
+                        return g ? `No car free · petty cash ৳${Math.round(g.amount).toLocaleString('en-IN')} approved · voucher ${g.voucherNo}` : 'Own arrangement · claim fare via petty cash if needed'
+                      })()}
+                </div>
               </div>
             </div>
           )}
