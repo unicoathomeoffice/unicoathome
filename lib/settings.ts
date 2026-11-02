@@ -15,6 +15,8 @@ export const DEFAULT_SETTINGS = {
     hospitalPhone: process.env.HOSPITAL_PHONE ?? '+880 1841-996655',
     address: 'Plot 1, Road 12, Dhaka',
     workingHours: { from: '08:00', to: '20:00' },
+    /** pin of the hospital: return-trip tracking ends when staff come within radiusM of it */
+    hospitalLocation: { lat: null as number | null, lng: null as number | null, radiusM: 150 },
     slots: [...SLOTS] as string[],
   },
   /** Public online booking (home page): slot grid, capacity and closures — managed in Settings → Online booking */
@@ -65,7 +67,23 @@ export const DEFAULT_SETTINGS = {
     enabled: true,
     contacts: [] as HodContact[],
   },
-  features: { autoAssign: false, gpsRequiredCheckIn: false, otpConfirmation: true, transportModule: true, pettyCash: true },
+  features: {
+    autoAssign: false,
+    gpsRequiredCheckIn: false, // no GPS fix → check-in blocked
+    checkInGpsLocked: true, // GPS always attached at check-in; staff get no switch to turn it off
+    liveTracking: true, // share location from Start journey to check-in (and back to the hospital)
+    shareTrackingWithPatient: true, // the patient gets a live tracking link on WhatsApp
+    otpConfirmation: true,
+    transportModule: true,
+    pettyCash: true,
+  },
+  /** short WhatsApp update after each visit (lib/services/updates.ts) */
+  visitUpdates: {
+    enabled: true,
+    toHods: true, // heads of the visit's service categories (hodAlerts list)
+    extra: [] as { id: string; name: string; phone: string }[], // more WhatsApp numbers (managers…)
+    toPatient: false, // a friendlier summary for the patient
+  },
   quietHours: { from: '22:00', to: '07:00' },
   /** E4 notification matrix: event → recipients → channels */
   notificationRules: {

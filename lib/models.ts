@@ -238,6 +238,7 @@ const RequestSchema = new Schema<any>(
       overtimeMin: Number,
       remarks: String,
       reportAt: Date,
+      updateSentAt: Date, // automatic visit update (WhatsApp) went out — sent once
     },
     transport: {
       needed: { type: Boolean, default: false },
@@ -284,6 +285,24 @@ const RequestSchema = new Schema<any>(
     // public booking form: how the address/location was given (GPS, map search, hand-placed pin or typed)
     intake: { _id: false, locationSource: { type: String, enum: ['gps', 'search', 'pin', 'typed'] }, accuracyM: Number, autoFields: [String] },
     remarks: String,
+    // live location while the team travels: phase OUT (start journey → check-in) and RETURN (check-out → hospital)
+    tracking: {
+      _id: false,
+      active: Boolean,
+      phase: { type: String, enum: ['OUT', 'RETURN'] },
+      userId: { type: ObjectId, ref: 'User' },
+      lat: Number,
+      lng: Number,
+      accuracyM: Number,
+      heading: Number,
+      speed: Number, // m/s from the device
+      at: Date,
+      startedAt: Date,
+      shareToken: { type: String, select: false }, // public tracking link /t/:token (patient)
+      lostNotifiedAt: Date,
+    },
+    // the way back after check-out (Settings → General → hospital location)
+    returnTrip: { _id: false, startedAt: Date, reachedAt: Date, reachedBy: { type: String, enum: ['geofence', 'button', 'next_visit', 'timeout'] }, distanceKm: Number, durationMin: Number },
     createdBy: { type: ObjectId, ref: 'User' },
     version: { type: Number, default: 0 },
     deletedAt: Date,
@@ -291,6 +310,8 @@ const RequestSchema = new Schema<any>(
   opts,
 )
 RequestSchema.index({ status: 1, scheduledAt: 1 })
+RequestSchema.index({ 'tracking.active': 1, 'tracking.userId': 1 }, { partialFilterExpression: { 'tracking.active': true } })
+RequestSchema.index({ 'tracking.shareToken': 1 }, { sparse: true })
 RequestSchema.index({ 'assignment.primaryStaffId': 1, status: 1, scheduledAt: 1 })
 RequestSchema.index({ 'assignment.secondaryStaffIds': 1, scheduledAt: 1 })
 RequestSchema.index({ patientId: 1, createdAt: -1 })
@@ -563,6 +584,25 @@ const IntegrationSecretSchema = new Schema<any>({
   _id: String, encrypted: { type: String, required: true, select: false }, updatedBy: { type: ObjectId, ref: 'User' },
 }, opts)
 export const IntegrationSecret = model('IntegrationSecret', IntegrationSecretSchema, 'integration_secrets')
+
+// ---------------------------------------------------------------- live location pings (tracking trail)
+const LocationPingSchema = new Schema<any>(
+  {
+    requestId: { type: ObjectId, ref: 'HomecareRequest', required: true },
+    userId: { type: ObjectId, ref: 'User', required: true },
+    phase: { type: String, enum: ['OUT', 'RETURN'] },
+    lat: Number,
+    lng: Number,
+    accuracyM: Number,
+    heading: Number,
+    speed: Number,
+    at: { type: Date, default: Date.now },
+  },
+  { versionKey: false },
+)
+LocationPingSchema.index({ requestId: 1, at: 1 })
+LocationPingSchema.index({ at: 1 }, { expireAfterSeconds: 30 * 86400 }) // trails are kept 30 days
+export const LocationPing = model('LocationPing', LocationPingSchema, 'location_pings')
 
 // map / geocoding provider call ledger (lib/maps-usage.ts): one row per day × provider × kind
 const ApiUsageSchema = new Schema<any>({ day: { type: String, required: true }, provider: { type: String, required: true }, kind: { type: String, required: true }, n: { type: Number, default: 0 } }, opts)

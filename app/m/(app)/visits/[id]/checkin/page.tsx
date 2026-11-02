@@ -19,7 +19,7 @@ export default async function CheckIn({ params }: { params: Promise<{ id: string
   return (
     <MScreen header={<FHeader back={vHref(id)} title="Check-in" sub={`${r.requestNo} · ${r.patientSnapshot?.name}`} />}>
       <Col>
-      <CheckInForm id={id} status={r.status} scheduledAt={r.scheduledAt} patient={r.patientSnapshot?.name} area={r.patientSnapshot?.area} address={address} lateAfter={s.sla.lateAfterMin} />
+      <CheckInForm id={id} status={r.status} scheduledAt={r.scheduledAt} patient={r.patientSnapshot?.name} area={r.patientSnapshot?.area} address={address} lateAfter={s.sla.lateAfterMin} gpsLocked={s.features.checkInGpsLocked !== false} gpsRequired={!!s.features.gpsRequiredCheckIn} />
       </Col>
     </MScreen>
   )

@@ -24,5 +24,5 @@ export function proxy(req: NextRequest) {
 
 export const config = {
   // `.*\..*` = any path with a file extension (hero.jpg, icons, fonts…): static files are never gated
-  matcher: ['/((?!api|_next|login|m/login|m/forgot|feedback|privacy|terms|join|my/login|my/register|my/complete|icons|.*\\..*).*)'],
+  matcher: ['/((?!api|_next|login|m/login|m/forgot|feedback|privacy|terms|join|t/|my/login|my/register|my/complete|icons|.*\\..*).*)'],
 }

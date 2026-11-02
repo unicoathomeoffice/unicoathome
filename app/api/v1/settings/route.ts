@@ -83,6 +83,20 @@ export const PATCH = route(
       if (!r.success) throw bad(`Department heads: ${r.error.issues[0]?.message}`)
       input.value = r.data
     }
+    if (input.key === 'visitUpdates') {
+      const r = z
+        .object({
+          enabled: z.boolean(),
+          toHods: z.boolean(),
+          toPatient: z.boolean(),
+          extra: z.array(z.object({ id: z.string().min(1).max(40), name: z.string().trim().min(2).max(80), phone: z.string().trim().refine((v) => v.replace(/[^0-9]/g, '').length >= 10, 'Enter a full mobile number') })).max(30),
+        })
+        .partial()
+        .strict()
+        .safeParse(input.value)
+      if (!r.success) throw bad(`Visit updates: ${r.error.issues[0]?.message}`)
+      input.value = r.data
+    }
     if (input.key === 'booking') {
       const r = BookingPatch.safeParse(input.value)
       if (!r.success) throw bad(`Booking: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`)

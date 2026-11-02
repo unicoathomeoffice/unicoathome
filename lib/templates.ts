@@ -35,6 +35,8 @@ export const PLACEHOLDERS = [
   'loginLink',
   'priority',
   'requestLink',
+  'trackLink',
+  'summary',
 ] as const
 
 export const DEFAULT_TEMPLATES: TemplateDef[] = [
@@ -84,7 +86,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Patient',
     subject: 'Your care team is on the way',
-    body: '{staffName} ({designation}) is on the way to your home. — Unico Hospitals',
+    body: '{staffName} ({designation}) is on the way to your home.\nTrack live: {trackLink}\n— Unico Hospitals',
   },
   {
     key: 'patient_arrived',
@@ -149,6 +151,22 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     audience: 'Department',
     subject: 'New home care request · {requestNo}',
     body: 'Dear {staffName} ({designation}), a new home care request needs assignment.\nRequest: {requestNo} · {priority}\nService: {serviceType}\nPatient: {patientName} ({age}/{gender}) · {patientPhone}\nAddress: {address}\nPreferred: {date}, {slot}\nOpen: {requestLink}\n— Unico HomeCare',
+  },
+  {
+    key: 'visit_update',
+    name: 'Visit update (short summary)',
+    channel: ['WHATSAPP'],
+    audience: 'Department',
+    subject: 'Visit update · {requestNo}',
+    body: '{summary}\n— Unico HomeCare',
+  },
+  {
+    key: 'patient_visit_summary',
+    name: 'Visit summary for the patient',
+    channel: ['WHATSAPP'],
+    audience: 'Patient',
+    subject: 'Your home visit summary · {requestNo}',
+    body: '{summary}\nQuestions? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',
   },
   {
     key: 'auth_code',

@@ -7,6 +7,7 @@ import { api, Toggle, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { MsgStatus } from '@/components/comms/MessageBits'
 import { cx } from '@/lib/format'
+import { PinPicker } from '@/components/client/maps'
 import { GmailConnection } from './GmailConnection'
 import { WhatsAppConnection, type WaStatus } from './WhatsAppConnection'
 import type { GmailStatus } from '@/lib/gmail-types'
@@ -67,7 +68,7 @@ function Row({ label, children }: { label: ReactNode; children: ReactNode }) {
 }
 
 // ---------------------------------------------------------------- General
-type General = { hospitalName: string; department: string; hospitalPhone: string; address: string; workingHours: { from: string; to: string }; slots: string[] }
+type General = { hospitalName: string; department: string; hospitalPhone: string; address: string; workingHours: { from: string; to: string }; slots: string[]; hospitalLocation?: { lat: number | null; lng: number | null; radiusM: number } }
 export function GeneralCard({ initial }: { initial: General }) {
   const [v, setV] = useState(initial)
   const { save, busy } = useSave('general')
@@ -103,8 +104,28 @@ export function GeneralCard({ initial }: { initial: General }) {
           Edit slots
         </Link>
       </div>
+      <div className="hc-label mt-3">Hospital location · return trips end here</div>
+      <PinPicker
+        height={180}
+        lat={v.hospitalLocation?.lat ?? null}
+        lng={v.hospitalLocation?.lng ?? null}
+        onChange={(p) => setV({ ...v, hospitalLocation: { radiusM: v.hospitalLocation?.radiusM ?? 150, lat: p?.lat ?? null, lng: p?.lng ?? null } })}
+      />
+      <div className="mt-2 flex items-center gap-2 text-[13px] text-slate-600">
+        Arrived when within
+        <input
+          type="number"
+          min={50}
+          max={1000}
+          step={10}
+          className="hc-input h-9 w-20 px-2"
+          value={v.hospitalLocation?.radiusM ?? 150}
+          onChange={(e) => setV({ ...v, hospitalLocation: { lat: v.hospitalLocation?.lat ?? null, lng: v.hospitalLocation?.lng ?? null, radiusM: Math.max(50, Math.min(1000, Number(e.target.value) || 150)) } })}
+        />
+        m of the pin
+      </div>
       <div className="mt-auto pt-4">
-        <SaveBtn busy={busy} disabled={!dirty} onClick={() => save({ hospitalName: v.hospitalName, department: v.department, hospitalPhone: v.hospitalPhone, address: v.address, workingHours: v.workingHours }, 'General settings saved')} />
+        <SaveBtn busy={busy} disabled={!dirty} onClick={() => save({ hospitalName: v.hospitalName, department: v.department, hospitalPhone: v.hospitalPhone, address: v.address, workingHours: v.workingHours, hospitalLocation: v.hospitalLocation }, 'General settings saved')} />
       </div>
     </SCard>
   )
@@ -265,7 +286,10 @@ export function WhatsAppCard({ initial, envCountry, status, autoSend }: { initia
 // ---------------------------------------------------------------- Features
 const FEATURES: { key: string; label: string; note?: string }[] = [
   { key: 'autoAssign', label: 'Auto-assign ROUTINE requests', note: 'Phase 4' },
-  { key: 'gpsRequiredCheckIn', label: 'GPS required at check-in' },
+  { key: 'checkInGpsLocked', label: 'Always attach GPS at check-in', note: 'staff can’t switch it off' },
+  { key: 'gpsRequiredCheckIn', label: 'Block check-in without a GPS fix' },
+  { key: 'liveTracking', label: 'Live location while travelling', note: 'start journey → check-in, and back to the hospital' },
+  { key: 'shareTrackingWithPatient', label: 'Send the patient a live tracking link' },
   { key: 'otpConfirmation', label: 'OTP patient confirmation' },
   { key: 'transportModule', label: 'Transport module (cars & drivers)' },
   { key: 'pettyCash', label: 'Petty cash requests' },

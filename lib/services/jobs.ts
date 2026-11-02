@@ -67,7 +67,23 @@ export async function sweep(force = false) {
     await notifyRoles(['HC_ADMIN'], { type: 'OVERDUE', title: `${r.requestNo} overdue`, body: `Check-in ${mins} min past ${r.patientSnapshot?.name}`, requestId: r._id, url: `/requests/${r._id}`, priority: 'high' })
     overdue++
   }
-  return { timeouts, overdue }
+
+  // live tracking: tell the coordinators once when a travelling phone goes silent for 3 min
+  let lost = 0
+  const silent = await HomecareRequest.find({ 'tracking.active': true, 'tracking.lostNotifiedAt': null, $or: [{ 'tracking.at': { $lt: new Date(now.getTime() - 3 * 60_000) } }, { 'tracking.at': null, 'tracking.startedAt': { $lt: new Date(now.getTime() - 3 * 60_000) } }] })
+    .select('requestNo patientSnapshot tracking')
+    .lean<any[]>()
+  for (const r of silent) {
+    await HomecareRequest.updateOne({ _id: r._id }, { $set: { 'tracking.lostNotifiedAt': now } })
+    const who = r.tracking?.userId ? await User.findById(r.tracking.userId).select('name').lean<any>() : null
+    await notifyRoles(['HC_ADMIN'], { type: 'OVERDUE', title: `Live location lost · ${r.requestNo}`, body: `${who?.name ?? 'Staff'} ${r.tracking?.phase === 'RETURN' ? 'returning to the hospital' : `on the way to ${r.patientSnapshot?.name}`} — no location for 3+ min`, requestId: r._id, url: `/requests/${r._id}` })
+    lost++
+  }
+  // ways back still open after 4 h: closed without an arrival time
+  const { finishReturn } = await import('./tracking')
+  const stale = await HomecareRequest.find({ 'tracking.active': true, 'tracking.phase': 'RETURN', 'returnTrip.startedAt': { $lt: new Date(now.getTime() - 4 * 3600_000) } }).select('_id').lean<any[]>()
+  for (const r of stale) await finishReturn(r._id, 'timeout')
+  return { timeouts, overdue, lost, returnsClosed: stale.length }
 }
 
 /** Reminders T-2h and T-30min to the assigned staff (in-app). */

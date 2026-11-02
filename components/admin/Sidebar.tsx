@@ -2,7 +2,7 @@
 import Link, { useLinkStatus } from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Suspense, use, useEffect, useState } from 'react'
-import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X } from 'lucide-react'
+import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X, MapPinned } from 'lucide-react'
 import { cx } from '@/lib/format'
 import { api } from '@/components/client/api'
 import type { Permission } from '@/lib/constants'
@@ -15,6 +15,7 @@ type Perm = Permission | ((perms: Permission[]) => boolean)
 const NAV: { href: string; label: string; icon: any; countKey?: string; perm?: Perm }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: Home },
   { href: '/requests', label: 'Requests', icon: KanbanSquare, countKey: 'open', perm: 'requests.readAll' },
+  { href: '/live', label: 'Live map', icon: MapPinned, perm: 'requests.readAll' },
   { href: '/patients', label: 'Patients', icon: Users, perm: 'requests.readAll' },
   { href: '/staff', label: 'Staff', icon: UserRound, perm: 'users.read' },
   { href: '/reports', label: 'Reports', icon: BarChart3, perm: 'reports.view' },

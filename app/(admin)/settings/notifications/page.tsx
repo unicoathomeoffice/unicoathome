@@ -8,6 +8,7 @@ import { NotificationRules } from '@/components/settings/NotificationRules'
 import { canOpenSettings } from '@/lib/constants'
 import { ExtraRecipients } from '@/components/settings/ExtraRecipients'
 import { HodContacts } from '@/components/settings/HodContacts'
+import { VisitUpdateSettings } from '@/components/settings/VisitUpdateSettings'
 import { activeServices } from '@/lib/cached'
 import { isPaired, pairedPhone } from '@/lib/wa/status'
 
@@ -29,6 +30,9 @@ export default async function NotificationRulesPage() {
       />
       <div className="mt-5 max-w-[1200px]">
         <HodContacts initial={JSON.parse(JSON.stringify(s.hodAlerts))} services={byCat} wa={{ paired, phone }} />
+      </div>
+      <div className="mt-5 max-w-[900px]">
+        <VisitUpdateSettings initial={JSON.parse(JSON.stringify(s.visitUpdates))} />
       </div>
       <div className="mt-5 max-w-[900px]">
         <ExtraRecipients initial={JSON.parse(JSON.stringify(s.emailCopies ?? {}))} />

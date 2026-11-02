@@ -8,7 +8,7 @@ import { AssignmentLog, Attachment, AuditLog, ChatMessage, HomecareRequest, LabR
 import { canView, slaInfo, withPeople } from '@/lib/services/requests'
 import { getSettings } from '@/lib/settings'
 import { initialsOf, isoDay, dayRange, dayNum, time, dur, date } from '@/lib/format'
-import { ROLE_LABEL, TRANSPORT_MODE_LABEL, canResendMessages, isCoordinator, type Role, type Status } from '@/lib/constants'
+import { ROLE_LABEL, TRANSPORT_MODE_LABEL, can, canResendMessages, isCoordinator, type Role, type Status } from '@/lib/constants'
 import { ActionBar, EditRequestButton, type ReqLite } from '@/components/request-detail/actions'
 import { LivePill } from '@/components/request-detail/widgets'
 import { AssignmentTab, AttachmentsTab, AuditTab, MessagesTab, OverviewTab, TimelineTab, VisitTab } from '@/components/request-detail/tabs'
@@ -16,6 +16,9 @@ import { ACTIVE_VISIT, availableActions, collectUserIds, permsFor, type People }
 import type { AssignProps } from '@/components/assign/AssignDrawer'
 import { isPaired } from '@/lib/wa/status'
 import { ConfirmationStatus } from '@/components/request-detail/PatientWhatsApp'
+import { LiveTrackingCard } from '@/components/request-detail/LiveTrackingCard'
+import { VisitUpdateCard } from '@/components/request-detail/VisitUpdateCard'
+import { liveView } from '@/lib/services/tracking'
 
 export const metadata = { title: 'Request detail' }
 
@@ -221,6 +224,17 @@ export default async function RequestDetailPage({ params, searchParams }: { para
         </div>
         {!['NEW', 'VERIFIED', 'CANCELLED'].includes(status) && (
           <ConfirmationStatus requestId={id} wa={lite.wa} last={confirmMsg ? { status: confirmMsg.status, at: new Date(confirmMsg.at).toISOString(), error: confirmMsg.error, provider: confirmMsg.provider } : null} />
+        )}
+        {tab === 'overview' && r.tracking?.phase && (
+          <LiveTrackingCard
+            requestId={id}
+            initial={plain(await liveView(r))}
+            staffName={people[String(r.tracking.userId)]?.name ?? r.primaryStaff?.name ?? 'Staff'}
+            times={plain({ left: t.enRouteAt ?? null, arrived: t.checkInAt ?? null, out: t.checkOutAt ?? null, back: r.returnTrip?.reachedAt ?? null, backBy: r.returnTrip?.reachedBy ?? null, returnKm: r.returnTrip?.distanceKm ?? null })}
+          />
+        )}
+        {tab === 'overview' && t.checkInAt && (
+          <VisitUpdateCard requestId={id} waPaired={waPaired} canSend={can(user, 'messages.send')} autoSentAt={r.visit?.updateSentAt ? new Date(r.visit.updateSentAt).toISOString() : null} />
         )}
         <Tabs items={tabItems} active={tab} />
         {tab === 'overview' && (

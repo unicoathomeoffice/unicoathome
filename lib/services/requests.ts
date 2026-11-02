@@ -21,6 +21,7 @@ import { isPaired } from '../wa/status'
 import { getSettings, ruleAllows } from '../settings'
 import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, dayRange } from '../format'
 import type { SessionUser } from '../auth'
+import { closeOpenReturns, startOut, startReturn, stopTracking } from './tracking'
 
 type Meta = { ip?: string; userAgent?: string; client?: string }
 const url = (id: unknown) => `/requests/${id}`
@@ -105,6 +106,7 @@ export async function templateVars(r: any, staffId?: unknown) {
     totalCount: (r.visit?.checklist ?? []).length,
     priority: r.priority ? r.priority[0] + String(r.priority).slice(1).toLowerCase() : '',
     requestLink: `${base}/requests/${r._id}`,
+    trackLink: r.tracking?.shareToken ? `${base}/t/${r.tracking.shareToken}` : '',
   }
 }
 
@@ -475,6 +477,7 @@ export const CancelInput = z.object({ reason: z.string().min(2) })
 export async function cancel(r: any, input: z.infer<typeof CancelInput>, user: SessionUser, meta: Meta) {
   const from = move(r, 'CANCELLED', 'cancelledAt')
   r.cancellation = { reason: input.reason, by: user.id, at: new Date() }
+  stopTracking(r)
   await r.save()
   await audit(user, 'request.cancel', 'request', r._id, { before: { status: from }, after: { status: 'CANCELLED', reason: input.reason }, label: r.requestNo }, meta)
   background(async () => {
@@ -559,9 +562,15 @@ export async function enRoute(r: any, input: z.infer<typeof Stamp>, user: Sessio
   requireTeam(user, r)
   move(r, 'EN_ROUTE', 'enRouteAt')
   deviceStamp(r, user, 'en_route', input.deviceAt, input.offline)
+  const s = await getSettings()
+  const token = s.features.liveTracking ? startOut(r, user.id) : null
   await r.save()
-  await audit(user, 'visit.en_route', 'request', r._id, { after: { status: 'EN_ROUTE' }, label: r.requestNo }, meta)
-  background(() => notifyRoles(['HC_ADMIN'], { type: 'EN_ROUTE', title: `${user.name} is on the way`, body: `${r.requestNo} · ${r.patientSnapshot.name}`, requestId: r._id, url: url(r._id) }))
+  await audit(user, 'visit.en_route', 'request', r._id, { after: { status: 'EN_ROUTE', tracking: !!token }, label: r.requestNo }, meta)
+  background(async () => {
+    await closeOpenReturns(user.id, r._id) // left straight from the last visit: that way back is over
+    await notifyRoles(['HC_ADMIN'], { type: 'EN_ROUTE', title: `${user.name} is on the way`, body: `${r.requestNo} · ${r.patientSnapshot.name}`, requestId: r._id, url: url(r._id) })
+    if (token && s.features.shareTrackingWithPatient) await whatsappPatient(r, 'patient_en_route', user, user.id)
+  })
 }
 
 export async function checkIn(r: any, input: z.infer<typeof Stamp>, user: SessionUser, meta: Meta) {
@@ -570,6 +579,7 @@ export async function checkIn(r: any, input: z.infer<typeof Stamp>, user: Sessio
   if (s.features.gpsRequiredCheckIn && (input.lat == null || input.lng == null)) throw bad('GPS location is required to check in')
   const now = new Date()
   move(r, 'IN_PROGRESS', 'checkInAt', now)
+  stopTracking(r)
   r.set('visit.checkIn', { at: now, lat: input.lat, lng: input.lng, accuracyM: input.accuracyM, deviceAt: input.deviceAt ? new Date(input.deviceAt) : undefined, offline: input.offline })
   const late = minutesBetween(r.scheduledAt, now)
   r.set('visit.lateMin', late != null && late > 0 ? late : 0)
@@ -705,9 +715,18 @@ export async function checkOut(r: any, input: z.infer<typeof CheckOutInput>, use
   if (input.transportMode) r.set('transport.mode', input.transportMode)
   if (input.remarks != null) r.set('visit.remarks', input.remarks)
   deviceStamp(r, user, 'check_out', input.deviceAt, input.offline)
-  await audit(user, 'visit.check_out', 'request', r._id, { after: { at: now, durationMin: duration, billAmount: input.billAmount, billingStatus: input.billingStatus }, label: r.requestNo }, meta)
+  const returning = await startReturn(r, user.id) // way back to the hospital (live tracking + hospital pin set)
+  await audit(user, 'visit.check_out', 'request', r._id, { after: { at: now, durationMin: duration, billAmount: input.billAmount, billingStatus: input.billingStatus, returnTracking: returning }, label: r.requestNo }, meta)
   if (input.complete !== false) await completeVisit(r, user, meta)
   else await r.save()
+}
+
+/** "Reached hospital" button on the field app (the geofence usually does this on its own). */
+export async function reachedHospital(r: any, user: SessionUser, meta: Meta) {
+  requireTeam(user, r)
+  const { finishReturn } = await import('./tracking')
+  if (!(await finishReturn(r._id, 'button'))) throw conflict('NO_RETURN_TRIP', 'This visit has no open way back')
+  await audit(user, 'visit.returned', 'request', r._id, { after: { by: 'button' }, label: r.requestNo }, meta)
 }
 
 export async function completeVisit(r: any, user: SessionUser, meta: Meta) {
@@ -724,6 +743,11 @@ export async function completeVisit(r: any, user: SessionUser, meta: Meta) {
     await notifyRoles(['HC_ADMIN'], { type: 'COMPLETED', title: `${r.requestNo} completed`, body: `${user.name} · ${r.patientSnapshot.name} · ${r.visit.durationMin} min · report ready`, requestId: r._id, url: url(r._id) })
     await emailPatient(r, 'patient_completed', user)
     await whatsappPatient(r, 'patient_completed', user)
+    // no way back to track (tracking off / no hospital pin): the short visit update goes out now instead
+    if (!r.tracking?.active) {
+      const { sendVisitUpdate } = await import('./updates')
+      await sendVisitUpdate(r._id, 'auto')
+    }
     const s = await getSettings()
     if (s.email.sendDepartmentReport && s.email.departmentCc.length && ruleAllows(s.notificationRules, 'COMPLETED', 'DEPARTMENT', 'email')) {
       const vars = await templateVars(r, r.assignment?.primaryStaffId)

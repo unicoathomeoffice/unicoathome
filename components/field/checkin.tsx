@@ -2,7 +2,7 @@
 // M07 Check-in: live time stamp preview, punctuality, optional GPS with accuracy, one confirm.
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, CheckCircle2, Loader2, LocateOff } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, LocateOff, Lock, RefreshCw } from 'lucide-react'
 import { stamp, Toggle, useToast } from '@/components/client'
 import { MapBox, MapEmbed, Avatar } from '@/components/ui'
 import { cx, time } from '@/lib/format'
@@ -11,7 +11,8 @@ import { BottomBar, bigBtn } from './bar'
 
 type Fix = { lat: number; lng: number; acc: number } | null
 
-export function CheckInForm({ id, scheduledAt, patient, area, address, lateAfter = 10, status }: { id: string; scheduledAt?: string; patient: string; area?: string; address?: string; lateAfter?: number; status: string }) {
+/** gpsLocked (Settings, default on): GPS always attached, no switch for staff. gpsRequired: no fix → no check-in. */
+export function CheckInForm({ id, scheduledAt, patient, area, address, lateAfter = 10, status, gpsLocked = true, gpsRequired = false }: { id: string; scheduledAt?: string; patient: string; area?: string; address?: string; lateAfter?: number; status: string; gpsLocked?: boolean; gpsRequired?: boolean }) {
   const router = useRouter()
   const toast = useToast()
   const [now, setNow] = useState(() => Date.now())
@@ -20,6 +21,7 @@ export function CheckInForm({ id, scheduledAt, patient, area, address, lateAfter
   const [gpsState, setGpsState] = useState<'idle' | 'locating' | 'ok' | 'error'>('idle')
   const [gpsErr, setGpsErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [retry, setRetry] = useState(0)
 
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -46,11 +48,13 @@ export function CheckInForm({ id, scheduledAt, patient, area, address, lateAfter
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 },
     )
     return () => navigator.geolocation.clearWatch(w)
-  }, [gps])
+  }, [gps, retry])
 
   const late = scheduledAt ? Math.round((now - new Date(scheduledAt).getTime()) / 60000) : null
   const isLate = late != null && late > lateAfter
-  const canCheckIn = ['ACCEPTED', 'EN_ROUTE'].includes(status)
+  const statusOk = ['ACCEPTED', 'EN_ROUTE'].includes(status)
+  const waitingGps = gpsRequired && !(gpsState === 'ok' && fix)
+  const canCheckIn = statusOk && !waitingGps
 
   async function confirm() {
     setBusy(true)
@@ -126,10 +130,26 @@ export function CheckInForm({ id, scheduledAt, patient, area, address, lateAfter
       <div className="rounded-card bg-white px-4 py-3.5 shadow-card">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[15px] font-semibold">Attach GPS position</div>
-            <div className="text-[12px] text-slate-500">{gps && gpsState === 'error' ? `${gpsErr} · you can still check in` : 'Optional · stored with the timestamp'}</div>
+            <div className="text-[15px] font-semibold">{gpsLocked ? 'GPS position attached' : 'Attach GPS position'}</div>
+            <div className={cx('text-[12px]', gpsState === 'error' ? 'text-[#B91C1C]' : 'text-slate-500')}>
+              {gpsState === 'error'
+                ? `${gpsErr}${gpsRequired ? ' · turn on location to check in' : ' · you can still check in'}`
+                : gpsLocked
+                  ? `Set by admin · stored with the timestamp${fix && gpsState === 'ok' ? ` · ±${fix.acc} m` : ''}`
+                  : 'Optional · stored with the timestamp'}
+            </div>
           </div>
-          <Toggle on={gps} onChange={setGps} label="Attach GPS position" />
+          {gpsLocked ? (
+            gpsState === 'error' ? (
+              <button type="button" onClick={() => setRetry((n) => n + 1)} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-[13px] font-semibold text-slate-700">
+                <RefreshCw size={15} /> Retry
+              </button>
+            ) : (
+              <Lock size={18} className="flex-none text-slate-400" aria-label="Set by admin" />
+            )
+          ) : (
+            <Toggle on={gps} onChange={setGps} label="Attach GPS position" />
+          )}
         </div>
       </div>
       <div className="text-center text-[12px] leading-[18px] text-slate-400">Works offline. The time is stamped from your device and reconciled when you reconnect.</div>
@@ -137,7 +157,7 @@ export function CheckInForm({ id, scheduledAt, patient, area, address, lateAfter
       <BottomBar>
         <button type="button" disabled={busy || !canCheckIn} onClick={confirm} className={bigBtn(canCheckIn ? 'p' : 'd')}>
           {busy && <Loader2 size={18} className="animate-spin" />}
-          {canCheckIn ? `Confirm check-in · ${time(now)}` : status === 'IN_PROGRESS' ? 'Already checked in' : 'Accept the visit first'}
+          {canCheckIn ? `Confirm check-in · ${time(now)}` : statusOk && waitingGps ? (gpsState === 'error' ? 'Turn on location to check in' : 'Waiting for GPS…') : status === 'IN_PROGRESS' ? 'Already checked in' : 'Accept the visit first'}
         </button>
       </BottomBar>
     </>

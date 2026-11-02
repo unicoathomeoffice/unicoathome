@@ -280,8 +280,8 @@ export async function requestsCsv(input: ReportFilter) {
   const head = [
     'Request no', 'Status', 'Priority', 'Source', 'Requested at', 'Patient', 'UHID', 'Phone', 'Age', 'Gender', 'Zone', 'Address',
     'Services', 'Tests / procedures', 'Primary staff', 'Team', 'Driver', 'Vehicle', 'Scheduled at', 'Slot',
-    'Confirmed at', 'Assigned at', 'Accepted at', 'En route at', 'Check-in at', 'Check-out at', 'Completed at', 'Closed at', 'Cancelled at',
-    'Response (min)', 'Assignment (min)', 'Acceptance (min)', 'Late (min)', 'Visit duration (min)', 'Turnaround (min)', 'Report lag (min)',
+    'Confirmed at', 'Assigned at', 'Accepted at', 'En route at', 'Check-in at', 'Check-out at', 'Back at hospital', 'Completed at', 'Closed at', 'Cancelled at',
+    'Response (min)', 'Assignment (min)', 'Acceptance (min)', 'Late (min)', 'Visit duration (min)', 'Travel out (min)', 'Travel back (min)', 'Total time out (min)', 'Turnaround (min)', 'Report lag (min)',
     'Declines', 'Bill amount', 'Billing status', 'Payment method', 'Invoice no', 'Invoice amount', 'Invoice printed',
     'Transport mode', 'Petty cash approved', 'Rating', 'Feedback', 'Cancel reason',
   ]
@@ -295,9 +295,10 @@ export async function requestsCsv(input: ReportFilter) {
       (r.services ?? []).map((x: any) => x.name).join('; '), (r.tests ?? []).join('; '),
       r.primaryStaff?.name, [r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean).map((p: any) => p.name).join('; '),
       r.driver?.name, r.vehicle ? `${r.vehicle.name ?? ''} ${r.vehicle.plate ?? ''}`.trim() : '', dt(r.scheduledAt), r.slot ?? r.preferred?.slot,
-      dt(t.confirmedAt), dt(assignedAt), dt(acceptedAt), dt(t.enRouteAt), dt(t.checkInAt), dt(t.checkOutAt), dt(t.completedAt), dt(t.closedAt), dt(t.cancelledAt),
+      dt(t.confirmedAt), dt(assignedAt), dt(acceptedAt), dt(t.enRouteAt), dt(t.checkInAt), dt(t.checkOutAt), dt(r.returnTrip?.reachedAt), dt(t.completedAt), dt(t.closedAt), dt(t.cancelledAt),
       mins(t.requestedAt, t.confirmedAt), mins(t.confirmedAt, assignedAt), mins(assignedAt, acceptedAt), mins(r.scheduledAt, t.checkInAt),
-      r.visit?.durationMin ?? mins(t.checkInAt, t.checkOutAt), mins(t.requestedAt, t.completedAt), mins(t.completedAt, t.closedAt),
+      r.visit?.durationMin ?? mins(t.checkInAt, t.checkOutAt), mins(t.enRouteAt, t.checkInAt), mins(t.checkOutAt, r.returnTrip?.reachedAt), mins(t.enRouteAt, r.returnTrip?.reachedAt),
+      mins(t.requestedAt, t.completedAt), mins(t.completedAt, t.closedAt),
       (r.assignment?.declines ?? []).length,
       r.billing?.billAmount, r.billing?.status, r.billing?.method ? (PAYMENT_METHOD_LABEL as any)[r.billing.method] : '', r.billing?.invoiceNo, r.billing?.invoiceAmount,
       r.billing?.invoicePrinted == null ? '' : r.billing.invoicePrinted ? 'Yes' : 'No',

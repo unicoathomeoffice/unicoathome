@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   AlarmClock,
+  Building2,
   CalendarClock,
   ChevronRight,
   ClipboardList,
@@ -29,6 +30,7 @@ import { DECLINE_REASONS, PETTY_CASH_PURPOSES } from '@/lib/constants'
 import { cx, time, relDay, mmss, taka, dur } from '@/lib/format'
 import { bigBtn } from './bar'
 import { sendOrQueue, LiveCountdown as Countdown, BodyPortal } from './live'
+import { ensureLocation } from './LiveShare'
 
 const svcName = (r: any) => (r.services ?? []).map((s: any) => s.name).join(' + ')
 const dedupe = (a?: string) => (a ? [...new Set(a.split(/,\s*/))].join(', ') : '')
@@ -179,6 +181,8 @@ export function VisitActionBar({
   ckTotal,
   autoRespond,
   canFollowUp,
+  liveTracking = false,
+  autoOnTheWay = false,
 }: {
   r: any
   team: boolean
@@ -189,6 +193,10 @@ export function VisitActionBar({
   ckTotal: number
   autoRespond?: boolean
   canFollowUp?: boolean
+  /** Settings → live tracking on: location permission is required to start the journey */
+  liveTracking?: boolean
+  /** the patient already got "on the way" + tracking link automatically: skip the WhatsApp prompt */
+  autoOnTheWay?: boolean
 }) {
   const router = useRouter()
   const [sheet, setSheet] = useState(false)
@@ -223,10 +231,17 @@ export function VisitActionBar({
           onClick={async () => {
             setBusy(true)
             try {
+              if (liveTracking) {
+                const loc = await ensureLocation()
+                if (!loc.ok) {
+                  toast(loc.message, 'err')
+                  return
+                }
+              }
               const at = new Date()
               const res = await sendOrQueue(`/requests/${id}/en-route`, stamp(), { label: 'Start journey' })
-              toast(res.queued ? `Journey start saved offline · ${time(at)}` : `Journey started · ${time(at)}`, 'ok')
-              setJourney(time(at))
+              toast(res.queued ? `Journey start saved offline · ${time(at)}` : `Journey started · ${time(at)}${liveTracking ? ' · live location on' : ''}`, 'ok')
+              if (!autoOnTheWay || res.queued) setJourney(time(at))
               router.refresh()
             } catch (e: any) {
               toast(e.message, 'err')
@@ -254,6 +269,28 @@ export function VisitActionBar({
         <Link href={`/m/visits/${id}/checkout`} className={cx(big, 'bg-[#16A34A]')}>
           <LogOut size={18} /> Check out
         </Link>
+      )
+    else if (['COMPLETED', 'CLOSED'].includes(r.status) && r.tracking?.active && r.tracking?.phase === 'RETURN')
+      main = (
+        <button
+          type="button"
+          disabled={busy}
+          className={cx(big, 'bg-navy disabled:opacity-60')}
+          onClick={async () => {
+            setBusy(true)
+            try {
+              await api(`/requests/${id}/returned`, { body: {} })
+              toast(`Back at the hospital · ${time(new Date())}`, 'ok')
+              router.refresh()
+            } catch (e: any) {
+              toast(e.message, 'err')
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          {busy ? <Loader2 size={18} className="animate-spin" /> : <Building2 size={18} />} Reached hospital
+        </button>
       )
     else if (['COMPLETED', 'CLOSED'].includes(r.status) && canFollowUp)
       main = (

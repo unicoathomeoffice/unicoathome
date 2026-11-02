@@ -7,6 +7,7 @@ import { Avatar, Progress, Tag, telUrl } from '@/components/ui'
 import { FHeader, HeadChips, TimelineStepper, PatientCard, SectionLabel, checklistStats, svcName, vHref, ReadOnlyNote } from '@/components/field'
 import { loadVisit, coordinatorOnDuty } from '@/components/field/data'
 import { VisitActionBar, OverflowMenu, TimerWidget, PettyCash } from '@/components/field/visit'
+import { isPaired } from '@/lib/wa/status'
 import { TestsCard } from '@/components/field/tests'
 import { LabResult, User } from '@/lib/models'
 import { can, TRANSPORT_MODE_LABEL, PAYMENT_METHOD_LABEL, STATUS_LABEL } from '@/lib/constants'
@@ -33,11 +34,12 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
   const { id } = await params
   const sp = await searchParams
   const { user, r, patient, team, primary, attachments } = await loadVisit(id, { attachments: true })
-  const [settings, coord, labs, assignedBy] = await Promise.all([
+  const [settings, coord, labs, assignedBy, waPaired] = await Promise.all([
     getSettings(),
     coordinatorOnDuty(),
     LabResult.find({ requestId: r._id }).select('test status flag value unit summary').lean<any[]>(),
     r.assignment?.assignedBy ? User.findById(r.assignment.assignedBy).select('name').lean<any>() : null,
+    isPaired(),
   ])
   const ck = checklistStats(r)
   const t = r.timeline ?? {}
@@ -65,6 +67,8 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
           ckTotal={ck.total}
           autoRespond={sp.respond === '1' || r.status === 'ASSIGNED'}
           canFollowUp={canFollowUp}
+          liveTracking={!!settings.features.liveTracking}
+          autoOnTheWay={!!settings.features.liveTracking && !!settings.features.shareTrackingWithPatient && waPaired}
         />
       }
     >
