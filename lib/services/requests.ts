@@ -16,7 +16,7 @@ import {
 import { ApiError, bad, conflict, forbidden, notFound } from '../api'
 import { audit } from '../audit'
 import { can, FIELD_ROLES, TRANSITIONS, VITALS, type Status, hasRole, hasAnyRole } from '../constants'
-import { background, getTemplate, notifyRoles, notifyUsers, queueEmail, renderTemplate } from '../messaging'
+import { background, getTemplate, notifyRoles, notifyUsers, queueEmail, renderTemplate, waNumber } from '../messaging'
 import { isPaired } from '../wa/status'
 import { getSettings, ruleAllows } from '../settings'
 import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, dayRange } from '../format'
@@ -103,6 +103,34 @@ export async function templateVars(r: any, staffId?: unknown) {
     durationMin: r.visit?.durationMin ?? '',
     doneCount: (r.visit?.checklist ?? []).filter((c: any) => c.done).length,
     totalCount: (r.visit?.checklist ?? []).length,
+    priority: r.priority ? r.priority[0] + String(r.priority).slice(1).toLowerCase() : '',
+    requestLink: `${base}/requests/${r._id}`,
+  }
+}
+
+/** WhatsApp the heads of department of the request's service categories (Settings → Notification rules →
+ *  Department heads). One message per person even when they head several of the categories. */
+export async function notifyHods(r: any) {
+  const s = await getSettings()
+  const cfg = s.hodAlerts
+  if (!cfg?.enabled || !cfg.contacts?.length) return
+  const types = await ServiceType.find({ _id: { $in: (r.services ?? []).map((x: any) => x.serviceTypeId).filter(Boolean) } }).select('category').lean<any[]>()
+  const cats = new Set(types.map((t) => String(t.category ?? '').toLowerCase()))
+  const seen = new Set<string>()
+  const to = cfg.contacts.filter((c) => {
+    const n = waNumber(c.phone)
+    if (!c.active || !n || !cats.has(c.category.toLowerCase()) || seen.has(n)) return false
+    seen.add(n)
+    return true
+  })
+  if (!to.length) return
+  const def = await getTemplate('hod_new_request')
+  if (def.isActive === false || !(await isPaired())) return
+  const { queueWhatsApp } = await import('../wa/service')
+  const vars = await templateVars(r)
+  for (const c of to) {
+    const { text } = await renderTemplate('hod_new_request', { ...vars, staffName: c.name, designation: c.designation })
+    await queueWhatsApp({ to: c.phone, toName: `${c.name} (${c.designation})`, text, templateKey: 'hod_new_request', requestId: r._id })
   }
 }
 
@@ -296,6 +324,8 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
     createdBy: user.id,
   })
   await audit(user, 'request.create', 'request', r._id, { after: { requestNo: r.requestNo, patient: patient.name, services: services.map((s) => s.name), priority: r.priority }, label: r.requestNo }, meta)
+  // heads of department hear about every new request except visits generated from a care plan
+  if (!r.carePlanId) background(() => notifyHods(r))
   background(() =>
     notifyRoles(
       ['HC_ADMIN'],

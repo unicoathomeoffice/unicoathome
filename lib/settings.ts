@@ -4,6 +4,9 @@ import { Setting } from './models'
 import { SLOTS } from './constants'
 import { forget, memo } from './memo'
 
+export const HOD_CATEGORIES = ['Doctor', 'Nursing', 'Lab', 'Physio'] as const
+export type HodContact = { id: string; category: (typeof HOD_CATEGORIES)[number]; name: string; designation: string; phone: string; active: boolean }
+
 /** Non-secret configuration editable from Settings (W15 / A5). Secrets stay in env vars. */
 export const DEFAULT_SETTINGS = {
   general: {
@@ -56,6 +59,12 @@ export const DEFAULT_SETTINGS = {
   whatsapp: { defaultCountry: process.env.WA_DEFAULT_COUNTRY ?? '880', mode: 'deeplink' as 'deeplink' | 'cloud' | 'baileys', autoSend: true },
   /** extra email addresses that get a copy of the patient's message per event (Settings → Notification rules) */
   emailCopies: {} as Record<string, string[]>,
+  /** WhatsApp alert to the heads of department when a new request comes in (Settings → Notification rules).
+   *  category = ServiceType.category (Doctor · Nursing · Lab · Physio); several people per category. */
+  hodAlerts: {
+    enabled: true,
+    contacts: [] as HodContact[],
+  },
   features: { autoAssign: false, gpsRequiredCheckIn: false, otpConfirmation: true, transportModule: true, pettyCash: true },
   quietHours: { from: '22:00', to: '07:00' },
   /** E4 notification matrix: event → recipients → channels */

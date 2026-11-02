@@ -33,6 +33,8 @@ export const PLACEHOLDERS = [
   'totalCount',
   'code',
   'loginLink',
+  'priority',
+  'requestLink',
 ] as const
 
 export const DEFAULT_TEMPLATES: TemplateDef[] = [
@@ -139,6 +141,14 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     audience: 'Admin',
     subject: 'Home care daily digest · {date}',
     body: '{notes}',
+  },
+  {
+    key: 'hod_new_request',
+    name: 'New request → head of department',
+    channel: ['WHATSAPP'],
+    audience: 'Department',
+    subject: 'New home care request · {requestNo}',
+    body: 'Dear {staffName} ({designation}), a new home care request needs assignment.\nRequest: {requestNo} · {priority}\nService: {serviceType}\nPatient: {patientName} ({age}/{gender}) · {patientPhone}\nAddress: {address}\nPreferred: {date}, {slot}\nOpen: {requestLink}\n— Unico HomeCare',
   },
   {
     key: 'auth_code',

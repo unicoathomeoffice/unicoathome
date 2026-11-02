@@ -246,7 +246,7 @@ export function WhatsAppCard({ initial, envCountry, status, autoSend }: { initia
   const [cc, setCc] = useState(initial.defaultCountry)
   const { save, busy } = useSave('whatsapp')
   return (
-    <SCard title="WhatsApp" sub="Hospital WhatsApp by QR · automatic messages">
+    <SCard id="whatsapp" title="WhatsApp" sub="Hospital WhatsApp by QR · automatic messages">
       <WhatsAppConnection initial={status} autoSend={autoSend} />
       <div className="mt-3 border-t border-slate-100 pt-3 text-[12.5px] text-slate-500">When not connected, staff tap “WhatsApp” on a request → the message opens pre-filled on their phone → they tap Send. Every message is logged either way.</div>
       <label className="hc-label mt-3">Default country code</label>

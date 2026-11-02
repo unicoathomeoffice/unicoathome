@@ -1,11 +1,12 @@
 import { z } from 'zod'
 import { route, body, clientMeta, forbidden, bad } from '@/lib/api'
 import { can, canOpenSettings } from '@/lib/constants'
-import { getSettings, saveSetting, DEFAULT_SETTINGS } from '@/lib/settings'
+import { getSettings, saveSetting, DEFAULT_SETTINGS, HOD_CATEGORIES } from '@/lib/settings'
 import { emailConfigured, queueEmail } from '@/lib/messaging'
 import { getGmailStatus } from '@/lib/gmail'
 import { audit } from '@/lib/audit'
 import { blobEnabled } from '@/lib/storage'
+import { isPaired } from '@/lib/wa/status'
 
 export const GET = route(async () => {
   const s = await getSettings()
@@ -47,6 +48,26 @@ const BookingPatch = z
   .partial()
   .strict()
 
+const HodPatch = z
+  .object({
+    enabled: z.boolean(),
+    contacts: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(40),
+          category: z.enum(HOD_CATEGORIES),
+          name: z.string().trim().min(2, 'Name is required').max(80),
+          designation: z.string().trim().min(2, 'Designation is required').max(80),
+          phone: z.string().trim().refine((v) => v.replace(/\D/g, '').length >= 10, 'Enter a full mobile number'),
+          active: z.boolean(),
+        }),
+      )
+      .max(80)
+      .refine((list) => HOD_CATEGORIES.every((c) => list.filter((x) => x.category === c).length <= 20), 'At most 20 people per service'),
+  })
+  .partial()
+  .strict()
+
 /** PATCH /api/v1/settings { key: 'sla', value: {...} } — non-secret config only. Online booking: requests.manage. */
 export const PATCH = route(
   async ({ req, user }) => {
@@ -55,6 +76,11 @@ export const PATCH = route(
     if (input.key === 'maps') {
       const r = z.object({ useGoogle: z.boolean(), monthlyFree: z.number().int().min(100).max(1_000_000), reservePct: z.number().int().min(0).max(50), dailyCap: z.union([z.literal('auto'), z.number().int().min(1).max(100_000)]) }).partial().strict().safeParse(input.value)
       if (!r.success) throw bad(`Maps: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`)
+      input.value = r.data
+    }
+    if (input.key === 'hodAlerts') {
+      const r = HodPatch.safeParse(input.value)
+      if (!r.success) throw bad(`Department heads: ${r.error.issues[0]?.message}`)
       input.value = r.data
     }
     if (input.key === 'booking') {
@@ -72,7 +98,14 @@ export const PATCH = route(
 /** POST /api/v1/settings { test: 'email', to } — send a test email */
 export const POST = route(
   async ({ req, user }) => {
-    const input = await body(req, z.object({ test: z.literal('email'), to: z.string().email() }))
+    const input = await body(req, z.discriminatedUnion('test', [z.object({ test: z.literal('email'), to: z.string().email() }), z.object({ test: z.literal('hod'), to: z.string().min(6), name: z.string().max(80).optional() })]))
+    if (input.test === 'hod') {
+      if (!(await isPaired())) throw bad('WhatsApp is not paired — pair it in Settings → WhatsApp first')
+      const { queueWhatsApp } = await import('@/lib/wa/service')
+      const log = await queueWhatsApp({ to: input.to, toName: input.name, text: `Unico HomeCare · test message for ${input.name || 'the department head'}.\nYou will get a WhatsApp like this whenever a new home care request for your service needs assignment.\n— sent by ${user.name}`, templateKey: 'test', initiatedBy: user.id })
+      await audit(user, 'settings.test_whatsapp', 'settings', 'hodAlerts', { after: { to: log.to } }, clientMeta(req, user))
+      return { id: String(log._id), to: log.to }
+    }
     const log = await queueEmail({ to: input.to, subject: 'Unico HomeCare · test email', text: `This is a test email sent by ${user.name} from Settings → Integrations.\n\nIf you can read this, Gmail is configured correctly.`, templateKey: 'test', initiatedBy: user.id })
     await audit(user, 'settings.test_email', 'settings', 'email', { after: { to: input.to } }, clientMeta(req, user))
     return { id: String(log._id), configured: (await emailConfigured()) }
