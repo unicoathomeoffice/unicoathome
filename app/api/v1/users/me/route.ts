@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { route, body, clientMeta, bad } from '@/lib/api'
 import { User, Session } from '@/lib/models'
-import { hashPassword, verifyPassword } from '@/lib/auth'
+import { forgetAuth, hashPassword, verifyPassword } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { plain } from '@/lib/db'
 
@@ -44,5 +44,6 @@ export const PATCH = route(async ({ req, user }) => {
   await u.save()
   if (input.signOutSessionId) await Session.updateOne({ _id: input.signOutSessionId, userId: user.id }, { revokedAt: new Date() })
   if (input.signOutOthers) await Session.updateMany({ userId: user.id, jti: { $ne: user.jti }, revokedAt: null }, { revokedAt: new Date() })
+  forgetAuth() // availability, sign-outs
   return { ok: true }
 })

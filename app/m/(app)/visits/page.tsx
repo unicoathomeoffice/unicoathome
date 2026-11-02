@@ -9,10 +9,11 @@ import { RespondInline } from '@/components/field/visit'
 import { teamFilter, isDesk } from '@/components/field/data'
 import { requireAppUser } from '@/lib/auth'
 import { db, plain } from '@/lib/db'
-import { HomecareRequest, ServiceType } from '@/lib/models'
+import { HomecareRequest } from '@/lib/models'
 import { withPeople } from '@/lib/services/requests'
 import { STATUS_LABEL, type Status } from '@/lib/constants'
 import { cx, day, dayRange, isoDay, relDay } from '@/lib/format'
+import { activeServices } from '@/lib/cached'
 
 export const metadata = { title: 'Visits' }
 
@@ -48,7 +49,7 @@ export default async function Visits({ searchParams }: { searchParams: Promise<S
   else if (seg === 'upcoming') and.push({ scheduledAt: { $gte: end }, status: { $nin: ['NEW', 'VERIFIED', 'CANCELLED', 'COMPLETED', 'CLOSED'] } })
   else and.push({ status: { $in: ['COMPLETED', 'CLOSED'] }, scheduledAt: { $gte: new Date(Date.now() - 60 * 86400_000) } })
   if (sp.status && STATUS_FILTERS.some((s) => s.key === sp.status)) and.push({ status: sp.status === 'COMPLETED' ? { $in: ['COMPLETED', 'CLOSED'] } : sp.status })
-  const types = await ServiceType.find({ isActive: { $ne: false } }).select('code category').lean<any[]>()
+  const types = await activeServices()
   const cats = [...new Set(types.map((t) => t.category).filter(Boolean))] as string[]
   if (sp.cat && cats.includes(sp.cat)) and.push({ 'services.code': { $in: types.filter((t) => t.category === sp.cat).map((t) => t.code) } })
   const q = sp.q?.trim()

@@ -3,6 +3,7 @@ import { can } from '@/lib/constants'
 import { audit } from '@/lib/audit'
 import { plain } from '@/lib/db'
 import { MASTER } from '@/lib/master'
+import { forgetMaster } from '@/lib/cached'
 
 /** GET /api/v1/master/:kind — kinds: departments · designations · zones · service-types · vehicles */
 export const GET = route<{ kind: string }>(async ({ params }) => {
@@ -22,6 +23,7 @@ export const POST = route<{ kind: string }>(async ({ req, user, params }) => {
   if (!can(user, m.perm)) throw forbidden()
   const input = await body(req, m.schema)
   const doc = await m.model.create(input)
+  forgetMaster()
   await audit(user, `${m.entity}.create`, m.entity, doc._id, { after: input, label: (input as any).name ?? (input as any).title ?? (input as any).plate }, clientMeta(req, user))
   return { id: String(doc._id) }
 })

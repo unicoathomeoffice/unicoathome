@@ -6,7 +6,7 @@ import { bad, conflict, forbidden, notFound } from '../api'
 import { audit } from '../audit'
 import { background, notifyRoles, notifyUsers, queueEmail, renderTemplate } from '../messaging'
 import { cancel, decidePettyCash, reschedule } from './requests'
-import type { SessionUser } from '../auth'
+import { forgetAuth, type SessionUser } from '../auth'
 
 type Meta = { ip?: string; userAgent?: string; client?: string }
 
@@ -106,6 +106,7 @@ export async function decideApproval(id: string, input: DecideInput, user: Sessi
       u.status = approve ? 'ACTIVE' : 'SUSPENDED'
       await u.save()
       if (!approve) await Session.updateMany({ userId: u._id, revokedAt: null }, { revokedAt: new Date() })
+      forgetAuth()
       await audit(user, approve ? 'user.active' : 'user.suspended', 'user', u._id, { before: { status: before }, after: { status: u.status }, label: u.name }, meta)
       if (approve && before === 'PENDING') background(() => emailStaffApproved(u))
       if (approve) followUp = `/staff?q=${encodeURIComponent(u.employeeId)}`

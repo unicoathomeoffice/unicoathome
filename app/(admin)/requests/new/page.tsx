@@ -1,11 +1,12 @@
 import { requireWebUser } from '@/lib/auth'
 import { can } from '@/lib/constants'
-import { Counter, HomecareRequest, isOid, Patient, ServiceType, Zone } from '@/lib/models'
+import { Counter, HomecareRequest, isOid, Patient } from '@/lib/models'
 import { getSettings } from '@/lib/settings'
 import { plain } from '@/lib/db'
 import { isoDay } from '@/lib/format'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { RequestForm, type FormPatient } from '@/components/request-form/RequestForm'
+import { activeServices, activeZones } from '@/lib/cached'
 
 export const metadata = { title: 'New request · Unico HomeCare' }
 
@@ -15,8 +16,8 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
   const ymd = isoDay().replace(/-/g, '').slice(2)
   const [settings, services, zones, counter, pre] = await Promise.all([
     getSettings(),
-    ServiceType.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('code name category fee defaultDurationMin').lean<any[]>(),
-    Zone.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('name').lean<any[]>(),
+    activeServices(),
+    activeZones(),
     Counter.findOne({ key: `HC-${ymd}` }).lean<any>(),
     patientId && isOid(patientId) ? Patient.findOne({ _id: patientId, deletedAt: null }).lean<any>() : null,
   ])
@@ -34,7 +35,7 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
         nextNo={`HC-${ymd}-${String((counter?.seq ?? 0) + 1).padStart(4, '0')}`}
         today={isoDay()}
         slots={settings.general.slots}
-        zones={zones.map((z) => z.name)}
+        zones={zones}
         services={services.map((s) => ({ code: s.code, name: s.name, category: s.category ?? '', fee: s.fee ?? 0, duration: s.defaultDurationMin ?? 45 }))}
         initialPatient={patient}
         canConfirm={can(user, 'requests.manage')}

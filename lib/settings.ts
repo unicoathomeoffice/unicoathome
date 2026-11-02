@@ -2,6 +2,7 @@ import 'server-only'
 import { cache } from 'react'
 import { Setting } from './models'
 import { SLOTS } from './constants'
+import { forget, memo } from './memo'
 
 /** Non-secret configuration editable from Settings (W15 / A5). Secrets stay in env vars. */
 export const DEFAULT_SETTINGS = {
@@ -84,11 +85,15 @@ function merge(base: any, over: any): any {
   return out
 }
 
+const SETTINGS_TTL_MS = 30_000
+
+/** Settings rows are read at most every 30 s per instance; saveSetting() clears that at once on this instance.
+ *  Only the configuration keys are loaded (the collection also holds OTPs and other runtime rows). */
 export const getSettings = cache(async function getSettings(): Promise<Settings> {
-  const rows = await Setting.find({}).lean<any[]>()
+  const rows = await memo('settings:rows', SETTINGS_TTL_MS, () => Setting.find({ key: { $in: Object.keys(DEFAULT_SETTINGS) } }).select('key value').lean<any[]>())
   const over: any = {}
   for (const r of rows) over[r.key] = r.value
-  return merge(DEFAULT_SETTINGS, over)
+  return merge(DEFAULT_SETTINGS, structuredClone(over)) // a fresh object per request, never the shared cached rows
 })
 
 /** Map notification types used in code onto the event rows of the E4 matrix. */
@@ -109,4 +114,5 @@ export function ruleAllows(rules: Settings['notificationRules'], event: string, 
 
 export async function saveSetting(key: keyof Settings | string, value: unknown, userId?: string) {
   await Setting.updateOne({ key }, { value, updatedBy: userId }, { upsert: true })
+  forget('settings:')
 }

@@ -1,9 +1,10 @@
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { Suspense, type ReactNode } from 'react'
 import { ChevronLeft, Home, ClipboardList, LayoutGrid, Bell, UserRound, Car, Truck } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import { unreadCount } from '@/lib/unread'
 import { UnreadBadge } from '@/components/client'
+import { LinkPendingBar } from '@/components/client/LinkPending'
 import { cx } from '@/lib/format'
 import { can } from '@/lib/constants'
 import { mapsUrl, telUrl } from '@/components/ui'
@@ -28,19 +29,28 @@ export function tabsFor(user: { role: string; permissions?: string[] | null }): 
 }
 
 async function TabBar({ active }: { active: TabKey }) {
-  const user = (await getUser())!
-  const unread = await unreadCount(user.id)
+  const user = (await getUser())! // already resolved by the page's requireAppUser (per-request cache)
   return (
     <nav className="sticky bottom-0 z-20 flex border-t border-slate-200 bg-white px-2 pb-[max(10px,env(safe-area-inset-bottom))] pt-2">
       {tabsFor(user).map((t) => (
         <Link key={t.key} href={t.href} className={cx('relative flex flex-1 flex-col items-center gap-[3px] text-[11px] transition-colors active:text-primary', t.key === active ? 'font-semibold text-primary' : 'font-medium text-slate-500')}>
+          <LinkPendingBar className="-top-2" />
           <t.icon size={24} strokeWidth={t.key === active ? 2.2 : 2} />
           {t.label}
-          {t.key === 'notifications' && <UnreadBadge initial={unread} className="absolute -top-0.5 left-[calc(50%+4px)]" />}
+          {t.key === 'notifications' && (
+            <Suspense fallback={null}>
+              <Unread userId={user.id} />
+            </Suspense>
+          )}
         </Link>
       ))}
     </nav>
   )
+}
+
+/** Streams in after the tab bar has rendered, so the count query never holds up the screen. */
+async function Unread({ userId }: { userId: string }) {
+  return <UnreadBadge initial={await unreadCount(userId)} className="absolute -top-0.5 left-[calc(50%+4px)]" />
 }
 
 /**

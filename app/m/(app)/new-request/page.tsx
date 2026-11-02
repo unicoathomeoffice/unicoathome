@@ -2,10 +2,11 @@ import { MScreen } from '@/components/mobile'
 import { NewRequestForm } from '@/components/coord/NewRequestForm'
 import { requireAppUser } from '@/lib/auth'
 import { db, plain } from '@/lib/db'
-import { HomecareRequest, Patient, ServiceType, isOid } from '@/lib/models'
+import { HomecareRequest, Patient, isOid } from '@/lib/models'
 import { canView } from '@/lib/services/requests'
 import { can, DESK_ROLES, FIELD_ROLES, ROLE_LABEL, hasAnyRole } from '@/lib/constants'
 import { dhakaParts } from '@/components/coord/data'
+import { activeServices } from '@/lib/cached'
 
 export const metadata = { title: 'New request' }
 
@@ -26,7 +27,7 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
     }
   }
   const [services, patient] = await Promise.all([
-    ServiceType.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('code name fee defaultDurationMin category').lean<any[]>(),
+    activeServices(),
     patientId ? Patient.findOne({ _id: patientId, deletedAt: null }).select('name ageYears gender phone uhid address').lean<any>() : null,
   ])
   const backHref = from ? (isDesk ? `/m/admin/requests/${from.id}` : `/m/visits/${from.id}`) : isDesk ? '/m/admin' : '/m'

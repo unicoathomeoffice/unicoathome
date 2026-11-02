@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto'
 import { db } from './db'
 import { Session } from './models'
 import { sessionProfile } from './session-profile'
+import { forget, memo } from './memo'
 import { can, type Permission, type Role } from './constants'
 
 export const COOKIE = 'hc_session'
@@ -89,20 +90,29 @@ async function readToken(): Promise<string | undefined> {
   return (await cookies()).get(COOKIE)?.value
 }
 
-/** Current user, or null. Validates token, session revocation and account status on every call. */
+const AUTH_TTL_MS = 20_000
+
+/** Clear cached sign-in data after a revocation, suspension or permission change (all sessions when no jti). */
+export function forgetAuth(jti?: string) {
+  forget(jti ? `auth:${jti}` : 'auth:')
+}
+
+/** Current user, or null. Validates token, session revocation and account status (cached for AUTH_TTL_MS). */
 export const getUser = cache(async function getUser(): Promise<SessionUser | null> {
   const token = await readToken()
   if (!token) return null
   const payload = await verifyToken(token)
   if (!payload?.sub || !payload.jti) return null
-  await db()
-  const [session, user] = await Promise.all([
-    Session.findOne({ jti: payload.jti }).select('revokedAt lastSeenAt').lean<any>(),
-    sessionProfile(payload.sub),
-  ])
+  // Session + profile are re-read at most every AUTH_TTL_MS per instance (two Mongo reads saved on almost every
+  // click). Revocation, suspension and role edits call forgetAuth() here; other instances catch up within the TTL.
+  const [session, user] = await memo(`auth:${payload.jti}`, AUTH_TTL_MS, async () => {
+    await db()
+    return Promise.all([Session.findOne({ jti: payload.jti }).select('revokedAt lastSeenAt').lean<any>(), sessionProfile(payload.sub)])
+  })
   if (!session || session.revokedAt || !user || user.status !== 'ACTIVE' || user.deletedAt) return null
   if (!session.lastSeenAt || Date.now() - new Date(session.lastSeenAt).getTime() > 5 * 60_000) {
-    Session.updateOne({ jti: payload.jti }, { lastSeenAt: new Date() }).catch(() => {})
+    session.lastSeenAt = new Date() // the cached copy too, so a warm instance doesn't write on every request
+    Session.updateOne({ jti: payload.jti }, { lastSeenAt: session.lastSeenAt }).catch(() => {})
   }
   const designation = user.designationRecords[0]
   const custom = user.customRoleRecords[0]
@@ -160,7 +170,10 @@ export async function clearSession() {
   const token = (await cookies()).get(COOKIE)?.value
   if (token) {
     const p = await verifyToken(token)
-    if (p?.jti) await Session.updateOne({ jti: p.jti }, { revokedAt: new Date() })
+    if (p?.jti) {
+      await Session.updateOne({ jti: p.jti }, { revokedAt: new Date() })
+      forgetAuth(p.jti)
+    }
   }
   ;(await cookies()).delete(COOKIE)
 }

@@ -1,7 +1,7 @@
 import { requireWebUser } from '@/lib/auth'
 import { after } from 'next/server'
 import { ACTIVE_STATUSES, can, PRIORITIES, STATUS_LABEL, STATUSES, type Status } from '@/lib/constants'
-import { ServiceType, User, Zone } from '@/lib/models'
+import { User } from '@/lib/models'
 import { sweep } from '@/lib/services/jobs'
 import { boardRows, type BoardFilters as Filters } from '@/lib/services/dashboard'
 import { AdminPage } from '@/components/admin/AdminPage'
@@ -9,6 +9,7 @@ import { AutoRefresh } from '@/components/client'
 import { BoardFilters } from '@/components/board/BoardFilters'
 import { KanbanBoard } from '@/components/board/KanbanBoard'
 import { RequestsTable } from '@/components/board/RequestsTable'
+import { activeServices, activeZones } from '@/lib/cached'
 
 export const metadata = { title: 'Requests · Unico HomeCare' }
 
@@ -24,8 +25,8 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
   const filters: Filters = { status: sp.status, priority: sp.priority, service: sp.service, zone: sp.zone, staff: sp.staff, date: sp.date, q: sp.q }
   const [rows, services, zones, staff] = await Promise.all([
     boardRows(filters),
-    ServiceType.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('code name').lean<any[]>(),
-    Zone.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('name').lean<any[]>(),
+    activeServices(),
+    activeZones(),
     User.find({ role: { $in: ['DOCTOR', 'NURSE', 'ALLIED'] }, status: 'ACTIVE', deletedAt: null }).sort({ name: 1 }).select('name').lean<any[]>(),
   ])
   const openCount = rows.filter((r) => ACTIVE_STATUSES.includes(r.status as Status)).length
@@ -40,7 +41,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
     { key: 'priority', label: 'Priority', options: [{ value: '', label: 'all' }, ...PRIORITIES.map((p) => ({ value: p, label: p[0] + p.slice(1).toLowerCase() }))] },
     { key: 'service', label: 'Service', options: withCurrent([{ value: '', label: 'all' }, ...services.map((s) => ({ value: s.code, label: s.name }))], sp.service) },
     { key: 'staff', label: 'Staff', options: withCurrent([{ value: '', label: 'all' }, ...staff.map((u) => ({ value: String(u._id), label: u.name }))], sp.staff, () => 'selected') },
-    { key: 'zone', label: 'Zone', options: withCurrent([{ value: '', label: 'all' }, ...zones.map((z) => ({ value: z.name, label: z.name }))], sp.zone) },
+    { key: 'zone', label: 'Zone', options: withCurrent([{ value: '', label: 'all' }, ...zones.map((z) => ({ value: z, label: z }))], sp.zone) },
     {
       key: 'date',
       label: 'Date',

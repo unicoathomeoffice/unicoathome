@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { Suspense, type ReactNode } from 'react'
 import { Bell, Plus, Search } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import { unreadCount } from '@/lib/unread'
@@ -28,7 +28,6 @@ export async function AdminPage({
   className?: string
 }) {
   const user = (await getUser())!
-  const unread = await unreadCount(user.id)
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-16 flex-none items-center gap-4 border-b border-slate-200 bg-white pl-16 pr-4 lg:px-8">
@@ -52,7 +51,9 @@ export async function AdminPage({
         )}
         <Link href="/notifications" className="relative flex size-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700" aria-label="Notifications">
           <Bell size={18} />
-          <UnreadBadge initial={unread} className="absolute -right-1.5 -top-1.5" />
+          <Suspense fallback={null}>
+            <Unread userId={user.id} />
+          </Suspense>
         </Link>
         <Link href="/account" className="hidden size-10 flex-none items-center justify-center rounded-full bg-teal text-[13px] font-bold text-white sm:flex" title={user.name}>
           {user.initials}
@@ -61,4 +62,9 @@ export async function AdminPage({
       <main className={cx('hc-enter min-h-0 flex-1 overflow-y-auto', pad && 'px-4 py-6 lg:px-8', className)}>{children}</main>
     </div>
   )
+}
+
+/** Streams in after the frame has rendered (same cached count the sidebar uses). */
+async function Unread({ userId }: { userId: string }) {
+  return <UnreadBadge initial={await unreadCount(userId)} className="absolute -right-1.5 -top-1.5" />
 }

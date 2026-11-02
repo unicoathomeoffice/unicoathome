@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { route, body, clientMeta, notFound, bad } from '@/lib/api'
 import { User, Session, Vehicle, HomecareRequest, isOid } from '@/lib/models'
-import { hashPassword } from '@/lib/auth'
+import { forgetAuth, hashPassword } from '@/lib/auth'
 import { audit, diff } from '@/lib/audit'
 import { plain } from '@/lib/db'
 import { UserInput } from '@/lib/schemas'
@@ -56,6 +56,7 @@ export const PATCH = route<{ id: string }>(
       if (input.status === 'ACTIVE') background(() => emailStaffApproved(u))
     }
     if (forceSignOut || input.status === 'SUSPENDED' || resetPassword) await Session.updateMany({ userId: u._id, revokedAt: null }, { revokedAt: new Date() })
+    forgetAuth() // role, permissions, status or sign-out take effect on the next click
     await audit(user, input.status && input.status !== before.status ? `user.${input.status.toLowerCase()}` : 'user.update', 'user', u._id, { ...diff(before, pick(u.toObject())), label: u.name }, clientMeta(req, user))
     if (forceSignOut) await audit(user, 'user.force_sign_out', 'user', u._id, { label: u.name }, clientMeta(req, user))
     return { ok: true, temporaryPassword }

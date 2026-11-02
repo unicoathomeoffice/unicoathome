@@ -3,6 +3,7 @@ import { route, body, clientMeta, notFound, bad } from '@/lib/api'
 import { CustomRole, User, isOid } from '@/lib/models'
 import { PERMISSIONS } from '@/lib/constants'
 import { audit, diff } from '@/lib/audit'
+import { forgetAuth } from '@/lib/auth'
 
 const PERM_KEYS = Object.keys(PERMISSIONS) as [string, ...string[]]
 const Patch = z.object({
@@ -21,6 +22,7 @@ export const PATCH = route<{ id: string }>(
     const before = pick(doc.toObject())
     doc.set(input)
     await doc.save()
+    forgetAuth() // holders get the new permission list on their next click
     await audit(user, 'role.update', 'role', doc._id, { ...diff(before, pick(doc.toObject())), label: doc.name }, clientMeta(req, user))
     return { ok: true }
   },

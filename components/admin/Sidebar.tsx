@@ -1,7 +1,7 @@
 'use client'
-import Link from 'next/link'
+import Link, { useLinkStatus } from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { Suspense, use, useEffect, useState } from 'react'
 import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X } from 'lucide-react'
 import { cx } from '@/lib/format'
 import { api } from '@/components/client/api'
@@ -39,8 +39,12 @@ const SETTINGS_SUB: { href: string; label: string; perm: Perm }[] = [
   { href: '/audit', label: 'Audit log', perm: 'audit.view' },
 ]
 
-export function Sidebar({ user, counts }: { user: NavUser; counts: Record<string, number> }) {
-  const path = usePathname()
+export function Sidebar({ user, counts }: { user: NavUser; counts: Promise<Record<string, number>> }) {
+  const realPath = usePathname()
+  // Optimistic: the clicked item lights up at once, before the next page has rendered
+  const [clicked, setClicked] = useState<string | null>(null)
+  useEffect(() => setClicked(null), [realPath])
+  const path = clicked ?? realPath
   const [menu, setMenu] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const inSettings = path.startsWith('/settings') || path.startsWith('/audit')
@@ -59,22 +63,21 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Record<string
       <nav className="no-scrollbar flex flex-1 flex-col gap-0.5 overflow-y-auto">
         {nav.map((n) => {
           const on = n.label === 'Settings' ? inSettings : active(n.href)
-          const count = n.countKey ? counts[n.countKey] : 0
           return (
             <div key={n.href}>
               <Link
                 href={n.href}
-                onClick={() => setMobileOpen(false)}
+                onClick={() => (setMobileOpen(false), setClicked(n.href))}
                 className={cx('flex h-10 items-center gap-3 rounded-lg px-3 text-sm transition-colors', on ? 'bg-white/[.12] font-semibold text-white' : 'font-medium text-white/75 hover:bg-white/[.06] hover:text-white')}
               >
                 <n.icon size={18} />
                 <span className="flex-1">{n.label}</span>
-                {count > 0 &&
-                  (n.countKey === 'unread' ? (
-                    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#DC2626] px-1.5 text-[11px] font-bold">{count}</span>
-                  ) : (
-                    <span className="text-[12px] text-white/60">{count}</span>
-                  ))}
+                <Pending />
+                {n.countKey && (
+                  <Suspense fallback={null}>
+                    <Count counts={counts} k={n.countKey} />
+                  </Suspense>
+                )}
               </Link>
               {n.label === 'Settings' && inSettings && (
                 <div className="my-1 ml-[21px] flex flex-col gap-0.5 border-l border-white/15 pl-3">
@@ -82,10 +85,11 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Record<string
                     <Link
                       key={s.href}
                       href={s.href}
-                      onClick={() => setMobileOpen(false)}
-                      className={cx('rounded-md px-2.5 py-1.5 text-[13px] transition-colors', path === s.href ? 'bg-white/[.12] font-semibold text-white' : 'text-white/65 hover:text-white')}
+                      onClick={() => (setMobileOpen(false), setClicked(s.href))}
+                      className={cx('flex items-center rounded-md px-2.5 py-1.5 text-[13px] transition-colors', path === s.href ? 'bg-white/[.12] font-semibold text-white' : 'text-white/65 hover:text-white')}
                     >
                       {s.label}
+                      <Pending />
                     </Link>
                   ))}
                 </div>
@@ -142,4 +146,21 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Record<string
       )}
     </>
   )
+}
+
+/** Badge that appears once the layout's count query resolves (the nav itself never waits for it). */
+function Count({ counts, k }: { counts: Promise<Record<string, number>>; k: string }) {
+  const count = use(counts)[k] ?? 0
+  if (count <= 0) return null
+  return k === 'unread' ? (
+    <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#DC2626] px-1.5 text-[11px] font-bold">{count}</span>
+  ) : (
+    <span className="text-[12px] text-white/60">{count}</span>
+  )
+}
+
+/** Spinner inside the clicked link until the next page starts rendering — instant feedback on slow networks. */
+function Pending() {
+  const { pending } = useLinkStatus()
+  return <span aria-hidden className={cx('ml-auto size-3 flex-none rounded-full border-2 border-white/30 border-t-white transition-opacity', pending ? 'animate-spin opacity-100' : 'opacity-0')} />
 }

@@ -4,6 +4,7 @@
 // on the right. On phones the hero is dropped: just the top bar, the booking card and a bottom tab bar. EN / বাংলা; every link / button goes to a real page or section.
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
+import { api } from '@/components/client/api'
 import { ArrowRight, CalendarDays, ChevronDown, Clock3, FlaskConical, HeartPulse, House, LayoutDashboard, LayoutGrid, Menu, Mouse, Phone, ShieldCheck, Smile, Stethoscope, Truck, UserRound, Users, X } from 'lucide-react'
 import { telUrl } from '@/components/ui'
 import { cx } from '@/lib/format'
@@ -13,9 +14,6 @@ import styles from './PublicHome.module.css'
 
 type Props = {
   hospital: { name: string; department: string; phone: string; address: string; hours: string }
-  staff: { href: string; signedIn: boolean }
-  patient: { name: string } | null
-  prefill?: BookingPrefill
   services: { code: string; name: string; category: string }[]
   zones: string[]
   booking: { enabled: boolean; days: BookingDay[] }
@@ -34,7 +32,16 @@ export function PublicHome(p: Props) {
 const pill = 'flex h-10 items-center gap-2 whitespace-nowrap rounded-full bg-white px-4 text-[14px] font-semibold text-navy shadow-card ring-1 ring-slate-200 transition hover:bg-slate-50'
 const roundBtn = 'flex size-11 flex-none items-center justify-center rounded-full transition'
 
-function Page({ hospital: h, staff, patient, prefill, services, zones, booking, legacySlots, bnFont }: Props) {
+type Session = { staff: { href: string; signedIn: boolean }; patient: { name: string } | null; prefill: BookingPrefill | null }
+
+function Page({ hospital: h, services, zones, booking, legacySlots, bnFont }: Props) {
+  // The page is cached for everyone; who is signed in arrives right after first paint.
+  const [session, setSession] = useState<Session>({ staff: { href: '/login', signedIn: false }, patient: null, prefill: null })
+  useEffect(() => {
+    api<Session>('/public/session').then(setSession).catch(() => {})
+  }, [])
+  const { staff, patient } = session
+  const prefill = session.prefill ?? undefined
   const { t, lang } = useLang()
   const panel = useRef<HTMLDivElement>(null)
   const [menu, setMenu] = useState(false)

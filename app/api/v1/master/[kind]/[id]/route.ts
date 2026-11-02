@@ -3,6 +3,7 @@ import { can } from '@/lib/constants'
 import { audit, diff } from '@/lib/audit'
 import { isOid } from '@/lib/models'
 import { MASTER } from '@/lib/master'
+import { forgetMaster } from '@/lib/cached'
 
 export const PATCH = route<{ kind: string; id: string }>(async ({ req, user, params }) => {
   const m = MASTER[params.kind]
@@ -18,6 +19,7 @@ export const PATCH = route<{ kind: string; id: string }>(async ({ req, user, par
   const before = doc.toObject()
   doc.set(input)
   await doc.save()
+  forgetMaster()
   await audit(user, `${m.entity}.update`, m.entity, doc._id, { ...diff(pickKeys(before, input), pickKeys(doc.toObject(), input)), label: doc.name ?? doc.title ?? doc.plate }, clientMeta(req, user))
   return { ok: true }
 })
@@ -33,6 +35,7 @@ export const DELETE = route<{ kind: string; id: string }>(async ({ req, user, pa
   }
   const doc = await m.model.findByIdAndDelete(params.id)
   if (!doc) throw notFound('Record')
+  forgetMaster()
   await audit(user, `${m.entity}.delete`, m.entity, params.id, { before: doc.toObject(), label: doc.name ?? doc.title ?? doc.plate }, clientMeta(req, user))
   return { ok: true }
 })

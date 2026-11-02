@@ -15,3 +15,8 @@ export function memo<T>(key: string, ttlMs: number, load: () => Promise<T>): Pro
   value.catch(() => store.delete(key)) // a failed load is not cached
   return value
 }
+
+/** Drop cached entries whose key starts with `prefix` (this instance only; other instances expire by TTL). */
+export function forget(prefix: string) {
+  for (const k of store.keys()) if (k.startsWith(prefix)) store.delete(k)
+}

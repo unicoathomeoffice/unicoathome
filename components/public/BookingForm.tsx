@@ -76,8 +76,19 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
       })
     } catch {}
   }, [booking.enabled])
+  // A signed-in patient's details arrive after first paint (the page is cached): fill only fields still empty
+  useEffect(() => {
+    if (!prefill) return
+    setF((x) => {
+      const n: any = { ...x }
+      for (const [k, v] of Object.entries(prefill)) if (v != null && v !== '' && (n[k] === '' || n[k] == null)) n[k] = v
+      return n
+    })
+  }, [prefill])
+
   useEffect(() => {
     if (!booking.enabled) return
+    refresh() // the cached page's grid can be up to 30 s old
     const id = setInterval(refresh, 120_000)
     const onVis = () => document.visibilityState === 'visible' && refresh()
     document.addEventListener('visibilitychange', onVis)
