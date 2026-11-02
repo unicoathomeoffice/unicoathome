@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Check, ChevronDown, Copy, Loader2, RefreshCw, Send } from 'lucide-react'
 import { api, useToast } from '@/components/client'
+import { useConfirmSend } from '@/components/client/ConfirmSend'
 import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
 
@@ -16,6 +17,7 @@ export function VisitUpdateCard({ requestId, waPaired, canSend, autoSentAt }: { 
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
   const [pick, setPick] = useState({ hods: true, extra: true, staff: false, patient: false })
+  const { confirmSend, confirmDialog } = useConfirmSend()
 
   async function load() {
     setLoading(true)
@@ -28,6 +30,15 @@ export function VisitUpdateCard({ requestId, waPaired, canSend, autoSentAt }: { 
     }
   }
   async function send() {
+    const who = [pick.hods && 'Department heads of this service', pick.extra && 'Update numbers (Settings)', pick.staff && 'Care team', pick.patient && 'Patient (friendly version)'].filter(Boolean) as string[]
+    const ok = await confirmSend({
+      title: 'Send the visit update on WhatsApp?',
+      to: who.map((name) => ({ name })),
+      message: p?.text ?? (() => api<Preview>(`/requests/${requestId}/update`).then((x) => x.text)),
+      linked: waPaired,
+      note: pick.patient ? 'The patient gets the friendlier version without times or internal notes.' : undefined,
+    })
+    if (!ok) return
     setSending(true)
     try {
       const r = await api<{ sent: number }>(`/requests/${requestId}/update`, { body: pick })
@@ -94,6 +105,7 @@ export function VisitUpdateCard({ requestId, waPaired, canSend, autoSentAt }: { 
           </div>
         </div>
       )}
+      {confirmDialog}
     </section>
   )
 }

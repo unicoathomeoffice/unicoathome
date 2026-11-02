@@ -252,7 +252,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
           Created {dayNum(created)} {time(created)} by {creator} ({String(r.source ?? 'phone').toLowerCase().replace('_', '-')}) · version {r.version ?? 0} · {r.patientSnapshot?.name} · {(r.services ?? []).map((s: any) => s.name).join(', ')}
         </div>
         {!['NEW', 'VERIFIED', 'CANCELLED'].includes(status) && (
-          <ConfirmationStatus requestId={id} wa={lite.wa} last={confirmMsg ? { status: confirmMsg.status, at: new Date(confirmMsg.at).toISOString(), error: confirmMsg.error, provider: confirmMsg.provider } : null} />
+          <ConfirmationStatus requestId={id} wa={lite.wa} patientName={r.patientSnapshot?.name} last={confirmMsg ? { status: confirmMsg.status, at: new Date(confirmMsg.at).toISOString(), error: confirmMsg.error, provider: confirmMsg.provider } : null} />
         )}
         {status === 'ASSIGNED' && r.assignment?.timedOutAt && (
           <TimeoutBanner
@@ -292,6 +292,9 @@ export default async function RequestDetailPage({ params, searchParams }: { para
             sentAt={r.transport.requisitionSentAt ? new Date(r.transport.requisitionSentAt).toISOString() : null}
             sent={plain(await MessageLog.find({ requestId: r._id, channel: 'WHATSAPP', templateKey: { $in: ['vehicle_requisition', 'gate_pass'] } }).sort({ at: -1 }).limit(20).select('to status at templateKey').lean<any[]>())}
             canSend={can(user, 'requests.manage') || can(user, 'transport.manage')}
+            requestNo={r.requestNo}
+            to={(settings.transportDocs?.supervisors ?? []).filter((x: any) => x.active !== false && x.phone).map((x: any) => ({ name: x.name, phone: x.phone }))}
+            linked={waPaired}
           />
         )}
         {tab === 'overview' && r.transport?.mode !== 'UNICO_CAR' && ((r.rides ?? []).length > 0 || ['ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED', 'CLOSED'].includes(status)) && (

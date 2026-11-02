@@ -10,6 +10,7 @@ import { cx, taka, clock } from '@/lib/format'
 import { availableActions, type Perms } from './lib'
 import { AssignDrawer, type AssignProps } from '@/components/assign/AssignDrawer'
 import { openConfirmLink, PatientWhatsAppToggle, reserveTab, type WaInfo } from './PatientWhatsApp'
+import { useConfirmSend } from '@/components/client/ConfirmSend'
 
 export type ReqLite = {
   id: string
@@ -619,6 +620,8 @@ function EmailDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
 // ---------------------------------------------------------------- WhatsApp with template picker
 function WhatsAppDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
   const [key, setKey] = useState(defaultTemplate(r))
+  const { confirmSend, confirmDialog } = useConfirmSend()
+  const { run, busy } = useAction()
   const opts = [...PATIENT_TEMPLATES.map((t) => ({ ...t, to: 'patient' as const })), ...(r.primaryStaffId ? [{ key: 'staff_assigned', label: `Staff · ${r.primaryStaffName}`, to: 'staff' as const }] : [])]
   const sel = opts.find((o) => o.key === key) ?? opts[0]
   return (
@@ -642,18 +645,28 @@ function WhatsAppDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
           </button>
         ))}
         {r.wa.paired && (
-          <ActionButton
-            kind="g"
-            size="lg"
-            className="mt-3 w-full"
-            path="/messages/whatsapp"
-            body={{ requestId: r.id, templateKey: sel.key, to: sel.to, staffId: sel.to === 'staff' ? r.primaryStaffId ?? undefined : undefined, mode: 'auto' }}
-            success="Sent from the hospital WhatsApp number"
-            onDone={onClose}
+          <button
+            type="button"
+            disabled={busy}
+            className={btnClass('g', 'lg', 'mt-3 w-full')}
+            onClick={async () => {
+              const body = { requestId: r.id, templateKey: sel.key, to: sel.to, staffId: sel.to === 'staff' ? r.primaryStaffId ?? undefined : undefined }
+              const ok = await confirmSend({
+                title: `Send “${sel.label}” on WhatsApp?`,
+                to: [sel.to === 'staff' ? { name: r.primaryStaffName ?? 'Staff' } : { name: r.patientName, phone: r.wa.phone }],
+                message: () => api<{ text: string }>('/messages/whatsapp', { body: { ...body, preview: true } }).then((x) => x.text),
+                linked: r.wa.paired,
+                note: 'Sent from the hospital WhatsApp number.',
+              })
+              if (!ok) return
+              const res = await run(() => api('/messages/whatsapp', { body: { ...body, mode: 'auto' } }), 'Sent from the hospital WhatsApp number')
+              if (res !== undefined) onClose()
+            }}
           >
-            <MessageCircle size={16} /> Send now
-          </ActionButton>
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <MessageCircle size={16} />} Send now
+          </button>
         )}
+        {confirmDialog}
         <WhatsAppButton requestId={r.id} templateKey={sel.key} to={sel.to} staffId={sel.to === 'staff' ? r.primaryStaffId ?? undefined : undefined} kind={r.wa.paired ? 'o' : 'g'} size="lg" className={cx('w-full', !r.wa.paired && 'mt-3')}>
           Open WhatsApp
         </WhatsAppButton>

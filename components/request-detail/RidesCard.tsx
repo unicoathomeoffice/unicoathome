@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { Bike, Camera, Car, CheckCircle2, Eye, Loader2, Plus, Send, Trash2, X } from 'lucide-react'
 import { api, compressImage, Sheet, useToast } from '@/components/client'
 import { usePasteFiles } from '@/components/client/paste'
+import { useConfirmSend } from '@/components/client/ConfirmSend'
 import { cx, taka } from '@/lib/format'
 
 export type Ride = { _id: string; userId: string; leg: 'OUT' | 'BACK' | 'OTHER'; mode: string; amount?: number; at?: string; attachmentIds: string[]; note?: string; claimLineId?: string; requisitionId?: string; sentAt?: string }
@@ -31,9 +32,19 @@ export function RidesCard({ requestId, rides, team, me, canPickPayer, mobile = f
   const [adding, setAdding] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const name = (id: string) => team.find((p) => p.id === id)?.name ?? 'Staff'
+  const { confirmSend, confirmDialog } = useConfirmSend()
 
   async function act(rideId: string, kind: 'send' | 'delete') {
     if (kind === 'delete' && !confirm('Remove this ride? It also comes off the open claim.')) return
+    if (kind === 'send') {
+      const ride = rides.find((x) => x._id === rideId)
+      const ok = await confirmSend({
+        title: 'Send this ride to the security supervisor?',
+        to: [{ name: 'On-call security supervisor' }],
+        files: [`Vehicle requisition with the ride screenshot${ride ? ` · ${ride.mode}${ride.amount ? ` · ৳${ride.amount}` : ''}` : ''} (PDF)`],
+      })
+      if (!ok) return
+    }
     setBusy(`${rideId}:${kind}`)
     try {
       if (kind === 'send') {
@@ -104,6 +115,7 @@ export function RidesCard({ requestId, rides, team, me, canPickPayer, mobile = f
         </div>
       )}
       {adding && <AddRide requestId={requestId} team={team} me={me} canPickPayer={canPickPayer} onClose={() => setAdding(false)} onDone={() => (setAdding(false), router.refresh())} />}
+      {confirmDialog}
     </section>
   )
 }

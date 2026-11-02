@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Building2, Check, ClipboardPaste, Download, Eye, FileText, Loader2, MessageCircle, Pencil, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react'
 import { api, Drawer, useToast, compressImage } from '@/components/client'
 import { readBill } from '@/components/client/bill-reader'
+import { useConfirmSend } from '@/components/client/ConfirmSend'
 import { usePasteFiles, readClipboardFiles } from '@/components/client/paste'
 import type { BillItem, ParsedBill } from '@/lib/bill-parse'
 import { btnClass } from '@/components/ui'
@@ -746,8 +747,18 @@ function SendDrawer({ requestId, invoices, team, patient, waPaired, onClose }: {
   const [staff, setStaff] = useState<string[]>(team.filter((p) => p.role !== 'DRIVER').map((p) => p.id))
   const [busy, setBusy] = useState(false)
   const toggle = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id])
+  const { confirmSend, confirmDialog } = useConfirmSend()
 
   async function send() {
+    const chosen = invoices.filter((i) => ids.includes(i._id))
+    const ok = await confirmSend({
+      title: `Send ${chosen.length === 1 ? `bill ${chosen[0].invoiceNo}` : `${chosen.length} bills`} on WhatsApp?`,
+      to: [...(toPatient ? [{ name: patient.name, phone: patient.phone, note: 'patient' }] : []), ...team.filter((p) => staff.includes(p.id)).map((p) => ({ name: p.name, phone: p.phone, note: p.role === 'DRIVER' ? 'driver' : 'care team' }))],
+      files: chosen.map((i) => `Unico-Bill-${i.invoiceNo}.pdf · ${taka(i.payable)}${i.due > 0 ? ` · due ${taka(i.due)}` : ' · paid'}`),
+      linked: waPaired,
+      note: 'Each person gets the bill file with a short caption, from the hospital WhatsApp number.',
+    })
+    if (!ok) return
     setBusy(true)
     try {
       const r = await api<{ sent: number }>(`/requests/${requestId}/bills/send`, { body: { invoiceIds: ids, patient: toPatient, staffIds: staff } })
@@ -784,6 +795,7 @@ function SendDrawer({ requestId, invoices, team, patient, waPaired, onClose }: {
       }
     >
       <div className="flex flex-col gap-4">
+        {confirmDialog}
         {!waPaired && <div className="rounded-lg bg-[#FEF3C7] px-3 py-2.5 text-[13px] text-[#92400E]">WhatsApp is not paired — files can only be sent from the paired hospital number. Pair it in Settings → WhatsApp, or download the file and send it yourself.</div>}
         <div>
           <span className="hc-label">Invoices</span>

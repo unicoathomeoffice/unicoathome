@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronDown, Loader2, MessageCircle } from 'lucide-react'
 import { api, Toggle } from '@/components/client'
+import { useConfirmSend } from '@/components/client/ConfirmSend'
 import { cx, phone as fmtPhone } from '@/lib/format'
 
 export type WaInfo = { paired: boolean; phone: string; optOut: boolean }
@@ -95,8 +96,9 @@ export async function openConfirmLink(tab: Window | null, requestId: string) {
 }
 
 /** Request page: did the patient get the confirmation on WhatsApp? Send / resend from here. */
-export function ConfirmationStatus({ requestId, wa, last }: { requestId: string; wa: WaInfo; last: { status: string; at: string; error?: string; provider?: string } | null }) {
+export function ConfirmationStatus({ requestId, wa, last, patientName }: { requestId: string; wa: WaInfo; last: { status: string; at: string; error?: string; provider?: string } | null; patientName?: string }) {
   const [busy, setBusy] = useState(false)
+  const { confirmSend, confirmDialog } = useConfirmSend()
   const [note, setNote] = useState<string | null>(null)
   const sent = last && ['SENT', 'DELIVERED', 'READ', 'SENT_CONFIRMED'].includes(last.status)
   const at = last ? new Date(last.at).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : ''
@@ -110,6 +112,15 @@ export function ConfirmationStatus({ requestId, wa, last }: { requestId: string;
           ? { text: `Opened in WhatsApp ${at} · not confirmed as sent`, cls: 'text-[#B45309]' }
           : { text: `Failed ${at}${last.error ? ` · ${last.error}` : ''}`, cls: 'text-[#B91C1C]' }
   async function send() {
+    const ok = await confirmSend({
+      title: `${last ? 'Send the confirmation again' : 'Send the confirmation'} to the patient?`,
+      to: [{ name: patientName || 'Patient', phone: wa.phone }],
+      message: () => api<{ text: string }>('/messages/whatsapp', { body: { requestId, templateKey: 'patient_confirmed', to: 'patient', preview: true } }).then((r) => r.text),
+      linked: wa.paired,
+      note: wa.paired ? 'Sent from the hospital WhatsApp number.' : undefined,
+      confirmLabel: wa.paired ? 'Yes, send' : 'Yes, open WhatsApp',
+    })
+    if (!ok) return
     const tab = wa.paired ? null : window.open('about:blank', '_blank')
     setBusy(true)
     setNote(null)
@@ -140,6 +151,7 @@ export function ConfirmationStatus({ requestId, wa, last }: { requestId: string;
           {busy && <Loader2 size={14} className="animate-spin" />} {last ? 'Resend' : 'Send'} on WhatsApp
         </button>
       )}
+      {confirmDialog}
     </div>
   )
 }

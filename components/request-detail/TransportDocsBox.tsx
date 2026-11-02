@@ -5,18 +5,27 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Car, Eye, Loader2, Send } from 'lucide-react'
 import { api, useToast } from '@/components/client'
+import { useConfirmSend } from '@/components/client/ConfirmSend'
 
-export function TransportDocsBox({ requestId, requisitionId, gatePassId, sentAt, sent, canSend }: { requestId: string; requisitionId: string | null; gatePassId: string | null; sentAt: string | null; sent: { to: string; status: string; at: string; templateKey: string }[]; canSend: boolean }) {
+export function TransportDocsBox({ requestId, requestNo, requisitionId, gatePassId, sentAt, sent, canSend, to = [], linked = true }: { requestId: string; requestNo?: string; requisitionId: string | null; gatePassId: string | null; sentAt: string | null; sent: { to: string; status: string; at: string; templateKey: string }[]; canSend: boolean; to?: { name: string; phone?: string }[]; linked?: boolean }) {
   const router = useRouter()
   const toast = useToast()
+  const { confirmSend, confirmDialog } = useConfirmSend()
   const [busy, setBusy] = useState(false)
   const ok = (s: string) => ['SENT', 'DELIVERED', 'SENT_CONFIRMED'].includes(s)
   const last = (k: string) => sent.find((m) => m.templateKey === k)
   const line = (k: string) => {
     const m = last(k)
-    return !m ? 'not sent' : ok(m.status) ? `sent ✓ ${new Date(m.at).toLocaleTimeString('en-US', { timeZone: 'Asia/Dhaka', hour: 'numeric', minute: '2-digit' })}` : m.status === 'FAILED' ? 'failed' : 'sending…'
+    return !m ? 'not sent' : ok(m.status) ? `sent ✓ ${new Date(m.at).toLocaleTimeString('en-US', { timeZone: 'Asia/Dhaka', hour: 'numeric', minute: '2-digit' })}` : m.status === 'FAILED' ? 'failed' : m.status === 'QUEUED' && !linked ? 'waiting for WhatsApp link' : 'sending…'
   }
   async function resend() {
+    const ok = await confirmSend({
+      title: `${sentAt ? 'Send the car paperwork again' : 'Make and send the car paperwork'} to security?`,
+      to: to.map((p) => ({ ...p, note: 'security supervisor' })),
+      files: [`Vehicle requisition${requestNo ? ` · ${requestNo}` : ''} (PDF)`, ...(gatePassId ? ['Gate pass (PDF)'] : [])],
+      linked,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       const r = await api<{ sent: number }>(`/requests/${requestId}/transport-docs`, { body: {} })
@@ -53,6 +62,7 @@ export function TransportDocsBox({ requestId, requisitionId, gatePassId, sentAt,
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {sentAt ? 'Resend' : 'Make & send'} to security
         </button>
       )}
+      {confirmDialog}
     </div>
   )
 }

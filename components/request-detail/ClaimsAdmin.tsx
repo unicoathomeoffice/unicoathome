@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Check, ChevronDown, FileSpreadsheet, FileText, Loader2, Send, Wallet, X } from 'lucide-react'
 import { api, useToast } from '@/components/client'
+import { useConfirmSend } from '@/components/client/ConfirmSend'
 import { btnClass } from '@/components/ui'
 import { cx, taka } from '@/lib/format'
 
@@ -27,8 +28,18 @@ export function ClaimsAdmin({ rows, status }: { rows: Row[]; status: string }) {
   const toast = useToast()
   const [open, setOpen] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const { confirmSend, confirmDialog } = useConfirmSend()
 
   async function act(id: string, action: string, body: unknown, ok: string) {
+    if (action === 'resend') {
+      const c = rows.find((x: any) => x._id === id) as any
+      const go = await confirmSend({
+        title: 'Send this claim to the security supervisor again?',
+        to: [{ name: 'On-call security supervisor' }, ...(c?.user?.name ? [{ name: c.user.name, note: 'copy' }] : [])],
+        files: [`Bill submission form${c?.claimNo ? ` · ${c.claimNo}` : ''} (PDF + Excel)`],
+      })
+      if (!go) return
+    }
     setBusy(`${id}:${action}`)
     try {
       await api(`/claims/${id}/${action}`, { body })
@@ -48,6 +59,7 @@ export function ClaimsAdmin({ rows, status }: { rows: Row[]; status: string }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {confirmDialog}
       <div className="flex flex-wrap gap-2">
         {TABS.map(([k, l]) => (
           <Link key={k} href={k ? `/claims?status=${k}` : '/claims'} className={cx('h-9 rounded-full px-4 text-[13.5px] font-semibold leading-9', status === k ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 shadow-card')}>

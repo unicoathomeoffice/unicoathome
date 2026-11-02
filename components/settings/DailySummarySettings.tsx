@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Eye, Loader2, Plus, Save, Send, X } from 'lucide-react'
 import { api, Toggle, useToast } from '@/components/client'
+import { useConfirmSend } from '@/components/client/ConfirmSend'
 import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
 
@@ -18,8 +19,17 @@ export function DailySummarySettings({ initial }: { initial: Cfg }) {
   const [preview, setPreview] = useState<string | null>(null)
   const dirty = JSON.stringify(v) !== JSON.stringify(initial)
   const bad = v.extra.filter((e) => e.name.trim().length < 2 || e.phone.replace(/\D/g, '').length < 10)
+  const { confirmSend, confirmDialog } = useConfirmSend()
 
   async function run(kind: 'save' | 'preview' | 'send') {
+    if (kind === 'send') {
+      const ok = await confirmSend({
+        title: 'Send today’s summary on WhatsApp now?',
+        to: [...(v.toHods ? [{ name: 'All department heads' }] : []), ...(v.toUpdateNumbers ? [{ name: 'Visit update numbers' }] : []), ...v.extra.map((e) => ({ name: e.name, phone: e.phone }))],
+        message: preview ?? (() => api<{ text: string }>('/daily-summary').then((x) => x.text)),
+      })
+      if (!ok) return
+    }
     setBusy(kind)
     try {
       if (kind === 'save') {
@@ -90,6 +100,7 @@ export function DailySummarySettings({ initial }: { initial: Cfg }) {
           {busy === 'send' ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />} Send now
         </button>
       </div>
+      {confirmDialog}
     </section>
   )
 }
