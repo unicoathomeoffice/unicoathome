@@ -24,6 +24,7 @@ import { TransportDocsBox } from '@/components/request-detail/TransportDocsBox'
 import { RidesCard } from '@/components/request-detail/RidesCard'
 import { liveView } from '@/lib/services/tracking'
 import { OverridePanel } from '@/components/request-detail/OverridePanel'
+import { TimeoutBanner } from '@/components/request-detail/TimeoutBanner'
 
 export const metadata = { title: 'Request detail' }
 
@@ -252,6 +253,17 @@ export default async function RequestDetailPage({ params, searchParams }: { para
         </div>
         {!['NEW', 'VERIFIED', 'CANCELLED'].includes(status) && (
           <ConfirmationStatus requestId={id} wa={lite.wa} last={confirmMsg ? { status: confirmMsg.status, at: new Date(confirmMsg.at).toISOString(), error: confirmMsg.error, provider: confirmMsg.provider } : null} />
+        )}
+        {status === 'ASSIGNED' && r.assignment?.timedOutAt && (
+          <TimeoutBanner
+            requestId={id}
+            requestNo={r.requestNo}
+            staffName={r.primaryStaff?.name ?? 'The staff member'}
+            since={new Date(r.assignment.timedOutAt).toISOString()}
+            windowMin={sla.acceptTimeoutMin}
+            canOverride={canOverride}
+            canAssign={perms.assign}
+          />
         )}
         <OverridePanel
           requestId={id}

@@ -473,6 +473,7 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   r.set('assignment.assignedAt', new Date())
   r.set('assignment.acceptedAt', undefined)
   r.set('assignment.respondBy', new Date(Date.now() + s.sla.acceptTimeoutMin * 60_000))
+  r.set('assignment.timedOutAt', undefined)
   r.set('assignment.instructions', input.instructions)
   const forced = !!input.acceptNow && can(user, 'requests.override')
   if (forced) {
@@ -583,6 +584,7 @@ export async function accept(r: any, user: SessionUser, meta: Meta, deviceAt?: s
   move(r, 'ACCEPTED', 'acceptedAt')
   r.set('assignment.acceptedAt', new Date())
   r.set('assignment.respondBy', undefined)
+  r.set('assignment.timedOutAt', undefined)
   if (!forced) deviceStamp(r, user, 'accept', deviceAt)
   await r.save()
   if (forced) {
@@ -595,6 +597,18 @@ export async function accept(r: any, user: SessionUser, meta: Meta, deviceAt?: s
   await AssignmentLog.create({ requestId: r._id, toStaffId: user.id, action: 'ACCEPT', by: user.id })
   await audit(user, 'request.accept', 'request', r._id, { after: { status: 'ACCEPTED' }, label: r.requestNo }, meta)
   background(() => notifyRoles(['HC_ADMIN'], { type: 'ACCEPTED', title: `${r.requestNo} accepted`, body: `${user.name} accepted · ${r.patientSnapshot.name}`, requestId: r._id, url: url(r._id) }))
+}
+
+/** The acceptance window passed: give the staff another window instead of reassigning (coordinator's choice). */
+export async function keepWaiting(r: any, user: SessionUser, meta: Meta) {
+  if (r.status !== 'ASSIGNED') throw conflict('NOT_WAITING', 'This visit is not waiting for an answer')
+  const s = await getSettings()
+  const until = new Date(Date.now() + s.sla.acceptTimeoutMin * 60_000)
+  r.set('assignment.respondBy', until)
+  r.set('assignment.timedOutAt', undefined)
+  await r.save()
+  await audit(user, 'request.accept_wait', 'request', r._id, { after: { respondBy: until }, label: r.requestNo }, meta)
+  background(() => notifyUsers([r.assignment?.primaryStaffId], { type: 'ASSIGNED', as: 'STAFF', title: `Please accept or decline ${r.requestNo}`, body: `${r.patientSnapshot?.name ?? ''} · answer within ${s.sla.acceptTimeoutMin} min`, requestId: r._id, url: appUrl(r._id), priority: 'high' }))
 }
 
 export const DeclineInput = z.object({ reason: z.string().min(2), note: z.string().optional() })

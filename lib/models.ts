@@ -198,6 +198,8 @@ const RequestSchema = new Schema<any>(
       assignedAt: Date,
       acceptedAt: Date,
       respondBy: Date,
+      /** the acceptance window passed without an answer: the coordinator decides (keep waiting / accept for them / reassign) */
+      timedOutAt: Date,
       instructions: String,
       declines: [{ _id: false, staffId: { type: ObjectId, ref: 'User' }, reason: String, note: String, at: Date }],
     },

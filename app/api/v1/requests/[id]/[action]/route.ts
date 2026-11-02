@@ -31,6 +31,7 @@ const ACTIONS: Record<string, Action> = {
   },
   // car supervisors, or override users (car + any driver directly) — checked in the service
   transport: { schema: svc.TransportInput, run: ({ r, user, meta }, i) => svc.assignTransport(r, i, user, meta) },
+  'accept-wait': { perm: 'requests.assign', run: ({ r, user, meta }) => svc.keepWaiting(r, user, meta) },
   'complete-now': { perm: 'requests.override', schema: svc.CompleteNowInput, run: ({ r, user, meta }, i) => svc.completeNow(r, i, user, meta) },
   'transport-leg': { schema: z.object({ leg: z.string() }), run: ({ r, user, meta }, i) => svc.stampTransportLeg(r, i.leg, user, meta) },
 

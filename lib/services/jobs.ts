@@ -33,9 +33,28 @@ export async function sweep(force = false) {
   let timeouts = 0
   let overdue = 0
 
-  const expired = await HomecareRequest.find({ status: 'ASSIGNED', 'assignment.respondBy': { $lt: now }, deletedAt: null })
+  const expired = await HomecareRequest.find({ status: 'ASSIGNED', 'assignment.respondBy': { $lt: now }, 'assignment.timedOutAt': null, deletedAt: null })
   for (const r of expired) {
     const staffId = r.assignment?.primaryStaffId
+    if (s.sla.onAcceptTimeout !== 'REMOVE') {
+      // keep the staff on the visit and ask the coordinator — nobody is taken off without a click
+      const claimed = await HomecareRequest.updateOne({ _id: r._id, 'assignment.timedOutAt': null }, { $set: { 'assignment.timedOutAt': now } })
+      if (!claimed.modifiedCount) continue
+      await AssignmentLog.create({ requestId: r._id, fromStaffId: staffId, action: 'TIMEOUT', reason: 'No response — waiting for coordinator', by: undefined })
+      await audit(null, 'request.accept_timeout', 'request', r._id, { after: { status: 'ASSIGNED', staffId: String(staffId), waiting: true }, label: r.requestNo })
+      const staff = staffId ? await User.findById(staffId).select('name').lean<any>() : null
+      await notifyRoles(['HC_ADMIN', 'SUPER_ADMIN'], {
+        type: 'ESCALATION',
+        title: `${staff?.name ?? 'Staff'} hasn't accepted ${r.requestNo}`,
+        body: `${s.sla.acceptTimeoutMin} min passed · keep waiting, accept for them or reassign`,
+        requestId: r._id,
+        url: `/requests/${r._id}`,
+        priority: 'high',
+      })
+      if (staffId) await notifyUsers([staffId], { type: 'ASSIGNED', as: 'STAFF', title: `Please accept or decline ${r.requestNo}`, body: `${r.patientSnapshot?.name ?? ''} · the coordinator is waiting for your answer`, requestId: r._id, url: `/m/visits/${r._id}`, priority: 'high' })
+      timeouts++
+      continue
+    }
     r.status = 'CONFIRMED'
     r.assignment.declines.push({ staffId, reason: 'Timeout', note: `No response in ${s.sla.acceptTimeoutMin} min`, at: now })
     r.set('assignment.primaryStaffId', undefined)

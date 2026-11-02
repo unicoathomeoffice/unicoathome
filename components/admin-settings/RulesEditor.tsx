@@ -9,7 +9,7 @@ import { cx } from '@/lib/format'
 
 export type RulesValue = {
   general: { workingHours: { from: string; to: string }; slots: string[]; workingDays?: number[] }
-  sla: { confirmRoutineMin: number; confirmUrgentMin: number; assignMin: number; acceptTimeoutMin: number; lateAfterMin: number; overtimePct: number; reminderBeforeMin: number[] }
+  sla: { confirmRoutineMin: number; confirmUrgentMin: number; assignMin: number; acceptTimeoutMin: number; lateAfterMin: number; overtimePct: number; reminderBeforeMin: number[]; onAcceptTimeout?: 'ASK' | 'REMOVE' }
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'))
@@ -21,11 +21,11 @@ const parseSlot = (s: string) => {
   return m ? { from: m[1].padStart(2, '0'), to: m[2].padStart(2, '0') } : { from: '09', to: '11' }
 }
 
-const SLA_FIELDS: { key: keyof RulesValue['sla']; label: string; unit: string; hint: string }[] = [
+const SLA_FIELDS: { key: Exclude<keyof RulesValue['sla'], 'onAcceptTimeout'>; label: string; unit: string; hint: string }[] = [
   { key: 'confirmRoutineMin', label: 'Confirm · Routine', unit: 'min', hint: 'NEW → CONFIRMED' },
   { key: 'confirmUrgentMin', label: 'Confirm · Urgent', unit: 'min', hint: 'URGENT requests' },
   { key: 'assignMin', label: 'Assign after confirm', unit: 'min', hint: 'CONFIRMED → ASSIGNED' },
-  { key: 'acceptTimeoutMin', label: 'Staff acceptance window', unit: 'min', hint: 'then escalates / reassigns' },
+  { key: 'acceptTimeoutMin', label: 'Staff acceptance window', unit: 'min', hint: 'then the coordinator is asked (below)' },
   { key: 'lateAfterMin', label: 'Late check-in flag', unit: 'min', hint: 'after the scheduled time' },
   { key: 'overtimePct', label: 'Overtime prompt', unit: '%', hint: 'over the expected duration' },
 ]
@@ -43,6 +43,7 @@ export function RulesEditor({ value, canEdit }: { value: RulesValue; canEdit: bo
       days: value.general.workingDays ?? [0, 1, 2, 3, 4, 5, 6],
       sla: Object.fromEntries(SLA_FIELDS.map((f) => [f.key, String(value.sla[f.key])])) as Record<string, string>,
       reminders: (value.sla.reminderBeforeMin ?? []).join(', '),
+      onTimeout: value.sla.onAcceptTimeout ?? 'ASK',
     }),
     [value],
   )
@@ -74,6 +75,7 @@ export function RulesEditor({ value, canEdit }: { value: RulesValue; canEdit: bo
           key: 'sla',
           value: {
             ...Object.fromEntries(SLA_FIELDS.map((f) => [f.key, Number(v.sla[f.key])])),
+            onAcceptTimeout: v.onTimeout,
             reminderBeforeMin: v.reminders
               .split(/[,\s]+/)
               .map(Number)
@@ -199,6 +201,16 @@ export function RulesEditor({ value, canEdit }: { value: RulesValue; canEdit: bo
               </span>
             </label>
           ))}
+          <label className="flex items-center gap-3 border-t border-slate-100 py-2.5">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13.5px]">When staff don’t accept in time</span>
+              <span className="block text-[11.5px] text-slate-400">ask: they stay on and the coordinator decides</span>
+            </span>
+            <select className="h-9 w-[150px] rounded-lg border border-slate-300 bg-white px-2 text-[13px] font-semibold outline-none focus:border-primary" value={v.onTimeout} onChange={(e) => setV((s) => ({ ...s, onTimeout: e.target.value as 'ASK' | 'REMOVE' }))} aria-label="When staff don't accept in time">
+              <option value="ASK">Ask the coordinator</option>
+              <option value="REMOVE">Remove them</option>
+            </select>
+          </label>
           <label className="flex items-center gap-3 border-t border-slate-100 py-2.5">
             <span className="min-w-0 flex-1">
               <span className="block text-[13.5px]">Reminders before visit</span>

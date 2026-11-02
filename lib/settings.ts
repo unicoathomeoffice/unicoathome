@@ -53,6 +53,8 @@ export const DEFAULT_SETTINGS = {
     confirmUrgentMin: 5,
     assignMin: 30,
     acceptTimeoutMin: 15,
+    /** when staff don't accept in time: ASK = keep them on and ask the coordinator; REMOVE = take them off (old way) */
+    onAcceptTimeout: 'ASK' as 'ASK' | 'REMOVE',
     lateAfterMin: 10,
     overtimePct: 25,
     reminderBeforeMin: [120, 30],
