@@ -139,11 +139,13 @@ export async function emailPatient(r: any, templateKey: string, user: SessionUse
 }
 
 /** WhatsApp the patient automatically (hospital WhatsApp paired in Settings). Falls back silently: staff still have the manual wa.me button. */
-export async function whatsappPatient(r: any, templateKey: string, user: SessionUser | null, staffId?: unknown) {
+/** Auto-send a template to the patient on WhatsApp. `explicit`: a coordinator ticked "send to patient" for this
+ *  action, so the global auto-send switch and the notification matrix don't apply (consent and pairing still do). */
+export async function whatsappPatient(r: any, templateKey: string, user: SessionUser | null, staffId?: unknown, explicit = false) {
   const s = await getSettings()
-  if (s.whatsapp.autoSend === false) return
+  if (!explicit && s.whatsapp.autoSend === false) return
   const event = PATIENT_EVENT[templateKey] ?? (templateKey === 'patient_received' ? 'REQUEST_CREATED' : undefined)
-  if (event && !ruleAllows(s.notificationRules, event, 'PATIENT', 'whatsapp')) return
+  if (!explicit && event && !ruleAllows(s.notificationRules, event, 'PATIENT', 'whatsapp')) return
   const p = await Patient.findById(r.patientId).select('phone whatsapp consent name').lean<any>()
   if (!p || p.consent?.whatsapp === false) return
   const def = await getTemplate(templateKey)
@@ -328,6 +330,9 @@ export const ConfirmInput = z.object({
   transportNeeded: z.boolean().optional(),
   priority: z.enum(['ROUTINE', 'URGENT', 'EMERGENCY']).optional(),
   expectedDurationMin: z.coerce.number().int().positive().optional(),
+  /** true: the coordinator ticked "send confirmation to the patient" (sent even if auto-send rules are off);
+   *  false: don't message the patient; omitted: the usual auto-send rules decide */
+  notifyPatient: z.boolean().optional(),
 })
 
 export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user: SessionUser, meta: Meta) {
@@ -351,8 +356,10 @@ export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user:
   await r.save()
   await audit(user, 'request.confirm', 'request', r._id, { before, after: { status: 'CONFIRMED', scheduledAt: r.scheduledAt, tests: r.tests, uhid: input.uhid }, label: r.requestNo }, meta)
   background(async () => {
-    await emailPatient(r, 'patient_confirmed', user)
-    await whatsappPatient(r, 'patient_confirmed', user)
+    if (input.notifyPatient !== false) {
+      await emailPatient(r, 'patient_confirmed', user)
+      await whatsappPatient(r, 'patient_confirmed', user, undefined, input.notifyPatient === true)
+    }
     await notifyRoles(['FRONT_DESK'], { type: 'CONFIRMED', title: `${r.requestNo} confirmed`, body: `${r.patientSnapshot.name} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: url(r._id) })
     if (r.transport?.needed)
       await notifyRoles(['TRANSPORT_SUPERVISOR'], { type: 'TRANSPORT', title: `Trip request ${r.requestNo}`, body: `${r.patientSnapshot.area ?? ''} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: '/m/trips' })

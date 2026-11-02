@@ -15,6 +15,7 @@ import { AssignmentTab, AttachmentsTab, AuditTab, MessagesTab, OverviewTab, Time
 import { ACTIVE_VISIT, availableActions, collectUserIds, permsFor, type People } from '@/components/request-detail/lib'
 import type { AssignProps } from '@/components/assign/AssignDrawer'
 import { isPaired } from '@/lib/wa/status'
+import { ConfirmationStatus } from '@/components/request-detail/PatientWhatsApp'
 
 export const metadata = { title: 'Request detail' }
 
@@ -39,12 +40,15 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   const status = r.status as Status
   const acts = availableActions(status)
 
-  const [patient, msgCount, attCount, auditCount, logCount] = await Promise.all([
+  const [patient, msgCount, attCount, auditCount, logCount, waPaired, confirmMsg] = await Promise.all([
     Patient.findById(r.patientId).lean<any>(),
     MessageLog.countDocuments({ requestId: r._id }),
     Attachment.countDocuments({ requestId: r._id, deletedAt: null }),
     AuditLog.countDocuments({ entity: 'request', entityId: id }),
     AssignmentLog.countDocuments({ requestId: r._id }),
+    isPaired(),
+    // latest patient confirmation on WhatsApp (status card on Overview)
+    MessageLog.findOne({ requestId: r._id, channel: 'WHATSAPP', templateKey: 'patient_confirmed' }).sort({ at: -1 }).select('status at error provider').lean<any>(),
   ])
 
   // ---- tab data (only what the open tab needs)
@@ -147,6 +151,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
     uhid: patient?.uhid ?? r.patientSnapshot?.uhid ?? '',
     patientName: r.patientSnapshot?.name ?? patient?.name ?? '',
     patientEmail: patient?.email ?? null,
+    wa: { paired: waPaired, phone: patient?.whatsapp || patient?.phone || r.patientSnapshot?.phone || '', optOut: patient?.consent?.whatsapp === false },
     primaryStaffId: r.primaryStaff?.id ?? null,
     primaryStaffName: r.primaryStaff?.name ?? null,
     complaint: r.clinical?.complaint ?? '',
@@ -214,6 +219,9 @@ export default async function RequestDetailPage({ params, searchParams }: { para
         <div className="-mt-2 text-[13px] text-slate-500">
           Created {dayNum(created)} {time(created)} by {creator} ({String(r.source ?? 'phone').toLowerCase().replace('_', '-')}) · version {r.version ?? 0} · {r.patientSnapshot?.name} · {(r.services ?? []).map((s: any) => s.name).join(', ')}
         </div>
+        {!['NEW', 'VERIFIED', 'CANCELLED'].includes(status) && (
+          <ConfirmationStatus requestId={id} wa={lite.wa} last={confirmMsg ? { status: confirmMsg.status, at: new Date(confirmMsg.at).toISOString(), error: confirmMsg.error, provider: confirmMsg.provider } : null} />
+        )}
         <Tabs items={tabItems} active={tab} />
         {tab === 'overview' && (
           <OverviewTab
@@ -236,7 +244,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
             chat={plain(chat)}
             people={people}
             canResend={canResendMessages(user)}
-            compose={{ requestId: id, contact: { name: contactP?.name ?? r.patientSnapshot?.name, email: contactP?.email, phone: contactP?.whatsapp ?? contactP?.phone ?? r.patientSnapshot?.phone }, whatsappLive: await isPaired() }}
+            compose={{ requestId: id, contact: { name: contactP?.name ?? r.patientSnapshot?.name, email: contactP?.email, phone: contactP?.whatsapp ?? contactP?.phone ?? r.patientSnapshot?.phone }, whatsappLive: waPaired }}
           />
         )}
         {tab === 'attachments' && <AttachmentsTab requestId={id} atts={plain(atts)} people={people} canUpload={perms.edit} me={{ id: user.id, admin: isCoordinator(user) }} />}

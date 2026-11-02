@@ -6,6 +6,7 @@ import { ConfirmForm } from '@/components/coord/ConfirmForm'
 import { requireDesk, loadCoordRequest, dhakaParts } from '@/components/coord/data'
 import { can } from '@/lib/constants'
 import { isoDay } from '@/lib/format'
+import { isPaired } from '@/lib/wa/status'
 
 export const metadata = { title: 'Confirm request' }
 
@@ -17,7 +18,7 @@ export default async function ConfirmPage({ params }: { params: Promise<{ id: st
   if (!['NEW', 'VERIFIED'].includes(r.status)) redirect(`/m/admin/requests/${id}`)
   const sched = dhakaParts(r.scheduledAt)
   const date = sched.date || r.preferred?.date || isoDay()
-  const time = sched.time || r.preferred?.time || (r.preferred?.slot ? `${r.preferred.slot.slice(0, 2)}:00` : '')
+  const time = sched.time || r.preferred?.time || (r.preferred?.slot ? (/^\d{2}:\d{2}/.test(r.preferred.slot) ? r.preferred.slot.slice(0, 5) : `${r.preferred.slot.slice(0, 2)}:00`) : '')
   return (
     <MScreen title="Confirm request" sub={`${r.requestNo} · ${r.patientSnapshot?.name}`} back={`/m/admin/requests/${id}`} right={<PriorityBadge priority={r.priority} />}>
       <PatientSummaryCard r={r} patient={patient} />
@@ -34,6 +35,7 @@ export default async function ConfirmPage({ params }: { params: Promise<{ id: st
         transport={!!r.transport?.needed}
         priority={r.priority}
         canAssign={can(user, 'requests.assign')}
+        wa={{ paired: await isPaired(), phone: patient?.whatsapp || patient?.phone || r.patientSnapshot?.phone || '', optOut: patient?.consent?.whatsapp === false }}
       />
     </MScreen>
   )

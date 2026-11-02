@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react'
 import { Check, ChevronRight, Loader2, Search, X } from 'lucide-react'
 import { api, useAction, Sheet, Toggle, Segmented } from '@/components/client'
+import { openConfirmLink, PatientWhatsAppToggle, reserveTab, type WaInfo } from '@/components/request-detail/PatientWhatsApp'
 import { SLOTS, TESTS_PROCEDURES } from '@/lib/constants'
 import { cx } from '@/lib/format'
 import { FLabel, FixedBottom, bbtn } from './ui'
@@ -76,9 +77,11 @@ type Props = {
   transport: boolean
   priority: 'ROUTINE' | 'URGENT' | 'EMERGENCY'
   canAssign: boolean
+  wa: WaInfo
 }
 
-const slotStart = (s: string) => `${s.slice(0, 2)}:00`
+/** "09:30–10:30" → "09:30"; legacy "09–11" → "09:00" */
+const slotStart = (s: string) => (/^\d{2}:\d{2}/.test(s) ? s.slice(0, 5) : `${s.slice(0, 2)}:00`)
 
 /** S2 — Stage 2: the coordinator confirms date/time, UHID, tests, fee and transport. */
 export function ConfirmForm(p: Props) {
@@ -90,6 +93,7 @@ export function ConfirmForm(p: Props) {
   const [fee, setFee] = useState(p.fee != null ? String(p.fee) : '')
   const [transport, setTransport] = useState(p.transport)
   const [priority, setPriority] = useState(p.priority)
+  const [sendWa, setSendWa] = useState(!p.wa.optOut && !!p.wa.phone)
   const { run, busy } = useAction()
   const known = !!p.patientUhid && uhid.trim() === p.patientUhid
   const missing = !date || !time
@@ -183,25 +187,30 @@ export function ConfirmForm(p: Props) {
         <Toggle on={transport} onChange={setTransport} label="Transport needed" />
       </div>
 
+      <PatientWhatsAppToggle on={sendWa} onChange={setSendWa} wa={p.wa} requestId={p.id} date={date} slot={slot} />
+
       <FixedBottom note={missing ? 'Set the date and time of service' : !tests.length ? 'No tests yet — fine for a consultation' : undefined}>
         <CancelRequestButton id={p.id} requestNo={p.requestNo} kind="r" big className="flex-1" redirect="/m/admin/inbox" />
         <button
           type="button"
           disabled={busy || missing}
           className={bbtn('p', 'flex-[2]')}
-          onClick={() =>
-            run(
+          onClick={async () => {
+            const tab = reserveTab(p.wa, sendWa)
+            const ok = await run(
               () =>
                 api(`/requests/${p.id}/confirm`, {
-                  body: { date, time, slot: slot || undefined, uhid: uhid || undefined, tests, estimatedFee: fee === '' ? undefined : Number(fee), transportNeeded: transport, priority },
+                  body: { date, time, slot: slot || undefined, uhid: uhid || undefined, tests, estimatedFee: fee === '' ? undefined : Number(fee), transportNeeded: transport, priority, notifyPatient: sendWa },
                 }),
-              `${p.requestNo} confirmed · patient notified`,
+              sendWa ? `${p.requestNo} confirmed · patient notified` : `${p.requestNo} confirmed`,
               { redirect: p.canAssign ? `/m/admin/requests/${p.id}/assign` : `/m/admin/requests/${p.id}` },
             )
-          }
+            if (ok) await openConfirmLink(tab, p.id)
+            else tab?.close()
+          }}
         >
           {busy && <Loader2 size={18} className="animate-spin" />}
-          Confirm · notify patient
+          {sendWa ? 'Confirm · notify patient' : 'Confirm'}
         </button>
       </FixedBottom>
     </>

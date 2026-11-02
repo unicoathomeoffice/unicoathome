@@ -9,6 +9,7 @@ import { TESTS_PROCEDURES, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Status } 
 import { cx, taka } from '@/lib/format'
 import { availableActions, type Perms } from './lib'
 import { AssignDrawer, type AssignProps } from '@/components/assign/AssignDrawer'
+import { openConfirmLink, PatientWhatsAppToggle, reserveTab, type WaInfo } from './PatientWhatsApp'
 
 export type ReqLite = {
   id: string
@@ -27,6 +28,8 @@ export type ReqLite = {
   uhid: string
   patientName: string
   patientEmail: string | null
+  /** patient's WhatsApp number, opt-out and whether the hospital number is paired (auto-send) */
+  wa: WaInfo
   primaryStaffId: string | null
   primaryStaffName: string | null
   complaint: string
@@ -189,6 +192,7 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
     transportNeeded: r.transportNeeded,
     expectedDurationMin: String(r.expectedDurationMin || 45),
   })
+  const [sendWa, setSendWa] = useState(!r.wa.optOut && !!r.wa.phone)
   const [lookup, setLookup] = useState<null | { busy?: boolean; text: string; tone: 'ok' | 'warn' }>(null)
   const set = (k: keyof typeof f, v: any) => setF((x) => ({ ...x, [k]: v }))
   async function findUhid() {
@@ -211,11 +215,12 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
       title="Confirm request"
       sub={`${r.requestNo} · ${r.patientName} · slot and fee agreed with the patient`}
       footer={
-        <Foot onClose={onClose} note="Patient is emailed if they have an address">
+        <Foot onClose={onClose} note={sendWa ? 'Patient gets WhatsApp + email (if they have an address)' : 'Patient is not messaged'}>
           <button
             className={btnClass('p')}
             disabled={busy || !f.date}
             onClick={async () => {
+              const tab = reserveTab(r.wa, sendWa)
               const ok = await run(
                 () =>
                   api(`/requests/${r.id}/confirm`, {
@@ -229,11 +234,15 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
                       priority: f.priority,
                       transportNeeded: f.transportNeeded,
                       expectedDurationMin: Number(f.expectedDurationMin) || undefined,
+                      notifyPatient: sendWa,
                     },
                   }),
-                'Request confirmed',
+                sendWa && r.wa.paired ? 'Request confirmed · WhatsApp sent to the patient' : 'Request confirmed',
               )
-              if (ok) onClose()
+              if (ok) {
+                await openConfirmLink(tab, r.id)
+                onClose()
+              } else tab?.close()
             }}
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Confirm
@@ -294,6 +303,7 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
           </div>
           <Toggle on={f.transportNeeded} onChange={(v) => set('transportNeeded', v)} label="Transport needed" />
         </div>
+        <PatientWhatsAppToggle on={sendWa} onChange={setSendWa} wa={r.wa} requestId={r.id} date={f.date} slot={f.slot} />
       </div>
     </Drawer>
   )
@@ -631,10 +641,23 @@ function WhatsAppDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
             </div>
           </button>
         ))}
-        <WhatsAppButton requestId={r.id} templateKey={sel.key} to={sel.to} staffId={sel.to === 'staff' ? r.primaryStaffId ?? undefined : undefined} kind="g" size="lg" className="mt-3 w-full">
+        {r.wa.paired && (
+          <ActionButton
+            kind="g"
+            size="lg"
+            className="mt-3 w-full"
+            path="/messages/whatsapp"
+            body={{ requestId: r.id, templateKey: sel.key, to: sel.to, staffId: sel.to === 'staff' ? r.primaryStaffId ?? undefined : undefined, mode: 'auto' }}
+            success="Sent from the hospital WhatsApp number"
+            onDone={onClose}
+          >
+            <MessageCircle size={16} /> Send now
+          </ActionButton>
+        )}
+        <WhatsAppButton requestId={r.id} templateKey={sel.key} to={sel.to} staffId={sel.to === 'staff' ? r.primaryStaffId ?? undefined : undefined} kind={r.wa.paired ? 'o' : 'g'} size="lg" className={cx('w-full', !r.wa.paired && 'mt-3')}>
           Open WhatsApp
         </WhatsAppButton>
-        <div className="mt-1 text-center text-[12px] text-slate-500">After sending, confirm so it is logged on the record.</div>
+        <div className="mt-1 text-center text-[12px] text-slate-500">{r.wa.paired ? 'Send now goes straight from the hospital number. ' : ''}After sending in WhatsApp, confirm so it is logged on the record.</div>
       </div>
     </Drawer>
   )

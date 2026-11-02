@@ -9,6 +9,7 @@ import { AddressBlock, ADDRESS_LABELS_EN, composeFull, roadOf } from '@/componen
 import { ACTIVE_STATUSES, PAYMENT_METHOD_LABEL, PAYMENT_METHODS, REQUEST_SOURCES, TESTS_PROCEDURES, type Status } from '@/lib/constants'
 import { ageGender, cx, dayNum, initialsOf, phone as fmtPhone, taka, time as fmtTime } from '@/lib/format'
 import { firstOpen, SlotPicker, slotLabel, type SlotBooking } from './SlotPicker'
+import { openConfirmLink, PatientWhatsAppToggle, reserveTab } from '@/components/request-detail/PatientWhatsApp'
 
 export type FormPatient = {
   _id: string
@@ -71,6 +72,7 @@ export function RequestForm({
   initialPatient,
   canConfirm,
   canAssign,
+  waPaired,
 }: {
   nextNo: string
   today: string
@@ -81,6 +83,8 @@ export function RequestForm({
   initialPatient: FormPatient | null
   canConfirm: boolean
   canAssign: boolean
+  /** hospital WhatsApp paired: the confirmation goes out automatically */
+  waPaired: boolean
 }) {
   const router = useRouter()
   const toast = useToast()
@@ -92,6 +96,7 @@ export function RequestForm({
   const [busy, setBusy] = useState<null | 'save' | 'confirm' | 'assign'>(null)
   const [dup, setDup] = useState<{ message: string; requestNo?: string; kind: 'save' | 'confirm' | 'assign' } | null>(null)
   const [savedAt, setSavedAt] = useState<Date | null>(null)
+  const [notifyWa, setNotifyWa] = useState(true) // Save & confirm: send the confirmation to the patient on WhatsApp
   const restored = useRef(false)
 
   const set = <K extends keyof F>(k: K, v: F[K]) => setF((x) => ({ ...x, [k]: v }))
@@ -149,6 +154,7 @@ export function RequestForm({
   const autoFee = chosen.reduce((a, s) => a + s.fee, 0)
   const autoDuration = chosen.length ? Math.max(30, ...chosen.map((s) => s.duration)) : 45
   const fee = f.fee === '' ? autoFee : Number(f.fee)
+  const wa = { paired: waPaired, phone: f.mode === 'existing' ? f.patient?.phone ?? '' : f.np.phone.trim(), optOut: false }
 
   function validate(upTo: 1 | 2 | 3, needDate = false) {
     const e: Record<string, string> = {}
@@ -185,6 +191,7 @@ export function RequestForm({
 
   async function submit(kind: 'save' | 'confirm' | 'assign', ignoreDuplicate = false) {
     if (!validate(3, kind !== 'save')) return
+    const tab = kind !== 'save' ? reserveTab(wa, notifyWa) : null // opened in the click, filled after confirming
     setBusy(kind)
     setDup(null)
     try {
@@ -238,8 +245,10 @@ export function RequestForm({
       } catch {}
       if (kind !== 'save') {
         try {
-          await api(`/requests/${r.id}/confirm`, { body: { date: f.date, slot, time } })
+          await api(`/requests/${r.id}/confirm`, { body: { date: f.date, slot, time, notifyPatient: notifyWa } })
+          await openConfirmLink(tab, r.id)
         } catch (e: any) {
+          tab?.close()
           toast(`${r.requestNo} saved, but not confirmed: ${e?.message ?? 'error'}`, 'err')
           router.push(`/requests/${r.id}`)
           return
@@ -248,6 +257,7 @@ export function RequestForm({
       toast(kind === 'save' ? `${r.requestNo} created` : `${r.requestNo} created and confirmed`, 'ok')
       router.push(kind === 'assign' ? `/requests/${r.id}?assign=1` : `/requests/${r.id}`)
     } catch (e: any) {
+      tab?.close()
       if (e?.code === 'DUPLICATE') setDup({ message: e.message, requestNo: e.fields?.requestNo, kind })
       else {
         if (e?.fields) setErrors(e.fields)
@@ -294,6 +304,11 @@ export function RequestForm({
         {step === 1 && <StepPatient f={f} set={set} setIn={setIn} zones={zones} errors={errors} />}
         {step === 2 && <StepService f={f} set={set} services={services} slots={slots} booking={booking} today={today} errors={errors} autoDuration={autoDuration} />}
         {step === 3 && <StepClinical f={f} set={set} services={chosen} autoFee={autoFee} fee={fee} errors={errors} />}
+        {step === 3 && canConfirm && (
+          <div className="max-w-[720px]">
+            <PatientWhatsAppToggle on={notifyWa} onChange={setNotifyWa} wa={wa} label="Save & confirm: send the confirmation to the patient on WhatsApp" />
+          </div>
+        )}
 
         {dup && (
           <div className="flex flex-wrap items-center gap-2.5 rounded-lg bg-[#FEF3C7] px-3 py-2.5 text-[13px] text-[#B45309]" role="alert">

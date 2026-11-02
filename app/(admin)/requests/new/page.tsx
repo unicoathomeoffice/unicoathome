@@ -5,6 +5,7 @@ import { getSettings } from '@/lib/settings'
 import { plain } from '@/lib/db'
 import { isoDay } from '@/lib/format'
 import { availability } from '@/lib/booking'
+import { isPaired } from '@/lib/wa/status'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { RequestForm, type FormPatient } from '@/components/request-form/RequestForm'
 import { activeServices, activeZones } from '@/lib/cached'
@@ -45,6 +46,7 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
         initialPatient={patient}
         canConfirm={can(user, 'requests.manage')}
         canAssign={can(user, 'requests.assign')}
+        waPaired={await isPaired()}
       />
     </AdminPage>
   )
