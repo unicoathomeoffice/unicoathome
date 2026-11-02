@@ -63,7 +63,9 @@ async function raw(j: Jar, path: string, init: RequestInit = {}) {
   const url = path.startsWith('http') ? path : `${j.base}${path}`
   let res: Response
   try {
-    res = await fetch(url, { ...init, redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT), headers: { 'user-agent': UA, accept: 'text/html,application/json;q=0.9,*/*;q=0.8', cookie: cookieHeader(j), ...(init.headers ?? {}) } })
+    // an extra `cookie` header (e.g. H360's menu_id) is added to the session cookies, not swapped for them
+    const { cookie: extra, ...headers } = (init.headers ?? {}) as Record<string, string>
+    res = await fetch(url, { ...init, redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT), headers: { 'user-agent': UA, accept: 'text/html,application/json;q=0.9,*/*;q=0.8', cookie: [cookieHeader(j), extra].filter(Boolean).join('; '), ...headers } })
   } catch (e: any) {
     throw new H360Error('DOWN', `H360 did not answer (${e?.name === 'TimeoutError' ? 'timeout' : e?.message ?? 'network error'})`)
   }
@@ -355,4 +357,113 @@ export async function testH360(sample?: string) {
     await setStatus({ ok: false, username: cfg?.username, baseUrl: cfg?.baseUrl, error: e?.message ?? String(e) })
     return { ok: false, error: e?.message ?? String(e) }
   }
+}
+
+// ---------------------------------------------------------------- bills (Billing List + printed bill copy)
+// H360's Billing List (menu 57) is a DataTables table fed by POST /search-bill-list (invoice_id, hdn_patient_id = H360's
+// patient key, date_from/date_to dd-mm-yyyy). Each row is an array; the column meaning comes from H360's own render code:
+// 1 invoice · 3 billed at · 4 UHID · 5 name · 7 mobile · 14 paid · 15 due · 16 refund · 25 discount · 26 gross ·
+// 32 bill type · 33 TRX ids · 34 sales cancel · 35 total bill. The bill copy is a PDF at /bill-invoice-app-print-v2/:id/1/:trx.
+
+export type H360Bill = { invoiceNo: string; at: string | null; uhid: string; name: string; phone: string; total: number; discount: number; payable: number; paid: number; due: number; refund: number; type: string; trx: string[] }
+
+const BILL_MENU = 'menu_id=57'
+const num = (v: unknown) => {
+  const n = Number(String(v ?? '').replace(/,/g, ''))
+  return Number.isFinite(n) ? n : 0
+}
+const dmy = (d: Date) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', day: '2-digit', month: '2-digit', year: 'numeric' }).format(d).replace(/\//g, '-')
+
+function toBill(row: any[]): H360Bill | null {
+  const invoiceNo = str(row[1] ?? row[0])
+  if (!invoiceNo) return null
+  const total = num(row[35]) || num(row[26])
+  const discount = num(row[25])
+  const cancel = num(row[34])
+  const at = str(row[3])
+  return {
+    invoiceNo,
+    at: at ? new Date(`${at.replace(' ', 'T')}+06:00`).toISOString() : null,
+    uhid: str(row[4]),
+    name: str(row[5]),
+    phone: str(row[7]),
+    total,
+    discount,
+    payable: Math.max(0, total - cancel - discount),
+    paid: num(row[14]),
+    due: Math.max(0, num(row[15])),
+    refund: num(row[16]),
+    type: str(row[32]),
+    trx: [...new Set(str(row[33]).split(/,\s*/).filter(Boolean))],
+  }
+}
+
+/** Billing-list CSRF token (the list page's own form token; 30 min, renewed on 419). */
+function billToken() {
+  return memo('h360:bill-csrf', 30 * 60_000, async () => {
+    const html = await (await h360('/billing', { headers: { 'x-requested-with': 'XMLHttpRequest', cookie: BILL_MENU } })).text()
+    const t = html.match(/name="_token" value="([^"]+)"/)?.[1] ?? html.match(/_token:\s*"([^"]+)"/)?.[1]
+    if (!t) throw new H360Error('PARSE', 'H360 Billing List page changed (no CSRF token found)')
+    return t
+  })
+}
+
+/** H360's internal patient key for a UHID (needed to list one patient's bills). */
+export async function patientKey(uhid: string): Promise<string | null> {
+  if (!uhid) return null
+  return memo(`h360:pk:${uhid}`, 24 * 3600_000, async () => {
+    const token = await csrfToken()
+    const res = await h360(AUTOCOMPLETE, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8', 'x-csrf-token': token, 'x-requested-with': 'XMLHttpRequest', accept: 'application/json' }, body: new URLSearchParams({ search_data: uhid }).toString() })
+    if (!res.ok) return null
+    try {
+      const rows: any[] = JSON.parse(await res.text())
+      const hit = rows.find((x) => str(x.patient_code) === uhid)
+      return hit ? str(hit.patient_id ?? hit.patient_no_pk) || null : null
+    } catch {
+      return null
+    }
+  })
+}
+
+/** Search H360's Billing List by invoice no, or one patient's bills in a date range (newest first, max 50). */
+export async function searchBills(q: { invoiceNo?: string; uhid?: string; from?: Date; to?: Date }, retry = true): Promise<H360Bill[]> {
+  const token = await billToken()
+  const pk = q.invoiceNo ? '' : await patientKey(q.uhid ?? '')
+  if (!q.invoiceNo && !pk) return []
+  const p = new URLSearchParams({ _token: token, draw: '1', start: '0', length: '50', 'search[value]': '', 'search[regex]': 'false', 'order[0][column]': '3', 'order[0][dir]': 'desc' })
+  for (let c = 0; c < 37; c++) {
+    p.set(`columns[${c}][data]`, String(c))
+    p.set(`columns[${c}][name]`, '')
+    p.set(`columns[${c}][searchable]`, 'true')
+    p.set(`columns[${c}][orderable]`, 'true')
+    p.set(`columns[${c}][search][value]`, '')
+    p.set(`columns[${c}][search][regex]`, 'false')
+  }
+  const fields: Record<string, string> = { invoice_id: q.invoiceNo ?? '', hdn_patient_id: pk ?? '', hdn_doctor_id: '', admission_id: '', bill_type: '', corporate_name: '', full_paid: '', due_bill: '', date_from: q.from ? dmy(q.from) : '', date_to: q.to ? dmy(q.to) : '' }
+  for (const [k, v] of Object.entries(fields)) p.set(k, v)
+  const res = await h360('/search-bill-list', { method: 'POST', headers: { cookie: BILL_MENU, 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8', 'x-csrf-token': token, 'x-requested-with': 'XMLHttpRequest', accept: 'application/json' }, body: p.toString() })
+  if (res.status === 419 && retry) {
+    forget('h360:bill-csrf')
+    return searchBills(q, false)
+  }
+  if (!res.ok) throw new H360Error('DOWN', `H360 Billing List answered ${res.status}`)
+  try {
+    const json = JSON.parse(await res.text())
+    return ((json.data ?? []) as any[]).map((r) => toBill(Array.isArray(r) ? r : Object.values(r))).filter((x): x is H360Bill => !!x)
+  } catch {
+    throw new H360Error('PARSE', 'H360 Billing List did not return a bill list')
+  }
+}
+
+/** The printed bill copy ("Invoice Cum Receipt") as a PDF, for the latest payment (TRX) on the bill. */
+export async function billPdf(b: Pick<H360Bill, 'invoiceNo' | 'trx' | 'type'>): Promise<Buffer> {
+  const trx = b.trx[b.trx.length - 1]
+  if (!trx) throw new H360Error('PARSE', `Bill ${b.invoiceNo} has no transaction to print`)
+  const path = b.type === 'PKG' ? `/due-invoice-print-v2-pkg/${b.invoiceNo}/${trx}` : `/bill-invoice-app-print-v2/${b.invoiceNo}/1/${trx}`
+  const res = await h360(path, { headers: { cookie: BILL_MENU, accept: 'application/pdf,*/*' } })
+  if (!res.ok) throw new H360Error('DOWN', `H360 bill print answered ${res.status}`)
+  const buf = Buffer.from(await res.arrayBuffer())
+  const at = buf.indexOf('%PDF')
+  if (at < 0 || at > 1024) throw new H360Error('PARSE', 'H360 did not return a PDF for this bill')
+  return at ? buf.subarray(at) : buf // H360 prints a stray newline before the PDF header
 }

@@ -6,6 +6,7 @@ import { ChevronDown, Clock, Loader2, RotateCw, Trash2, Upload } from 'lucide-re
 import { api, useAction, uploadFile } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { useScanner } from '@/components/scanner/useScanner'
+import { usePasteFiles } from '@/components/client/paste'
 import { cx, mmss } from '@/lib/format'
 
 /** Live mm:ss since `from`. Hydration-safe (the shared <Elapsed> can differ by a second between SSR and hydration). */
@@ -83,7 +84,7 @@ export function AttachmentUploader({ requestId }: { requestId: string }) {
   const [caption, setCaption] = useState('')
   const [busy, setBusy] = useState(false)
   const { scan, scanner } = useScanner()
-  async function onFiles(list: FileList | null) {
+  async function onFiles(list: FileList | File[] | null) {
     const picked = Array.from(list ?? [])
     if (input.current) input.current.value = ''
     // photos open the document scanner first (several photos → one PDF); PDFs go straight up
@@ -102,8 +103,10 @@ export function AttachmentUploader({ requestId }: { requestId: string }) {
       if (input.current) input.current.value = ''
     }
   }
+  // a copied image / screenshot (Ctrl+V) or a dropped file uploads like a picked one
+  const { over, dropProps } = usePasteFiles((files) => onFiles(files), { enabled: !busy })
   return (
-    <div className="flex flex-wrap items-end gap-2.5">
+    <div {...dropProps} className={cx('flex flex-wrap items-end gap-2.5 rounded-lg transition-colors', over && 'bg-primary-50 outline-dashed outline-2 outline-offset-4 outline-primary')}>
       <label className="w-[160px]">
         <span className="hc-label">Kind</span>
         <select className="hc-input" value={kind} onChange={(e) => setKind(e.target.value)}>
@@ -122,6 +125,7 @@ export function AttachmentUploader({ requestId }: { requestId: string }) {
       <button type="button" className={btnClass('p', 'md', 'h-10')} disabled={busy} onClick={() => input.current?.click()}>
         {busy ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} Upload file
       </button>
+      <span className="pb-2.5 text-[12px] text-slate-400">{over ? 'Drop to upload' : 'or drop / paste (Ctrl+V)'}</span>
       {scanner}
     </div>
   )

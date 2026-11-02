@@ -293,6 +293,13 @@ const RequestSchema = new Schema<any>(
           attachmentId: { type: ObjectId, ref: 'Attachment' },
           source: { type: String, enum: ['UPLOAD', 'H360'], default: 'UPLOAD' },
           note: String,
+          trxId: String,
+          /** bill lines read from the bill (H360 PDF text or a photo) */
+          items: [{ _id: false, name: String, rate: Number, qty: Number, discount: Number, amount: Number }],
+          /** the bill file was saved before its invoice no / amounts were filled in */
+          needsDetails: Boolean,
+          /** last time paid / due were refreshed from H360 */
+          h360SyncedAt: Date,
           addedBy: { type: ObjectId, ref: 'User' },
           addedAt: Date,
           updatedAt: Date,

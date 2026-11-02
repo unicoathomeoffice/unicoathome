@@ -15,6 +15,7 @@ import { AssignmentTab, AttachmentsTab, AuditTab, MessagesTab, OverviewTab, Time
 import { ACTIVE_VISIT, availableActions, collectUserIds, permsFor, type People } from '@/components/request-detail/lib'
 import type { AssignProps } from '@/components/assign/AssignDrawer'
 import { isPaired } from '@/lib/wa/status'
+import { h360Status } from '@/lib/h360'
 import { ConfirmationStatus } from '@/components/request-detail/PatientWhatsApp'
 import { LiveTrackingCard } from '@/components/request-detail/LiveTrackingCard'
 import { VisitUpdateCard } from '@/components/request-detail/VisitUpdateCard'
@@ -69,6 +70,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   let labs: any[] = []
   let staffWa: any = null
   let billSent: any[] = []
+  let h360On = false
   const extraIds: unknown[] = []
   if (tab === 'overview') {
     staffWa = await MessageLog.findOne({ requestId: r._id, channel: 'WHATSAPP', templateKey: 'staff_assigned', status: { $in: ['SENT_CONFIRMED', 'SENT', 'DELIVERED'] } })
@@ -93,7 +95,10 @@ export default async function RequestDetailPage({ params, searchParams }: { para
     atts = await Attachment.find({ requestId: r._id, deletedAt: null }).sort({ at: -1 }).lean<any[]>()
     for (const a of atts) extraIds.push(a.uploadedBy)
   } else if (tab === 'invoice') {
-    billSent = await MessageLog.find({ requestId: r._id, channel: 'WHATSAPP', templateKey: { $in: ['patient_bill', 'staff_bill'] } }).sort({ at: -1 }).limit(50).select('at toName to status error fileName').lean<any[]>()
+    ;[billSent, h360On] = await Promise.all([
+      MessageLog.find({ requestId: r._id, channel: 'WHATSAPP', templateKey: { $in: ['patient_bill', 'staff_bill'] } }).sort({ at: -1 }).limit(50).select('at toName to status error fileName').lean<any[]>(),
+      h360Status().then((s) => s.configured),
+    ])
   } else if (tab === 'audit') {
     audits = await AuditLog.find({ entity: 'request', entityId: id }).sort({ serverAt: -1 }).limit(500).lean<any[]>()
   }
@@ -297,6 +302,8 @@ export default async function RequestDetailPage({ params, searchParams }: { para
             canEdit={can(user, 'billing.invoice')}
             canSend={can(user, 'billing.invoice') && can(user, 'messages.send')}
             waPaired={waPaired}
+            h360={h360On}
+            patientUhid={patient?.uhid ?? r.patientSnapshot?.uhid ?? ''}
           />
         )}
         {tab === 'attachments' && <AttachmentsTab requestId={id} atts={plain(atts)} people={people} canUpload={perms.edit} me={{ id: user.id, admin: isCoordinator(user) }} />}

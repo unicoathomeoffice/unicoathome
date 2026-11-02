@@ -16,10 +16,12 @@ import type { SessionUser } from '../auth'
 type Meta = { ip?: string; userAgent?: string; client?: string }
 const money = z.coerce.number().nonnegative()
 
-export const InvoiceInput = z.object({
-  invoiceNo: z.string().trim().min(1, 'Invoice no is required').max(40),
+const Item = z.object({ name: z.string().trim().min(1).max(160), rate: money, qty: z.coerce.number().positive().max(1000), discount: money.default(0), amount: money })
+export const InvoiceInput = z
+  .object({
+  invoiceNo: z.string().trim().max(40).default(''),
   date: z.string().optional(), // YYYY-MM-DD
-  total: money,
+  total: money.default(0),
   discount: money.optional(),
   payable: money.optional(),
   paid: money.default(0),
@@ -27,8 +29,31 @@ export const InvoiceInput = z.object({
   attachmentId: z.string().optional(),
   source: z.enum(['UPLOAD', 'H360']).default('UPLOAD'),
   note: z.string().max(300).optional(),
+  trxId: z.string().trim().max(40).optional(),
+  items: z.array(Item).max(80).optional(),
+  /** save the bill file now, fill the invoice no / amounts later */
+  needsDetails: z.boolean().optional(),
+  })
+  .superRefine((v, ctx) => {
+    if (v.needsDetails) {
+      if (!v.attachmentId) ctx.addIssue({ code: 'custom', path: ['attachmentId'], message: 'Choose the bill file first' })
+      return
+    }
+    if (!v.invoiceNo) ctx.addIssue({ code: 'custom', path: ['invoiceNo'], message: 'Invoice no is required' })
+  })
+export const InvoicePatch = z.object({
+  invoiceNo: z.string().trim().min(1, 'Invoice no is required').max(40).optional(),
+  date: z.string().optional(),
+  total: money.optional(),
+  discount: money.optional(),
+  payable: money.optional(),
+  paid: money.optional(),
+  due: money.optional(),
+  attachmentId: z.string().optional(),
+  note: z.string().max(300).optional(),
+  trxId: z.string().trim().max(40).optional(),
+  items: z.array(Item).max(80).optional(),
 })
-export const InvoicePatch = InvoiceInput.partial().omit({ source: true })
 export const BillingStatusInput = z.object({ status: z.enum(['PAID', 'PARTIAL', 'DUE', 'WAIVED']).nullable() })
 export const SendInvoicesInput = z.object({ invoiceIds: z.array(z.string()).min(1, 'Pick at least one invoice'), patient: z.boolean().default(true), staffIds: z.array(z.string()).default([]) })
 
@@ -37,7 +62,7 @@ function needBilling(user: SessionUser) {
 }
 
 /** payable = total − discount (unless given); due = payable − paid (unless given) */
-function amounts(i: { total: number; discount?: number; payable?: number; paid?: number; due?: number }) {
+export function amounts(i: { total: number; discount?: number; payable?: number; paid?: number; due?: number }) {
   const payable = i.payable ?? Math.max(0, i.total - (i.discount ?? 0))
   const paid = i.paid ?? 0
   const due = i.due ?? Math.max(0, payable - paid)
@@ -53,7 +78,7 @@ export function recompute(r: any) {
   r.set('billing.paidAmount', paid)
   r.set('billing.dueAmount', due)
   if (list.length) {
-    r.set('billing.invoiceNo', list.map((x: any) => x.invoiceNo).join(', '))
+    r.set('billing.invoiceNo', list.map((x: any) => x.invoiceNo).filter(Boolean).join(', '))
     r.set('billing.invoiceAmount', payable)
   }
   const derived = !list.length ? r.billing?.status : due <= 0 ? 'PAID' : paid <= 0 ? 'DUE' : 'PARTIAL'
@@ -62,7 +87,7 @@ export function recompute(r: any) {
 
 export async function addInvoice(r: any, input: z.infer<typeof InvoiceInput>, user: SessionUser, meta: Meta) {
   needBilling(user)
-  if ((r.billing?.invoices ?? []).some((x: any) => x.invoiceNo === input.invoiceNo)) throw bad(`Invoice ${input.invoiceNo} is already on this request`, { invoiceNo: 'Already added' })
+  if (input.invoiceNo && (r.billing?.invoices ?? []).some((x: any) => x.invoiceNo === input.invoiceNo)) throw bad(`Invoice ${input.invoiceNo} is already on this request`, { invoiceNo: 'Already added' })
   if (input.attachmentId) {
     const a = await Attachment.findOne({ _id: input.attachmentId, deletedAt: null }).select('requestId kind').lean<any>()
     if (!a || String(a.requestId) !== String(r._id)) throw bad('The invoice file does not belong to this request')
@@ -76,12 +101,15 @@ export async function addInvoice(r: any, input: z.infer<typeof InvoiceInput>, us
     attachmentId: input.attachmentId,
     source: input.source,
     note: input.note,
+    trxId: input.trxId,
+    items: input.items,
+    needsDetails: input.needsDetails || undefined,
     addedBy: user.id,
     addedAt: now,
   })
   recompute(r)
   await r.save()
-  await audit(user, 'request.bill_link', 'request', r._id, { after: { invoiceNo: input.invoiceNo, ...amounts(input), source: input.source }, label: r.requestNo }, meta)
+  await audit(user, 'request.bill_link', 'request', r._id, { after: { invoiceNo: input.invoiceNo || '(details later)', ...amounts(input), source: input.source, items: input.items?.length }, label: r.requestNo }, meta)
 }
 
 export async function updateInvoice(r: any, invoiceId: string, patch: z.infer<typeof InvoicePatch>, user: SessionUser, meta: Meta) {
@@ -96,6 +124,9 @@ export async function updateInvoice(r: any, invoiceId: string, patch: z.infer<ty
   if (patch.date) inv.date = new Date(`${patch.date}T12:00:00+06:00`)
   if (patch.note != null) inv.note = patch.note
   if (patch.attachmentId) inv.attachmentId = patch.attachmentId
+  if (patch.trxId) inv.trxId = patch.trxId
+  if (patch.items) inv.items = patch.items
+  if (inv.needsDetails && inv.invoiceNo && (inv.total ?? 0) > 0) inv.needsDetails = undefined
   inv.updatedAt = new Date()
   recompute(r)
   await r.save()

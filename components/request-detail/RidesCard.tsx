@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bike, Camera, Car, CheckCircle2, Eye, Loader2, Plus, Send, Trash2, X } from 'lucide-react'
 import { api, compressImage, Sheet, useToast } from '@/components/client'
+import { usePasteFiles } from '@/components/client/paste'
 import { cx, taka } from '@/lib/format'
 
 export type Ride = { _id: string; userId: string; leg: 'OUT' | 'BACK' | 'OTHER'; mode: string; amount?: number; at?: string; attachmentIds: string[]; note?: string; claimLineId?: string; requisitionId?: string; sentAt?: string }
@@ -114,7 +115,9 @@ function AddRide({ requestId, team, me, canPickPayer, onClose, onDone }: { reque
   const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  async function addShots(list: FileList | null) {
+  // a ride screenshot copied from the phone / WhatsApp Web pastes straight in (Ctrl+V), or drops onto the sheet
+  const { over, dropProps } = usePasteFiles((files) => addShots(files), { enabled: !uploading && shots.length < 5, accept: ['image/*'] })
+  async function addShots(list: FileList | File[] | null) {
     if (!list) return
     setUploading(true)
     try {
@@ -200,7 +203,7 @@ function AddRide({ requestId, team, me, canPickPayer, onClose, onDone }: { reque
               </span>
             ))}
             {shots.length < 5 && (
-              <label className="flex h-20 w-14 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border-[1.5px] border-dashed border-slate-300 text-[11px] text-slate-500">
+              <label {...dropProps} title="Choose, drop or paste (Ctrl+V) screenshots" className={cx('flex h-20 w-14 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border-[1.5px] border-dashed text-[11px] text-slate-500', over ? 'border-primary bg-primary-50' : 'border-slate-300')}>
                 {uploading ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
                 Add
                 <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => (addShots(e.target.files), (e.target.value = ''))} />
