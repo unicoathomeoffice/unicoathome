@@ -6,7 +6,7 @@ import { AssignForm } from '@/components/coord/AssignForm'
 import { requireDesk, loadCoordRequest } from '@/components/coord/data'
 import { ServiceType } from '@/lib/models'
 import { rankCandidates } from '@/lib/services/requests'
-import { relDay, time, dayNum, dur } from '@/lib/format'
+import { relDay, time, dayNum, dur, clock } from '@/lib/format'
 import { plain } from '@/lib/db'
 
 export const metadata = { title: 'Assign team' }
@@ -47,7 +47,7 @@ export default async function AssignPage({ params }: { params: Promise<{ id: str
             <Calendar size={17} className="text-slate-500" /> {r.scheduledAt ? `${relDay(r.scheduledAt)}, ${dayNum(r.scheduledAt)}` : '—'}
           </div>
           <div className="flex h-11 items-center gap-2 rounded-lg border-[1.5px] border-slate-300 px-3 text-[14px] font-semibold">
-            <Clock size={17} className="text-slate-500" /> {r.slot ?? (r.scheduledAt ? time(r.scheduledAt) : '—')}
+            <Clock size={17} className="text-slate-500" /> {r.slot ? clock(r.slot) : r.scheduledAt ? time(r.scheduledAt) : '—'}
           </div>
         </div>
       </MCard>

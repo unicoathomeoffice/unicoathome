@@ -9,7 +9,7 @@ import { PatientSummaryCard, Line } from '@/components/coord/blocks'
 import { requireDesk, loadCoordRequest, dhakaParts } from '@/components/coord/data'
 import { Note } from '@/lib/models'
 import { can, ROLE_LABEL, TRANSPORT_MODE_LABEL, PAYMENT_METHOD_LABEL } from '@/lib/constants'
-import { relDay, time, dur, taka, dateTime, cx } from '@/lib/format'
+import { relDay, time, dur, taka, dateTime, cx, clock } from '@/lib/format'
 
 export const metadata = { title: 'Request' }
 
@@ -117,7 +117,7 @@ export default async function CoordRequest({ params }: { params: Promise<{ id: s
       />
 
       <MCard>
-        <Line k="When" v={r.scheduledAt ? `${relDay(r.scheduledAt)} · ${time(r.scheduledAt)}${r.slot ? ` · slot ${r.slot}` : ''}` : r.preferred?.date ? `Prefers ${r.preferred.date}${r.preferred.time ? ` ${r.preferred.time}` : ''}${r.preferred.slot ? ` · ${r.preferred.slot}` : ''}` : 'Not set'} />
+        <Line k="When" v={r.scheduledAt ? `${relDay(r.scheduledAt)} · ${time(r.scheduledAt)}${r.slot ? ` · slot ${clock(r.slot)}` : ''}` : r.preferred?.date ? `Prefers ${r.preferred.date}${r.preferred.time ? ` ${clock(r.preferred.time)}` : ''}${r.preferred.slot ? ` · ${clock(r.preferred.slot)}` : ''}` : 'Not set'} />
         <Line k="Duration" v={dur(r.expectedDurationMin)} />
         <Line k="Address" v={r.patientSnapshot?.address} />
         <Line k="UHID" v={r.patientSnapshot?.uhid ?? <span className="text-[#B45309]">Not looked up yet</span>} />

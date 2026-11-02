@@ -5,7 +5,7 @@ import { Bell, Car, CircleDot, ExternalLink, FileText, Navigation, Mail, Message
 import { ActionButton } from '@/components/client'
 import { Avatar, Empty, MapEmbed, StatusChip, Tag, mapsUrl, type Tone } from '@/components/ui'
 import { PAYMENT_METHOD_LABEL, ROLE_LABEL, TRANSPORT_MODE_LABEL, type Role } from '@/lib/constants'
-import { ago, cx, date, dateTime, dayNum, dur, minutesBetween, phone, taka, time } from '@/lib/format'
+import { ago, cx, date, dateTime, dayNum, dur, minutesBetween, phone, taka, time, clock } from '@/lib/format'
 import { directionsUrl } from '@/lib/maps'
 import { Field, MetricsTable, Panel, Stepper, SubTitle, VitalTiles } from './ui'
 import { bytes, GENDER, lifecycleSteps, timingMetrics, vitalRows, who, whoInitials, type People, type Sla, whoPhoto } from './lib'
@@ -114,7 +114,7 @@ export function OverviewTab({
             <Field k="Service">{(r.services ?? []).map((s: any) => s.name).join(', ') || '—'}</Field>
             <Field k="Planned duration">{dur(r.expectedDurationMin ?? 45)}</Field>
             <Field k="Scheduled">
-              {r.scheduledAt ? `${dateTime(r.scheduledAt)}${r.slot ? ` (slot ${r.slot})` : ''}` : r.preferred?.date ? `Preferred ${r.preferred.date}${r.preferred.slot ? ` · ${r.preferred.slot}` : ''}` : 'Not set'}
+              {r.scheduledAt ? `${dateTime(r.scheduledAt)}${r.slot ? ` (slot ${clock(r.slot)})` : ''}` : r.preferred?.date ? `Preferred ${r.preferred.date}${r.preferred.slot ? ` · ${clock(r.preferred.slot)}` : ''}` : 'Not set'}
             </Field>
             <Field k="Checked in">{t.checkInAt ? `${time(t.checkInAt)} · ${late != null && late > 0 ? `+${late} min` : 'on time'}` : '—'}</Field>
             <Field k="Fee">
@@ -357,7 +357,7 @@ export function TimelineTab({ r, people, sla }: { r: any; people: People; sla: S
                 <div key={i} className="border-t border-slate-100 py-2 text-[13px] first:border-t-0">
                   <div className="font-semibold">
                     {x.from ? dateTime(x.from) : '—'} → {dateTime(x.to)}
-                    {x.slot && ` (${x.slot})`}
+                    {x.slot && ` (${clock(x.slot)})`}
                   </div>
                   <div className="text-slate-500">
                     {x.reason} · {who(people, x.by)} · {dateTime(x.at)}

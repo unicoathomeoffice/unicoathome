@@ -8,7 +8,7 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 function show(v: unknown): string {
   if (v === undefined) return '—'
   if (v === null) return 'null'
-  if (typeof v === 'string') return /^\d{4}-\d{2}-\d{2}T/.test(v) ? new Date(v).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }) : v
+  if (typeof v === 'string') return /^\d{4}-\d{2}-\d{2}T/.test(v) ? new Date(v).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }).replace(/\b(am|pm)\b/, (x) => x.toUpperCase()) : v
   if (typeof v === 'object') return JSON.stringify(v, null, 1).replace(/\n\s*/g, ' ')
   return String(v)
 }

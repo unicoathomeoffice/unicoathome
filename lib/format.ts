@@ -1,18 +1,31 @@
-// Formatting helpers. Safe for both server and client components. All times shown in Asia/Dhaka.
+// Formatting helpers. Safe for both server and client components. All times shown in Asia/Dhaka (BDT) on the
+// 12-hour clock used in Bangladesh (2:30 PM, not 14:30). Form inputs keep their own HH:mm values.
 import { TZ } from './constants'
 
 type D = Date | string | number | null | undefined
 const d = (v: D) => (v == null || v === '' ? null : new Date(v))
 
 const f = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-GB', { timeZone: TZ, ...o })
-const fTime = f({ hour: '2-digit', minute: '2-digit', hour12: false })
+const fTime = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: true })
 const fDay = f({ weekday: 'short', day: 'numeric', month: 'short' })
 const fDate = f({ day: 'numeric', month: 'short', year: 'numeric' })
 const fDayNum = f({ day: 'numeric', month: 'short' })
 const fIso = new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' })
 
-/** 14:32 */
+/** 2:32 PM (BDT) */
 export const time = (v: D) => (d(v) ? fTime.format(d(v)!) : '—')
+
+const h12 = (h: number, m?: string) => `${h % 12 || 12}${m && m !== '00' ? `:${m}` : m ? ':00' : ''} ${h < 12 ? 'AM' : 'PM'}`
+/**
+ * Show stored 24-hour clock text on the 12-hour clock: "14:00–15:00" → "2:00 PM–3:00 PM", slot "09–11" → "9 AM–11 AM".
+ * For labels saved as data (booking slots, settings hours); the stored value itself never changes.
+ */
+export function clock(s?: string | null) {
+  if (!s) return s ?? ''
+  const range = s.match(/^(\d{1,2})\s*[–-]\s*(\d{1,2})$/) // legacy hour slots "09–11"
+  if (range) return `${h12(Number(range[1]))}–${h12(Number(range[2]))}`
+  return s.replace(/\b([01]?\d|2[0-3]):([0-5]\d)\b(?!\s*[AaPp][Mm])/g, (_, h, m) => h12(Number(h), m))
+}
 /** Fri 26 Sep */
 export const day = (v: D) => (d(v) ? fDay.format(d(v)!).replace(',', '') : '—')
 /** 26 Sep 2026 */

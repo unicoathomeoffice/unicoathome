@@ -7,7 +7,7 @@ import { getSettings } from '@/lib/settings'
 import { patientRequest } from '@/lib/services/patients-portal'
 import { isOid } from '@/lib/models'
 import { ROLE_LABEL, type Role } from '@/lib/constants'
-import { dateTime, relDay, time } from '@/lib/format'
+import { dateTime, relDay, time, clock } from '@/lib/format'
 import { lifecycleSteps } from '@/components/request-detail/lib'
 import { MapEmbed } from '@/components/ui'
 import { PortalShell } from '@/components/patient/PortalShell'
@@ -26,7 +26,7 @@ export default async function MyRequest({ params }: { params: Promise<{ id: stri
     .filter((st) => st.key !== 'verified' && st.key !== 'closed')
     .map((st) => ({ key: st.key, at: st.at ? dateTime(st.at) : undefined, sub: st.state === 'current' ? undefined : st.sub, state: st.state }))
   const team = [r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean)
-  const when = r.scheduledAt ? `${relDay(r.scheduledAt)} · ${time(r.scheduledAt)}` : r.preferred?.date ? `${relDay(r.preferred.date)}${r.preferred.slot ? ` · ${r.preferred.slot}` : ''}` : '—'
+  const when = r.scheduledAt ? `${relDay(r.scheduledAt)} · ${time(r.scheduledAt)}` : r.preferred?.date ? `${relDay(r.preferred.date)}${r.preferred.slot ? ` · ${clock(r.preferred.slot)}` : ''}` : '—'
 
   return (
     <PortalShell patient={{ name: patient.name, initials: patient.initials, photoUrl: patient.photoUrl }} hotline={s.general.hospitalPhone}>

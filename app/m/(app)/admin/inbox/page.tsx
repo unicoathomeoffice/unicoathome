@@ -10,7 +10,7 @@ import { HomecareRequest } from '@/lib/models'
 import { can } from '@/lib/constants'
 import { getSettings } from '@/lib/settings'
 import { slaInfo, withPeople } from '@/lib/services/requests'
-import { relDay, time } from '@/lib/format'
+import { relDay, time, clock } from '@/lib/format'
 
 export const metadata = { title: 'Request inbox' }
 
@@ -24,7 +24,7 @@ type Tab = keyof typeof TABS
 function when(r: any) {
   if (r.scheduledAt) return `${relDay(r.scheduledAt)} ${time(r.scheduledAt)}`
   const p = r.preferred ?? {}
-  if (p.date) return `prefers ${relDay(`${p.date}T12:00:00+06:00`)}${p.slot ? ` · ${p.slot}` : p.time ? ` ${p.time}` : ''}`
+  if (p.date) return `prefers ${relDay(`${p.date}T12:00:00+06:00`)}${p.slot ? ` · ${clock(p.slot)}` : p.time ? ` ${clock(p.time)}` : ''}`
   return 'no preferred time'
 }
 

@@ -1,7 +1,7 @@
 import 'server-only'
 import { HomecareRequest, isOid } from '../models'
 import { getSettings } from '../settings'
-import { ageGender, dayRange, dhakaDate, isoDay, minutesBetween, relDay, time as fmtTime } from '../format'
+import { ageGender, dayRange, dhakaDate, isoDay, minutesBetween, relDay, time as fmtTime, clock } from '../format'
 import { rankCandidates, slaInfo, withPeople } from './requests'
 import type { BoardRow } from '@/components/board/types'
 
@@ -229,7 +229,7 @@ export function boardQuery(p: BoardFilters) {
 function scheduleLabel(r: any) {
   const at = r.scheduledAt
   const slot = r.slot || r.preferred?.slot
-  if (at) return `${relDay(at)} ${slot && !r.preferred?.time ? slot : fmtTime(at)}`
+  if (at) return `${relDay(at)} ${slot && !r.preferred?.time ? clock(slot) : fmtTime(at)}`
   if (r.preferred?.date) return `${relDay(dhakaDate(r.preferred.date))} ${slot ?? r.preferred.time ?? ''}`.trim()
   return `${relDay(r.timeline?.requestedAt ?? r.createdAt)} ASAP`
 }

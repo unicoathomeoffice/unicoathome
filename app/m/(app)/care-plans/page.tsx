@@ -6,7 +6,7 @@ import { requireAppUser } from '@/lib/auth'
 import { db } from '@/lib/db'
 import { DESK_ROLES } from '@/lib/constants'
 import { listPlans, DAY_SHORT } from '@/lib/services/careplans'
-import { relDay, time } from '@/lib/format'
+import { relDay, time, clock } from '@/lib/format'
 import { ageG } from '@/components/coord/ui'
 
 export const metadata = { title: 'Care plans' }
@@ -49,7 +49,7 @@ export default async function CarePlans({ searchParams }: { searchParams: Promis
                 {p.patient?.name ?? 'Patient'} <span className="font-normal text-slate-500">· {ageG(p.patient?.ageYears, p.patient?.gender)}</span>
               </div>
               <div className="truncate text-[13px] text-slate-500">
-                {p.title ?? p.service?.name} · {(p.daysOfWeek ?? []).map((d: number) => DAY_SHORT[d]).join(' · ')} · {p.slot ?? p.time}
+                {p.title ?? p.service?.name} · {(p.daysOfWeek ?? []).map((d: number) => DAY_SHORT[d]).join(' · ')} · {clock(p.slot ?? p.time)}
               </div>
             </div>
             <Tag tone={p.status === 'ACTIVE' ? 'green' : p.status === 'PAUSED' ? 'amber' : 'slate'}>{p.status}</Tag>

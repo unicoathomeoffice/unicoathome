@@ -19,7 +19,7 @@ import { can, FIELD_ROLES, TRANSITIONS, VITALS, type Status, hasRole, hasAnyRole
 import { background, getTemplate, notifyRoles, notifyUsers, queueEmail, renderTemplate } from '../messaging'
 import { isPaired } from '../wa/status'
 import { getSettings, ruleAllows } from '../settings'
-import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, dayRange } from '../format'
+import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, dayRange, clock } from '../format'
 import type { SessionUser } from '../auth'
 import { closeOpenReturns, startOut, startReturn, stopTracking } from './tracking'
 import { shortLink } from '../links'
@@ -100,7 +100,7 @@ export async function templateVars(r: any, staffId?: unknown) {
     requestNo: r.requestNo,
     serviceType: (r.services ?? []).map((x: any) => x.name).join(', '),
     date: r.scheduledAt ? fmtDate(r.scheduledAt) : r.preferred?.date ?? '',
-    slot: r.slot ?? r.preferred?.slot ?? (r.scheduledAt ? fmtTime(r.scheduledAt) : ''),
+    slot: clock(r.slot ?? r.preferred?.slot) || (r.scheduledAt ? fmtTime(r.scheduledAt) : ''),
     staffName: staff?.name ?? '',
     designation: desig?.title ?? '',
     address: r.patientSnapshot?.address,

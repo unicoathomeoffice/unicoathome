@@ -10,7 +10,7 @@ import { ExportCsvButton, PatientRowActions } from '@/components/people/PatientA
 import { PatientDrawerButton } from '@/components/people/PatientDrawer'
 import { loadPatientBoard, maskPhone, type BoardRow } from '@/components/people/patient-board'
 import { PatientsH360 } from '@/components/people/PatientsH360'
-import { dayNum, phone as fmtPhone, relDay, time } from '@/lib/format'
+import { dayNum, phone as fmtPhone, relDay, time, clock } from '@/lib/format'
 
 export const metadata = { title: 'Patients · Unico HomeCare' }
 
@@ -22,7 +22,7 @@ type SP = Promise<Record<string, string | undefined>>
 function nextVisit(c: BoardRow['current']) {
   if (!c) return <span className="text-slate-400">No requests yet</span>
   if (c.scheduledAt) return `${relDay(c.scheduledAt)} ${time(c.scheduledAt)}`
-  if (c.preferredDate) return `${relDay(c.preferredDate)}${c.slot ? ` ${c.slot}` : ''}`
+  if (c.preferredDate) return `${relDay(c.preferredDate)}${c.slot ? ` ${clock(c.slot)}` : ''}`
   return `Requested ${relDay(c.requestedAt) === 'Today' ? '' : dayNum(c.requestedAt) + ' '}${time(c.requestedAt)}`
 }
 

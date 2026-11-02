@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { ROLE_LABEL, TRANSPORT_MODE_LABEL, PAYMENT_METHOD_LABEL, type Role } from '@/lib/constants'
-import { date, day, dayNum, dur, initialsOf, isoDay, minutesBetween, phone, taka, time } from '@/lib/format'
+import { date, day, dayNum, dur, initialsOf, isoDay, minutesBetween, phone, taka, time, clock } from '@/lib/format'
 import { btnClass } from '@/components/ui'
 import { GENDER, vitalRows } from './lib'
 import { PrintButton } from './PrintButton'
@@ -32,7 +32,7 @@ export function VisitReport({ r, patient, labs, settings, names, signatureId, au
 
   const team = [r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean)
   const s = r.scheduledAt
-  const slotRange = r.slot && /^\d\d–\d\d$/.test(r.slot) ? r.slot.replace(/^(\d\d)–(\d\d)$/, '$1:00 – $2:00') : s ? `${time(s)} – ${time(new Date(new Date(s).getTime() + (r.expectedDurationMin ?? 45) * 60_000))}` : ''
+  const slotRange = r.slot ? clock(r.slot) : s ? `${time(s)} – ${time(new Date(new Date(s).getTime() + (r.expectedDurationMin ?? 45) * 60_000))}` : ''
   const late = minutesBetween(s, t.checkInAt)
   const vit = vitalRows(v.vitals)
   const done = list.filter((c) => c.done).length

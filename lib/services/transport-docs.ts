@@ -66,8 +66,11 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
     r.transport.vehicleId ? Vehicle.findById(r.transport.vehicleId).lean<any>() : null,
   ])
   const approver = cfg.approverId ? await User.findById(cfg.approverId).select('autoSignApprover').lean<any>() : null
+  // Section A names the primary assigned staff (who travels); before assignment, whoever asked for the car.
+  // Their e-signature is only stamped when they asked for the car themselves (signatures are for own actions).
+  const lead = r.primaryStaff ?? requester
   const [requesterSign, headSign, allotterSign] = await Promise.all([
-    signatureOf(requester?.id),
+    lead && requester && lead.id === requester.id ? signatureOf(lead.id) : null,
     approver?.autoSignApprover ? signatureOf(cfg.approverId) : null,
     signatureOf(allotter?.id),
   ])
@@ -80,13 +83,13 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
   const now = new Date()
 
   const pdf = await fillRequisition({
-    requester: requester ? `${requester.name} · ID ${requester.employeeId}` : 'Unico @ Home coordinator',
-    designation: [requester?.designation, requester?.department ?? 'Home Care'].filter(Boolean).join(' · '),
+    requester: lead ? `${lead.name} · ID ${lead.employeeId}` : 'Unico @ Home coordinator',
+    designation: [lead?.designation, (lead as any)?.department ?? 'Home Care'].filter(Boolean).join(' · '),
     requestDate: fmtDate(now),
     tripDate: visit ? fmtDate(visit) : 'To be confirmed',
     reporting: `${pickup ? hm(pickup) : 'Time to be confirmed'} · ${s.general.hospitalName}, ${s.general.address}`,
     destination: address || r.patientSnapshot?.area || '',
-    purpose: `Home care visit ${r.requestNo} · ${(r.services ?? []).map((x: any) => x.name).join(', ')} · Patient ${r.patientSnapshot?.name ?? ''}`,
+    purpose: `Home care visit · ${(r.services ?? []).map((x: any) => x.name).join(', ')} · Patient ${r.patientSnapshot?.name ?? ''}`,
     passengers: team.length ? `${team.length} (${team.map((p: any) => p.name).join(', ')})` : '1',
     duration: hours ? `About ${hours} h · return by ${hm(back)}` : '',
     vehicleType: cfg.vehicleType ?? 'Car',
@@ -110,7 +113,7 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
       outTime: hm(pickup),
       returnTime: hm(back),
       destination: address || r.patientSnapshot?.area || '',
-      purpose: `Home care visit ${r.requestNo}`,
+      purpose: `Home care visit · ${(r.services ?? []).map((x: any) => x.name).join(', ')}`,
       issuedBy: allotter ? `${allotter.name}${allotter.designation ? ` · ${allotter.designation}` : ''}` : 'Transport section',
       issuedSign: allotterSign,
       hospital: { name: s.general.hospitalName, address: s.general.address, phone: s.general.hospitalPhone },
@@ -163,7 +166,12 @@ export async function carRequested(requestId: unknown, userId: string, opts: { u
   if (!r?.transport?.needed || r.status === 'CANCELLED') return false
   if (r.transport.mode && r.transport.mode !== 'UNICO_CAR') return false
   if (!r.transport.requestedBy) await HomecareRequest.updateOne({ _id: requestId }, { $set: { 'transport.requestedBy': userId } })
-  if (r.transport.requisitionSentAt && !opts.updated) return false
+  if (!opts.updated) {
+    // claim the first requisition atomically: creating and confirming a request in one go both call this at the
+    // same moment, and a plain "not sent yet?" check let both through (two identical PDFs, two alerts)
+    const claim = await HomecareRequest.updateOne({ _id: requestId, 'transport.requisitionSentAt': null }, { $set: { 'transport.requisitionSentAt': new Date() } })
+    if (!claim.modifiedCount) return false
+  }
   await sendTransportDocs(requestId, opts.updated ? 'updated' : 'requested', userId)
   return true // a new (or updated) car request
 }

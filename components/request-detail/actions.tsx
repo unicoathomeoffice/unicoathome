@@ -6,7 +6,7 @@ import { CalendarClock, CheckCircle2, FileText, Loader2, Mail, MessageCircle, Pe
 import { api, useAction, ActionButton, Drawer, Segmented, Toggle, ChipPicker, WhatsAppButton } from '@/components/client'
 import { btnClass, Avatar } from '@/components/ui'
 import { TESTS_PROCEDURES, PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Status } from '@/lib/constants'
-import { cx, taka } from '@/lib/format'
+import { cx, taka, clock } from '@/lib/format'
 import { availableActions, type Perms } from './lib'
 import { AssignDrawer, type AssignProps } from '@/components/assign/AssignDrawer'
 import { openConfirmLink, PatientWhatsAppToggle, reserveTab, type WaInfo } from './PatientWhatsApp'
@@ -60,7 +60,7 @@ function SlotSelect({ value, onChange, slots }: { value: string; onChange: (v: s
       <option value="">No slot</option>
       {slots.map((s) => (
         <option key={s} value={s}>
-          {s.replace(/^(\d\d)–(\d\d)$/, '$1:00 – $2:00')}
+          {clock(s)}
         </option>
       ))}
     </select>

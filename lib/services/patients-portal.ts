@@ -9,7 +9,7 @@ import { withPeople } from './requests'
 import type { PatientSession } from '../patient-auth'
 import type { RequestCard } from '../../components/patient/RequestCards'
 import { ROLE_LABEL, type Role } from '../constants'
-import { relDay, time } from '../format'
+import { relDay, time, clock } from '../format'
 
 // Patient portal (/my): create account, sign in, profile, and the patient's own requests.
 // An account is a Patient document with a passwordHash. Phone is the login id.
@@ -132,13 +132,13 @@ const PROGRESS: Record<string, number> = { NEW: 10, VERIFIED: 20, CONFIRMED: 35,
 
 /** Request row → what the patient dashboard card shows (dates pre-formatted, Asia/Dhaka). */
 export function toCard(r: any): RequestCard {
-  const when = r.scheduledAt ? `${relDay(r.scheduledAt)} · ${time(r.scheduledAt)}` : r.preferred?.date ? `${relDay(r.preferred.date)}${r.preferred.slot ? ` · ${r.preferred.slot}` : ''}` : '—'
+  const when = r.scheduledAt ? `${relDay(r.scheduledAt)} · ${time(r.scheduledAt)}` : r.preferred?.date ? `${relDay(r.preferred.date)}${r.preferred.slot ? ` · ${clock(r.preferred.slot)}` : ''}` : '—'
   return {
     id: String(r._id),
     requestNo: r.requestNo,
     status: r.status,
     when,
-    whenSub: r.slot && r.scheduledAt ? r.slot : undefined,
+    whenSub: r.slot && r.scheduledAt ? clock(r.slot) : undefined,
     services: (r.services ?? []).map((s: any) => s.name),
     staff: r.primaryStaff ? { name: r.primaryStaff.name, role: ROLE_LABEL[r.primaryStaff.role as Role] ?? r.primaryStaff.role } : null,
     progress: PROGRESS[r.status] ?? 10,

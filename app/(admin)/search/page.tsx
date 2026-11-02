@@ -8,7 +8,7 @@ import { withPeople } from '@/lib/services/requests'
 import { shortName } from '@/lib/services/dashboard'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { Avatar, Card, Empty, LinkButton, PriorityBadge, StatusChip, Table, Tr } from '@/components/ui'
-import { ageGender, dayNum, phone as fmtPhone, relDay, time } from '@/lib/format'
+import { ageGender, dayNum, phone as fmtPhone, relDay, time, clock } from '@/lib/format'
 
 export const metadata = { title: 'Search · Unico HomeCare' }
 
@@ -111,7 +111,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                   <span className="block truncate">{(r.services ?? []).map((s: any) => s.name).join(', ')}</span>
                   <PriorityBadge priority={r.priority} />
                   <StatusChip status={r.status} sm />
-                  <span className="block truncate">{r.scheduledAt ? `${relDay(r.scheduledAt)} ${r.slot && !r.preferred?.time ? r.slot : time(r.scheduledAt)}` : `Requested ${dayNum(r.createdAt)}`}</span>
+                  <span className="block truncate">{r.scheduledAt ? `${relDay(r.scheduledAt)} ${r.slot && !r.preferred?.time ? clock(r.slot) : time(r.scheduledAt)}` : `Requested ${dayNum(r.createdAt)}`}</span>
                   <span className={r.primaryStaff ? 'block truncate' : 'text-slate-400'}>{r.primaryStaff ? shortName(r.primaryStaff.name) : 'Unassigned'}</span>
                 </Tr>
               ))}

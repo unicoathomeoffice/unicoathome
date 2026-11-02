@@ -13,7 +13,7 @@ import { PatientDrawerButton } from '@/components/people/PatientDrawer'
 import { UploadDocButton } from '@/components/people/UploadDocButton'
 import { PhotoPicker } from '@/components/client/PhotoPicker'
 import { maskPhone } from '@/components/people/patient-board'
-import { ago, cx, date, dayNum, dateTime, minutesBetween, phone as fmtPhone, taka, time } from '@/lib/format'
+import { ago, cx, date, dayNum, dateTime, minutesBetween, phone as fmtPhone, taka, time, clock } from '@/lib/format'
 
 type P = Promise<{ id: string }>
 type SP = Promise<Record<string, string | undefined>>
@@ -35,7 +35,7 @@ function visitTimes(v: any) {
   }
   if (v.status === 'EN_ROUTE') return `en route ${time(v.timeline?.enRouteAt)}`
   if (!v.scheduledAt) return `requested ${time(v.timeline?.requestedAt ?? v.createdAt)}`
-  return v.slot ? `slot ${v.slot}` : '—'
+  return v.slot ? `slot ${clock(v.slot)}` : '—'
 }
 
 export default async function PatientProfile({ params, searchParams }: { params: P; searchParams: SP }) {

@@ -130,7 +130,7 @@ export async function sendRideDocs(requestId: unknown, rideId: string, initiated
     tripDate: `${fmtDate(at)} · ${fmtTime(at)}`,
     reporting: ride.leg === 'BACK' ? `${fmtTime(at)} · patient's home` : `${fmtTime(at)} · ${hospital}`,
     destination: ride.leg === 'BACK' ? hospital : address,
-    purpose: `Home care visit ${r.requestNo} · ${(r.services ?? []).map((x: any) => x.name).join(', ')} · Patient ${r.patientSnapshot?.name ?? ''} · ${legLabel(ride.leg).toLowerCase()}`,
+    purpose: `Home care visit · ${(r.services ?? []).map((x: any) => x.name).join(', ')} · Patient ${r.patientSnapshot?.name ?? ''} · ${legLabel(ride.leg).toLowerCase()}`,
     passengers: '1',
     duration: ride.amount ? `Fare ${taka(ride.amount)}` : '',
     vehicleType: 'Car',

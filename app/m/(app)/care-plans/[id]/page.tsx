@@ -10,7 +10,7 @@ import { db } from '@/lib/db'
 import { isOid } from '@/lib/models'
 import { DESK_ROLES } from '@/lib/constants'
 import { planDetail, DAY_SHORT } from '@/lib/services/careplans'
-import { isoDay, time, cx } from '@/lib/format'
+import { isoDay, time, cx, clock } from '@/lib/format'
 
 export const metadata = { title: 'Care plan' }
 
@@ -44,7 +44,7 @@ export default async function CarePlanPage({ params, searchParams }: { params: P
   const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
   const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
   const visitHref = (r: any) => (desk ? `/m/admin/requests/${r._id}` : `/m/visits/${r._id}`)
-  const schedule = `Every ${(plan.daysOfWeek ?? []).map((d: number) => DAY_SHORT[d]).join(' · ')} · ${plan.slot ?? plan.time} · ${plan.weeks} week${plan.weeks === 1 ? '' : 's'}${plan.orderedBy ? ` · ordered by ${shortName(plan.orderedBy)}` : ''}`
+  const schedule = `Every ${(plan.daysOfWeek ?? []).map((d: number) => DAY_SHORT[d]).join(' · ')} · ${clock(plan.slot ?? plan.time)} · ${plan.weeks} week${plan.weeks === 1 ? '' : 's'}${plan.orderedBy ? ` · ordered by ${shortName(plan.orderedBy)}` : ''}`
 
   return (
     <MScreen

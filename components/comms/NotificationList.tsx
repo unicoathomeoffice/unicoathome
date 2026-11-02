@@ -28,7 +28,7 @@ const ICON: Record<string, { icon: typeof Bell; bg: string; fg: string }> = {
   SYSTEM: { icon: ShieldCheck, bg: '#F1F5F9', fg: '#475569' },
 }
 
-const fTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hour12: false })
+const fTime = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Dhaka', hour: 'numeric', minute: '2-digit', hour12: true })
 const fDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka', year: 'numeric', month: '2-digit', day: '2-digit' })
 const fShort = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', weekday: 'short', day: 'numeric', month: 'short' })
 

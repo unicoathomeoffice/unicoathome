@@ -11,7 +11,7 @@ import { cx, dayNum, dayRange, isoDay } from '@/lib/format'
 export const metadata: Metadata = { title: 'Audit log' }
 
 type SP = Promise<Record<string, string | undefined>>
-const fSec = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+const fSec = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Dhaka', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true })
 const escRx = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export default async function AuditPage({ searchParams }: { searchParams: SP }) {

@@ -5,6 +5,7 @@ import { getSettings } from '@/lib/settings'
 import { availability } from '@/lib/booking'
 import { activeServices, activeZones } from '@/lib/cached'
 import { PublicHome } from '@/components/public/PublicHome'
+import { clock } from '@/lib/format'
 
 // Bangla glyphs for the public page's বাংলা mode only (the staff app stays English)
 const bn = Noto_Sans_Bengali({ subsets: ['bengali'], weight: ['400', '600', '700'], display: 'swap', variable: '--font-bn' })
@@ -54,7 +55,7 @@ export default async function Home() {
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld).replace(/</g, '\\u003c') }} />
       <PublicHome
-        hospital={{ name: g.hospitalName, department: g.department, phone: g.hospitalPhone, address: g.address, hours: b ? `${b.from}–${b.to}` : `${g.workingHours?.from ?? '09:00'}–${g.workingHours?.to ?? '17:00'}` }}
+        hospital={{ name: g.hospitalName, department: g.department, phone: g.hospitalPhone, address: g.address, hours: clock(b ? `${b.from}–${b.to}` : `${g.workingHours?.from ?? '09:00'}–${g.workingHours?.to ?? '17:00'}`) }}
         services={services.map((t) => ({ code: t.code, name: t.name, category: t.category ?? '', requiresPrescription: !!t.requiresPrescription }))}
         zones={zones}
         booking={{ enabled: !!b, days }}
