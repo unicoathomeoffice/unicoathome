@@ -78,6 +78,7 @@ type Props = {
   testItems?: TestItem[]
   patientCategory?: string
   fee?: number
+  payment?: string
   transport: boolean
   priority: 'ROUTINE' | 'URGENT' | 'EMERGENCY'
   canAssign: boolean
@@ -97,6 +98,7 @@ export function ConfirmForm(p: Props) {
   const [tests, setTests] = useState<string[]>(p.tests.filter((t) => !h360Names.has(t)))
   const [testItems, setTestItems] = useState<TestItem[]>(p.testItems ?? [])
   const [fee, setFee] = useState(p.fee != null ? String(p.fee) : '')
+  const [pay, setPay] = useState<string>(p.payment ?? '')
   const [transport, setTransport] = useState(p.transport)
   const [priority, setPriority] = useState(p.priority)
   const [sendWa, setSendWa] = useState(!p.wa.optOut && !!p.wa.phone)
@@ -179,6 +181,24 @@ export function ConfirmForm(p: Props) {
       </div>
 
       <div>
+        <FLabel>Payment method · optional</FLabel>
+        <div className="flex gap-[3px] rounded-[10px] bg-slate-200 p-[3px]">
+          {(
+            [
+              ['CASH', 'Cash'],
+              ['BKASH', 'bKash'],
+              ['NAGAD', 'Nagad'],
+              ['CARD', 'Card'],
+            ] as const
+          ).map(([v, l]) => (
+            <button key={v} type="button" onClick={() => setPay(pay === v ? '' : v)} className={cx('flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-lg text-[13px] font-semibold', pay === v ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,.1)]' : 'text-slate-500')}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
         <FLabel>Priority</FLabel>
         <Segmented
           h={40}
@@ -213,7 +233,7 @@ export function ConfirmForm(p: Props) {
             const ok = await run(
               () =>
                 api(`/requests/${p.id}/confirm`, {
-                  body: { date, time, slot: slot || undefined, uhid: uhid || undefined, tests, testItems, estimatedFee: fee === '' ? undefined : Number(fee), transportNeeded: transport, priority, notifyPatient: sendWa },
+                  body: { date, time, slot: slot || undefined, uhid: uhid || undefined, tests, testItems, estimatedFee: fee === '' ? undefined : Number(fee), paymentMethod: pay || undefined, transportNeeded: transport, priority, notifyPatient: sendWa },
                 }),
               sendWa ? `${p.requestNo} confirmed · patient notified` : `${p.requestNo} confirmed`,
               { redirect: p.canAssign ? `/m/admin/requests/${p.id}/assign` : `/m/admin/requests/${p.id}` },

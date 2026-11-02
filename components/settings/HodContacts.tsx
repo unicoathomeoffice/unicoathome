@@ -6,13 +6,13 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Car, ChevronDown, Loader2, MessageSquareText, Plus, Save, Send, ShieldCheck, Trash2, X } from 'lucide-react'
+import { Activity, Car, ChevronDown, Loader2, MessageSquareText, Plus, Save, Send, ShieldCheck, Trash2, X } from 'lucide-react'
 import { api, Toggle, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
-import { ALERT_EVENTS, ALERT_EVENT_LABEL, type AlertEvent } from '@/lib/constants'
+import { ALERT_EVENTS, ALERT_EVENT_LABEL, CAR_EVENTS, VISIT_EVENTS, type AlertEvent } from '@/lib/constants'
 
-type Group = { id: string; name: string; category?: string; services: 'ALL' | string[]; message?: string; active: boolean; events?: AlertEvent[]; system?: 'security' | 'transport' }
+type Group = { id: string; name: string; category?: string; services: 'ALL' | string[]; message?: string; active: boolean; events?: AlertEvent[]; system?: 'security' | 'transport' | 'live' }
 type Contact = { id: string; groupId: string; name: string; designation: string; phone: string; services?: string[]; active: boolean }
 type Svc = { code: string; name: string; category: string }
 
@@ -21,6 +21,17 @@ const newId = () => Math.random().toString(36).slice(2, 10)
 const eventsOf = (g: Group): AlertEvent[] => (g.events?.length ? g.events : ['NEW_REQUEST'])
 const digits = (s: string) => s.replace(/\D/g, '')
 const problem = (c: Contact) => (c.name.trim().length < 2 ? 'name' : c.designation.trim().length < 2 ? 'designation' : digits(c.phone).length < 10 ? 'phone' : null)
+/** the event chips, in readable sections */
+const EVENT_SECTIONS: { title: string; events: readonly AlertEvent[] }[] = [
+  { title: 'Request & visit steps', events: ['NEW_REQUEST', ...VISIT_EVENTS] },
+  { title: 'Unico car', events: CAR_EVENTS.filter((e) => e !== 'CLAIM') },
+  { title: 'Claims', events: ['CLAIM'] },
+]
+const SYS_ICON = {
+  live: { icon: Activity, cls: 'bg-[#DCFCE7] text-[#15803D]', title: 'Built-in live updates group' },
+  security: { icon: ShieldCheck, cls: 'bg-[#FEF3C7] text-[#B45309]', title: 'Built-in security group' },
+  transport: { icon: Car, cls: 'bg-primary-50 text-primary-700', title: 'Built-in transport group' },
+}
 const PLACEHOLDERS = '{staffName} {designation} {requestNo} {priority} {serviceType} {patientName} {age} {gender} {patientPhone} {address} {date} {slot} {requestLink}'
 
 export function HodContacts({ initial, services, wa }: { initial: { enabled: boolean; groups: Group[]; contacts: Contact[] }; services: Svc[]; wa: { paired: boolean; phone: string | null } }) {
@@ -85,7 +96,7 @@ export function HodContacts({ initial, services, wa }: { initial: { enabled: boo
     <section className="rounded-card bg-white p-5 shadow-card">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-[16px] font-bold">Alert groups — department heads, security &amp; transport</h2>
+          <h2 className="text-[16px] font-bold">Alert groups — live updates, department heads, security &amp; transport</h2>
           <p className="text-[13px] text-slate-500">
             Each group gets a WhatsApp for what it is set to hear about. New requests go to the groups that cover one of the request’s services (patient, service, address, time and a link to assign it). Security and Transport hear about the Unico car — requested, allotted with the requisition and gate pass, time changed, cancelled, leaving and back at the hospital — and expense claims.
           </p>
@@ -112,11 +123,15 @@ export function HodContacts({ initial, services, wa }: { initial: { enabled: boo
           return (
             <div key={g.id} className={cx('flex flex-col rounded-xl border border-slate-200 p-3.5', !g.active && 'opacity-60')}>
               <div className="flex items-center gap-2">
-                {g.system && (
-                  <span className={cx('flex size-9 flex-none items-center justify-center rounded-lg', g.system === 'security' ? 'bg-[#FEF3C7] text-[#B45309]' : 'bg-primary-50 text-primary-700')} title={g.system === 'security' ? 'Built-in security group' : 'Built-in transport group'}>
-                    {g.system === 'security' ? <ShieldCheck size={18} /> : <Car size={18} />}
-                  </span>
-                )}
+                {g.system &&
+                  (() => {
+                    const S = SYS_ICON[g.system]
+                    return (
+                      <span className={cx('flex size-9 flex-none items-center justify-center rounded-lg', S.cls)} title={S.title}>
+                        <S.icon size={18} />
+                      </span>
+                    )
+                  })()}
                 <input className="hc-input h-9 min-w-0 flex-1 font-bold" value={g.name} onChange={(e) => updG(g.id, { name: e.target.value })} aria-label="Group name" />
                 <span className="whitespace-nowrap text-[12px] text-slate-500">{rows.filter((r) => r.active).length} active</span>
                 <Toggle on={g.active} onChange={(v) => updG(g.id, { active: v })} label={`${g.name} active`} />
@@ -127,34 +142,45 @@ export function HodContacts({ initial, services, wa }: { initial: { enabled: boo
                 )}
               </div>
 
+              {g.system === 'live' && (
+                <div className="mt-2 rounded-lg bg-[#F0FDF4] px-2.5 py-2 text-[12px] leading-[17px] text-[#166534]">
+                  Every step of every visit, the moment it happens — confirmed, assigned, accepted, on the way, checked in, completed, back at hospital, rescheduled or cancelled — with a link to open it. About 8–10 short messages per visit for each person.
+                </div>
+              )}
+
               {/* what this group hears about */}
               <div className="mt-2">
                 <div className="text-[12px] font-semibold text-slate-600">Alert about</div>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {ALERT_EVENTS.map((ev) => {
-                    const on = eventsOf(g).includes(ev)
-                    return (
-                      <button
-                        key={ev}
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => {
-                          const cur = eventsOf(g)
-                          const next = on ? cur.filter((x) => x !== ev) : [...cur, ev]
-                          if (!next.length) return toast('A group needs at least one alert', 'err')
-                          updG(g.id, { events: ALERT_EVENTS.filter((x) => next.includes(x)) })
-                        }}
-                        className={cx('rounded-full border px-2 py-0.5 text-[11.5px]', on ? 'border-primary bg-primary-50 font-semibold text-primary-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50')}
-                      >
-                        {ALERT_EVENT_LABEL[ev]}
-                      </button>
-                    )
-                  })}
-                </div>
+                {EVENT_SECTIONS.map((sec) => (
+                  <div key={sec.title} className="mt-1.5">
+                    <div className="text-[10.5px] font-semibold uppercase tracking-[.06em] text-slate-400">{sec.title}</div>
+                    <div className="mt-0.5 flex flex-wrap gap-1">
+                      {sec.events.map((ev) => {
+                        const on = eventsOf(g).includes(ev)
+                        return (
+                          <button
+                            key={ev}
+                            type="button"
+                            aria-pressed={on}
+                            onClick={() => {
+                              const cur = eventsOf(g)
+                              const next = on ? cur.filter((x) => x !== ev) : [...cur, ev]
+                              if (!next.length) return toast('A group needs at least one alert', 'err')
+                              updG(g.id, { events: ALERT_EVENTS.filter((x) => next.includes(x)) })
+                            }}
+                            className={cx('rounded-full border px-2 py-0.5 text-[11.5px]', on ? 'border-primary bg-primary-50 font-semibold text-primary-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50')}
+                          >
+                            {ALERT_EVENT_LABEL[ev]}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
 
               {/* services that trigger this group (new requests only) */}
-              {eventsOf(g).includes('NEW_REQUEST') && (
+              {eventsOf(g).includes('NEW_REQUEST') && g.system !== 'live' && (
                 <div className="mt-2">
                   <button type="button" onClick={() => setSvcOpen(svcOpen === g.id ? null : g.id)} className="flex w-full items-center gap-1.5 text-left text-[12px] font-semibold text-slate-600">
                     <ChevronDown size={14} className={cx('transition-transform', svcOpen === g.id && 'rotate-180')} />
@@ -206,7 +232,16 @@ export function HodContacts({ initial, services, wa }: { initial: { enabled: boo
                   )}
                 </div>
               )}
-              {!eventsOf(g).includes('NEW_REQUEST') && (
+              {g.system === 'live' && (
+                <div className="mt-2 text-[11.5px] text-slate-500">
+                  Message: “Live update at every step” in{' '}
+                  <Link href="/settings/templates" className="font-semibold text-primary-700 hover:underline">
+                    Templates
+                  </Link>
+                  {eventsOf(g).includes('NEW_REQUEST') && <> · new requests use the group’s own message or the head-of-department one</>}.
+                </div>
+              )}
+              {!eventsOf(g).includes('NEW_REQUEST') && g.system !== 'live' && (
                 <div className="mt-2 text-[11.5px] text-slate-500">
                   Messages: the “Car … → Security / Transport” templates in{' '}
                   <Link href="/settings/templates" className="font-semibold text-primary-700 hover:underline">
@@ -236,7 +271,7 @@ export function HodContacts({ initial, services, wa }: { initial: { enabled: boo
                         </div>
                       </div>
                       {/* optional: only some of the group's services */}
-                      {eventsOf(g).includes('NEW_REQUEST') && (
+                      {eventsOf(g).includes('NEW_REQUEST') && g.system !== 'live' && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1">
                           <span className="text-[11.5px] text-slate-500">{c.services?.length ? 'Only:' : 'All group services ·'}</span>
                           {c.services?.length

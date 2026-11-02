@@ -194,6 +194,7 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
     tests: plainTests(r),
     testItems: r.testItems ?? [],
     estimatedFee: r.estimatedFee?.toString() ?? '',
+    paymentMethod: r.paymentMethod ?? '',
     priority: r.priority,
     transportNeeded: r.transportNeeded,
     expectedDurationMin: String(r.expectedDurationMin || 45),
@@ -238,6 +239,7 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
                       tests: f.tests,
                       testItems: f.testItems,
                       estimatedFee: f.estimatedFee === '' ? undefined : Number(f.estimatedFee),
+                      paymentMethod: f.paymentMethod || undefined,
                       priority: f.priority,
                       transportNeeded: f.transportNeeded,
                       expectedDurationMin: Number(f.expectedDurationMin) || undefined,
@@ -297,6 +299,18 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
           <F label="Expected duration (min)">
             <input type="number" min={5} step={5} className="hc-input" value={f.expectedDurationMin} onChange={(e) => set('expectedDurationMin', e.target.value)} />
           </F>
+        </div>
+        <div>
+          <span className="hc-label">
+            Payment method <span className="font-normal text-slate-500">· optional, can change later</span>
+          </span>
+          <div className="grid grid-cols-4 gap-2">
+            {PAYMENT_METHODS.map((m) => (
+              <button key={m} type="button" onClick={() => set('paymentMethod', f.paymentMethod === m ? '' : m)} className={cx('h-10 rounded-lg border text-sm font-semibold', f.paymentMethod === m ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}>
+                {PAYMENT_METHOD_LABEL[m]}
+              </button>
+            ))}
+          </div>
         </div>
         <div>
           <span className="hc-label">Tests / procedures {f.tests.length + f.testItems.length > 0 && <span className="text-slate-500">· {f.tests.length + f.testItems.length} selected</span>}</span>

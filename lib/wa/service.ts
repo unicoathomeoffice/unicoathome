@@ -5,7 +5,7 @@ import { background, waNumber } from '../messaging'
 import { acquireLock, connect, type Conn } from './client'
 import { isPaired, mongoAuthState, pairedPhone } from './auth-state'
 import { linkState } from './status'
-import { allowance, calmDown, checkFresh, contactState, inQuietHours, isDuplicate, isPushback, needsOptOutFooter, OPT_OUT_FOOTER, optOut, pausedUntil, priorityOf, rand, recipientRoom, rememberCheck, sleep, STOP_RX, tooLate, tripBreaker, typingMs } from './guard'
+import { allowance, calmDown, checkFresh, contactState, inQuietHours, isDuplicate, isInternalAlert, isPushback, needsOptOutFooter, OPT_OUT_FOOTER, optOut, pausedUntil, priorityOf, rand, recipientRoom, rememberCheck, sleep, STOP_RX, tooLate, tripBreaker, typingMs } from './guard'
 
 // WhatsApp auto-send. Messages are rows in message_logs (channel WHATSAPP, provider wa_baileys) with
 // status QUEUED; pumpWhatsApp() delivers them in one short connection. See lib/wa/client.ts.
@@ -133,7 +133,7 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
         await m.save()
         continue
       }
-      if (!(await recipientRoom(m.to, cfg))) continue // this person had enough for now: later
+      if (!isInternalAlert(m.templateKey) && !(await recipientRoom(m.to, cfg))) continue // this person had enough for now: later
       const jid = `${m.to}@s.whatsapp.net`
       try {
         // only real WhatsApp numbers (messaging numbers that aren't on WhatsApp is a ban signal)

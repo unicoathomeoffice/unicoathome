@@ -61,7 +61,7 @@ const HodPatch = z
           message: z.string().max(1000).optional(),
           active: z.boolean(),
           events: z.array(z.enum(ALERT_EVENTS)).max(ALERT_EVENTS.length).optional(),
-          system: z.enum(['security', 'transport']).optional(),
+          system: z.enum(['security', 'transport', 'live']).optional(),
         }),
       )
       .max(30),

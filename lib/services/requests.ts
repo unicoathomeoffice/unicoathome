@@ -228,6 +228,12 @@ export async function carAlertLazy(event: import('./hod').CarEvent, requestId: u
   }
 }
 
+/** "Live updates" group alert for a visit step (lib/services/hod.ts visitAlert), never throws. */
+export async function visitAlertLazy(event: import('../constants').VisitEvent, requestId: unknown, extra: import('./hod').VisitAlertExtra = {}) {
+  const { visitAlert } = await import('./hod')
+  await visitAlert(event, requestId, extra)
+}
+
 // ============================================================== create
 export const CreateRequestInput = z.object({
   patientId: z.string().optional(),
@@ -401,6 +407,7 @@ export const ConfirmInput = z.object({
   tests: z.array(z.string()).optional(),
   testItems: z.array(TestItemInput).max(60).optional(),
   estimatedFee: z.coerce.number().nonnegative().optional(),
+  paymentMethod: z.enum(['CASH', 'BKASH', 'NAGAD', 'CARD']).optional(),
   transportNeeded: z.boolean().optional(),
   priority: z.enum(['ROUTINE', 'URGENT', 'EMERGENCY']).optional(),
   expectedDurationMin: z.coerce.number().int().positive().optional(),
@@ -421,6 +428,7 @@ export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user:
   if (input.priority) r.priority = input.priority
   if (input.expectedDurationMin) r.expectedDurationMin = input.expectedDurationMin
   if (input.estimatedFee != null) r.set('billing.estimatedFee', input.estimatedFee)
+  if (input.paymentMethod) r.set('billing.method', input.paymentMethod)
   if (input.transportNeeded != null) {
     r.set('transport.needed', input.transportNeeded)
     if (input.transportNeeded && !r.transport?.status) r.set('transport.status', 'REQUESTED')
@@ -438,6 +446,7 @@ export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user:
       await whatsappPatient(r, 'patient_confirmed', user, undefined, input.notifyPatient === true)
     }
     await notifyRoles(['FRONT_DESK'], { type: 'CONFIRMED', title: `${r.requestNo} confirmed`, body: `${r.patientSnapshot.name} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: url(r._id) })
+    await visitAlertLazy('CONFIRMED', r._id, { by: user.name })
     if (r.transport?.needed) await carRequestedLazy(r._id, user.id)
     if (r.transport?.needed)
       await notifyRoles(['TRANSPORT_SUPERVISOR'], { type: 'TRANSPORT', title: `Trip request ${r.requestNo}`, body: `${r.patientSnapshot.area ?? ''} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: '/m/trips' })
@@ -507,6 +516,8 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
     })
     await notifyUsers(input.secondaryStaffIds, { type: 'ASSIGNED', as: 'STAFF', title: `Added to care team ${r.requestNo}`, body: `${r.patientSnapshot.name} · ${when}`, requestId: r._id, url: appUrl(r._id) })
     if (prevPrimary && prevPrimary !== input.primaryStaffId) await notifyUsers([prevPrimary], { type: 'CANCELLED', as: 'STAFF', title: `${r.requestNo} reassigned`, body: 'This visit was given to another staff member', requestId: r._id })
+    await visitAlertLazy('ASSIGNED', r._id, { by: user.name })
+    if (forced) await visitAlertLazy('ACCEPTED', r._id, { by: user.name, onBehalf: true, staffName: staff.find((x) => String(x._id) === input.primaryStaffId)?.name })
     await emailPatient(r, 'patient_assigned', user, input.primaryStaffId)
     await whatsappPatient(r, 'patient_assigned', user, input.primaryStaffId)
   })
@@ -530,6 +541,7 @@ export async function reschedule(r: any, input: z.infer<typeof RescheduleInput>,
     await notifyUsers(team, { type: 'RESCHEDULED', as: 'STAFF', title: `${r.requestNo} rescheduled`, body: `New time ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)} · needs re-assignment`, requestId: r._id, url: appUrl(r._id) })
     await emailPatient(r, 'patient_rescheduled', user)
     await whatsappPatient(r, 'patient_rescheduled', user)
+    await visitAlertLazy('RESCHEDULED', r._id, { by: user.name, reason: input.reason })
     // the security supervisor already has a requisition for the old time: send the updated one
     if (r.transport?.needed && r.transport?.requisitionSentAt) await carRequestedLazy(r._id, user.id, { updated: true })
     if (r.transport?.needed) await carAlertLazy('CAR_CHANGED', r._id)
@@ -547,6 +559,7 @@ export async function cancel(r: any, input: z.infer<typeof CancelInput>, user: S
     await notifyUsers([r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? []), r.transport?.driverId], { type: 'CANCELLED', as: 'STAFF', title: `${r.requestNo} cancelled`, body: input.reason, requestId: r._id })
     await emailPatient(r, 'patient_cancelled', user)
     await whatsappPatient(r, 'patient_cancelled', user)
+    await visitAlertLazy('CANCELLED', r._id, { by: user.name, reason: input.reason })
     if (r.transport?.needed) await carAlertLazy('CAR_CANCELLED', r._id, { reason: input.reason })
   })
 }
@@ -598,12 +611,18 @@ export async function accept(r: any, user: SessionUser, meta: Meta, deviceAt?: s
     const staff = await User.findById(r.assignment.primaryStaffId).select('name').lean<any>()
     await AssignmentLog.create({ requestId: r._id, toStaffId: r.assignment.primaryStaffId, action: 'ACCEPT_BY_OVERRIDE', by: user.id, reason: `Accepted by ${user.name} for ${staff?.name ?? 'staff'}` })
     await audit(user, 'request.accept_override', 'request', r._id, { after: { status: 'ACCEPTED', for: staff?.name }, label: r.requestNo }, meta)
-    background(() => notifyUsers([r.assignment.primaryStaffId, ...(r.assignment.secondaryStaffIds ?? [])], { type: 'ACCEPTED', as: 'STAFF', title: `${r.requestNo} accepted for you by ${user.name}`, body: `${r.patientSnapshot.name} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: appUrl(r._id), priority: 'high' }))
+    background(async () => {
+      await notifyUsers([r.assignment.primaryStaffId, ...(r.assignment.secondaryStaffIds ?? [])], { type: 'ACCEPTED', as: 'STAFF', title: `${r.requestNo} accepted for you by ${user.name}`, body: `${r.patientSnapshot.name} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: appUrl(r._id), priority: 'high' })
+      await visitAlertLazy('ACCEPTED', r._id, { by: user.name, onBehalf: true, staffName: staff?.name })
+    })
     return
   }
   await AssignmentLog.create({ requestId: r._id, toStaffId: user.id, action: 'ACCEPT', by: user.id })
   await audit(user, 'request.accept', 'request', r._id, { after: { status: 'ACCEPTED' }, label: r.requestNo }, meta)
-  background(() => notifyRoles(['HC_ADMIN'], { type: 'ACCEPTED', title: `${r.requestNo} accepted`, body: `${user.name} accepted · ${r.patientSnapshot.name}`, requestId: r._id, url: url(r._id) }))
+  background(async () => {
+    await notifyRoles(['HC_ADMIN'], { type: 'ACCEPTED', title: `${r.requestNo} accepted`, body: `${user.name} accepted · ${r.patientSnapshot.name}`, requestId: r._id, url: url(r._id) })
+    await visitAlertLazy('ACCEPTED', r._id, { staffName: user.name })
+  })
 }
 
 /** The acceptance window passed: give the staff another window instead of reassigning (coordinator's choice). */
@@ -630,16 +649,17 @@ export async function decline(r: any, input: z.infer<typeof DeclineInput>, user:
   await AssignmentLog.create({ requestId: r._id, fromStaffId: user.id, action: 'DECLINE', reason: input.reason, by: user.id })
   await audit(user, 'request.decline', 'request', r._id, { after: { status: 'CONFIRMED', reason: input.reason }, label: r.requestNo }, meta)
   const next = (await rankCandidates(r, 1)).find((c) => c.id !== user.id)
-  background(() =>
-    notifyRoles(['HC_ADMIN'], {
+  background(async () => {
+    await notifyRoles(['HC_ADMIN'], {
       type: 'DECLINED',
       title: `${r.requestNo} declined by ${user.name}`,
       body: `Reason: ${input.reason}${next ? ` · next best: ${next.name}` : ''}`,
       requestId: r._id,
       url: `${url(r._id)}?assign=1`,
       priority: 'high',
-    }),
-  )
+    })
+    await visitAlertLazy('DECLINED', r._id, { staffName: user.name, reason: input.reason })
+  })
 }
 
 const Stamp = z.object({ deviceAt: z.string().optional(), offline: z.boolean().optional(), lat: z.number().optional(), lng: z.number().optional(), accuracyM: z.number().optional() })
@@ -658,6 +678,7 @@ export async function enRoute(r: any, input: z.infer<typeof Stamp>, user: Sessio
     if (!forced) await closeOpenReturns(user.id, r._id) // left straight from the last visit: that way back is over
     await notifyRoles(['HC_ADMIN'], { type: 'EN_ROUTE', title: `${user.name} is on the way`, body: `${r.requestNo} · ${r.patientSnapshot.name}`, requestId: r._id, url: url(r._id) })
     if (token && s.features.shareTrackingWithPatient) await whatsappPatient(r, 'patient_en_route', user, user.id)
+    await visitAlertLazy('EN_ROUTE', r._id, { by: user.name, onBehalf: forced })
     // a Unico car the driver didn't stamp out: the team leaving is the car leaving
     if (r.transport?.mode === 'UNICO_CAR' && !r.transport.legs?.find((l: any) => l.key === 'pickup')?.at) await carAlertLazy('CAR_OUT', r._id)
   })
@@ -677,15 +698,17 @@ export async function checkIn(r: any, input: z.infer<typeof Stamp>, user: Sessio
   deviceStamp(r, user, 'check_in', input.deviceAt, input.offline)
   await r.save()
   await audit(user, 'visit.check_in', 'request', r._id, { after: { status: 'IN_PROGRESS', at: now, lateMin: r.visit.lateMin }, label: r.requestNo }, meta)
-  background(() =>
-    notifyRoles(['HC_ADMIN'], {
+  const forced = onBehalf(user, r)
+  background(async () => {
+    await notifyRoles(['HC_ADMIN'], {
       type: 'CHECK_IN',
       title: `${user.name} checked in${late && late > s.sla.lateAfterMin ? ` · ${late} min late` : ''}`,
       body: `${r.requestNo} · ${r.patientSnapshot.name}`,
       requestId: r._id,
       url: url(r._id),
-    }),
-  )
+    })
+    await visitAlertLazy('CHECKED_IN', r._id, { by: user.name, onBehalf: forced })
+  })
 }
 
 export const ChecklistInput = z.object({ done: z.boolean(), note: z.string().optional(), reason: z.string().optional(), deviceAt: z.string().optional(), offline: z.boolean().optional() })
@@ -809,7 +832,10 @@ export async function checkOut(r: any, input: z.infer<typeof CheckOutInput>, use
   const returning = onBehalf(user, r) ? false : await startReturn(r, user.id) // way back to the hospital (live tracking + hospital pin set)
   await audit(user, 'visit.check_out', 'request', r._id, { after: { at: now, durationMin: duration, billAmount: input.billAmount, billingStatus: input.billingStatus, returnTracking: returning }, label: r.requestNo }, meta)
   if (input.complete !== false) await completeVisit(r, user, meta)
-  else await r.save()
+  else {
+    await r.save()
+    background(() => visitAlertLazy('CHECKED_OUT', r._id, { by: user.name }))
+  }
 }
 
 /** "Reached hospital" button on the field app (the geofence usually does this on its own). */
@@ -831,6 +857,7 @@ export async function completeVisit(r: any, user: SessionUser, meta: Meta) {
   await r.save()
   await audit(user, 'visit.complete', 'request', r._id, { after: { status: 'COMPLETED', durationMin: r.visit.durationMin }, label: r.requestNo }, meta)
   background(async () => {
+    await visitAlertLazy('COMPLETED', r._id, { by: user.name, onBehalf: onBehalf(user, r) })
     await notifyRoles(['HC_ADMIN'], { type: 'COMPLETED', title: `${r.requestNo} completed`, body: `${user.name} · ${r.patientSnapshot.name} · ${r.visit.durationMin} min · report ready`, requestId: r._id, url: url(r._id) })
     await emailPatient(r, 'patient_completed', user)
     await whatsappPatient(r, 'patient_completed', user)

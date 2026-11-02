@@ -52,6 +52,8 @@ export async function sweep(force = false) {
         priority: 'high',
       })
       if (staffId) await notifyUsers([staffId], { type: 'ASSIGNED', as: 'STAFF', title: `Please accept or decline ${r.requestNo}`, body: `${r.patientSnapshot?.name ?? ''} · the coordinator is waiting for your answer`, requestId: r._id, url: `/m/visits/${r._id}`, priority: 'high' })
+      const { visitAlert } = await import('./hod')
+      await visitAlert('NO_RESPONSE', r._id, { staffName: staff?.name, minutes: s.sla.acceptTimeoutMin })
       timeouts++
       continue
     }

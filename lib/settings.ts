@@ -12,7 +12,7 @@ export type HodContact = { id: string; groupId?: string; category?: (typeof HOD_
 /** category: built-in group following a ServiceType category; services: codes, or 'ALL'; message: own WhatsApp text
  *  (new requests only); events: what the group hears about (missing = new requests only); system: built-in Security /
  *  Transport group (lib/services/hod.ts), can't be deleted */
-export type HodGroup = { id: string; name: string; category?: string; services: 'ALL' | string[]; message?: string; active: boolean; events?: AlertEvent[]; system?: 'security' | 'transport' }
+export type HodGroup = { id: string; name: string; category?: string; services: 'ALL' | string[]; message?: string; active: boolean; events?: AlertEvent[]; system?: 'security' | 'transport' | 'live' }
 
 /** Non-secret configuration editable from Settings (W15 / A5). Secrets stay in env vars. */
 export const DEFAULT_SETTINGS = {

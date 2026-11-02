@@ -115,8 +115,6 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
   const [notes, setNotes] = useState('')
   const [refDoc, setRefDoc] = useState('')
   const [allergies, setAllergies] = useState('')
-  const [fee, setFee] = useState('')
-  const [pay, setPay] = useState<'CASH' | 'BKASH' | 'NAGAD' | 'CARD'>('CASH')
   const [remarks, setRemarks] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
@@ -172,7 +170,6 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
     setNotes('')
     setRefDoc('')
     setAllergies('')
-    setFee('')
     setRemarks('')
     setFiles([])
     setQ('')
@@ -207,8 +204,6 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
         complaint: notes.trim() || undefined,
         referringDoctor: refDoc.trim() || undefined,
         allergies: allergies.trim() ? allergies.split(',').map((a) => a.trim()).filter(Boolean) : undefined,
-        estimatedFee: fee ? Number(fee) : undefined,
-        paymentMethod: mode === 3 ? pay : undefined,
         source,
         remarks: [followUp ? `Follow-up of ${from!.requestNo}` : '', remarks.trim()].filter(Boolean).join(' · ') || undefined,
         ignoreDuplicate: ignoreDuplicate || undefined,
@@ -775,33 +770,12 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
             />
             {scanner}
           </div>
-          <SLabel>Commercial</SLabel>
-          <div className="grid grid-cols-[1fr_1.6fr] gap-2.5">
-            <div>
-              <FLabel>Estimated fee</FLabel>
-              <label className="flex h-12 items-center gap-2 rounded-lg border-[1.5px] border-slate-300 bg-white px-3.5 focus-within:border-primary">
-                <span className="text-slate-400">৳</span>
-                <input className="min-w-0 flex-1 bg-transparent text-[15px] outline-none" inputMode="numeric" placeholder={estimate ? taka(estimate).replace('৳ ', '') : '0'} value={fee} onChange={(e) => setFee(e.target.value.replace(/\D/g, ''))} />
-              </label>
+          {estimate > 0 && (
+            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3.5 py-2.5 text-[13px] text-slate-500">
+              <span>Estimated fee · set when confirming</span>
+              <b className="text-slate-900">{taka(estimate)}</b>
             </div>
-            <div>
-              <FLabel>Payment</FLabel>
-              <div className="flex gap-[3px] rounded-[10px] bg-slate-200 p-[3px]">
-                {(
-                  [
-                    ['CASH', 'Cash'],
-                    ['BKASH', 'bKash'],
-                    ['NAGAD', 'Nagad'],
-                    ['CARD', 'Card'],
-                  ] as const
-                ).map(([v, l]) => (
-                  <button key={v} type="button" onClick={() => setPay(v)} className={cx('flex h-[42px] min-w-0 flex-1 items-center justify-center rounded-lg text-[13px] font-semibold', pay === v ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,.1)]' : 'text-slate-500')}>
-                    {l}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          )}
           <div>
             <FLabel>Internal remarks</FLabel>
             <textarea className="hc-input hc-input-lg h-[76px] py-2.5" placeholder="Visible to coordinator only" value={remarks} onChange={(e) => setRemarks(e.target.value)} />

@@ -50,6 +50,9 @@ export const PLACEHOLDERS = [
   'transportMode',
   'amount',
   'cashCounter',
+  'update',
+  'team',
+  'area',
 ] as const
 
 export const DEFAULT_TEMPLATES: TemplateDef[] = [
@@ -228,6 +231,14 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     audience: 'Department',
     subject: 'Car back at the hospital · {requestNo}',
     body: 'Car back at the hospital at {eventTime} · {requestNo}\nVehicle: {vehicle} · driver {driverName}\n— Unico HomeCare',
+  },
+  {
+    key: 'visit_live',
+    name: 'Live update at every step → Live updates group',
+    channel: ['WHATSAPP'],
+    audience: 'Department',
+    subject: '{requestNo} · live update',
+    body: '{update}\nPatient: {patientName} · {area}\nService: {serviceType}\nTeam: {team}\nOpen: {requestLink}\n— Unico HomeCare',
   },
   {
     key: 'visit_update',

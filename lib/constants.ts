@@ -234,10 +234,22 @@ export function isSeniorCitizen(p: { ageYears?: number | null; dob?: string | Da
 }
 
 /** What an alert group (Settings → Notification rules) can be WhatsApped about. Car events are for a Unico car. */
-export const ALERT_EVENTS = ['NEW_REQUEST', 'CAR_REQUESTED', 'CAR_ALLOTTED', 'CAR_DOCS', 'CAR_OWN', 'CAR_CHANGED', 'CAR_CANCELLED', 'CAR_OUT', 'CAR_BACK', 'CLAIM'] as const
+export const ALERT_EVENTS = ['NEW_REQUEST', 'CONFIRMED', 'ASSIGNED', 'ACCEPTED', 'DECLINED', 'NO_RESPONSE', 'EN_ROUTE', 'CHECKED_IN', 'CHECKED_OUT', 'COMPLETED', 'BACK_AT_HOSPITAL', 'RESCHEDULED', 'CANCELLED', 'CAR_REQUESTED', 'CAR_ALLOTTED', 'CAR_DOCS', 'CAR_OWN', 'CAR_CHANGED', 'CAR_CANCELLED', 'CAR_OUT', 'CAR_BACK', 'CLAIM'] as const
 export type AlertEvent = (typeof ALERT_EVENTS)[number]
 export const ALERT_EVENT_LABEL: Record<AlertEvent, string> = {
   NEW_REQUEST: 'New request',
+  CONFIRMED: 'Confirmed',
+  ASSIGNED: 'Staff assigned',
+  ACCEPTED: 'Staff accepted',
+  DECLINED: 'Staff declined',
+  NO_RESPONSE: 'No reply from staff',
+  EN_ROUTE: 'On the way',
+  CHECKED_IN: 'Checked in',
+  CHECKED_OUT: 'Checked out',
+  COMPLETED: 'Completed',
+  BACK_AT_HOSPITAL: 'Team back at hospital',
+  RESCHEDULED: 'Rescheduled',
+  CANCELLED: 'Cancelled',
   CAR_REQUESTED: 'Car requested',
   CAR_ALLOTTED: 'Car & driver allotted',
   CAR_DOCS: 'Requisition & gate pass (PDF)',
@@ -248,6 +260,9 @@ export const ALERT_EVENT_LABEL: Record<AlertEvent, string> = {
   CAR_BACK: 'Car back at hospital',
   CLAIM: 'Expense claims (PDF)',
 }
+/** every step of a visit, for the built-in "Live updates" group (lib/services/hod.ts visitAlert) */
+export const VISIT_EVENTS = ['CONFIRMED', 'ASSIGNED', 'ACCEPTED', 'DECLINED', 'NO_RESPONSE', 'EN_ROUTE', 'CHECKED_IN', 'CHECKED_OUT', 'COMPLETED', 'BACK_AT_HOSPITAL', 'RESCHEDULED', 'CANCELLED'] as const satisfies readonly AlertEvent[]
+export type VisitEvent = (typeof VISIT_EVENTS)[number]
 /** the transport + security events (everything except new requests) */
 export const CAR_EVENTS: AlertEvent[] = ['CAR_REQUESTED', 'CAR_ALLOTTED', 'CAR_DOCS', 'CAR_OWN', 'CAR_CHANGED', 'CAR_CANCELLED', 'CAR_OUT', 'CAR_BACK', 'CLAIM']
 export const TRANSPORT_MODE_LABEL = {

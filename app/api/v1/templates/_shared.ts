@@ -63,7 +63,7 @@ export async function getTemplateFull(key: string) {
 }
 
 /** Sample values for placeholders that a request cannot provide (escalations, digests, codes). */
-const EXTRA: Record<string, string> = { minutes: '15', reason: 'Unavailable', nextStaff: 'Next best candidate', code: '471903', vehicle: 'Toyota Hiace · Dhaka Metro-Cha 11-2233', driverName: 'Md Karim', driverPhone: '01711-000000', pickupTime: '10:20', returnTime: '12:45', eventTime: '10:24' }
+const EXTRA: Record<string, string> = { minutes: '15', reason: 'Unavailable', nextStaff: 'Next best candidate', code: '471903', vehicle: 'Toyota Hiace · Dhaka Metro-Cha 11-2233', driverName: 'Md Karim', driverPhone: '01711-000000', pickupTime: '10:20', returnTime: '12:45', eventTime: '10:24', update: '📍 HC-261102-0007 · Checked in 10:24 AM (4 min late)', team: 'Shirin Akhter, Rahima Begum', area: 'Dhanmondi, Dhaka' }
 
 export async function previewVars(requestId?: string) {
   const r = requestId && isOid(requestId) ? await HomecareRequest.findById(requestId).lean<any>() : await HomecareRequest.findOne({ deletedAt: null, 'assignment.primaryStaffId': { $ne: null } }).sort({ 'timeline.requestedAt': -1 }).lean<any>()

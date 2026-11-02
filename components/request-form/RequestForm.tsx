@@ -8,7 +8,7 @@ import { AlertTriangle, Check, ChevronLeft, ChevronRight, Loader2, MapPin, Plus,
 import { btnClass, StatusChip } from '@/components/ui'
 import { api, Segmented, Toggle, useToast } from '@/components/client'
 import { AddressBlock, ADDRESS_LABELS_EN, composeFull, roadOf } from '@/components/client/AddressBlock'
-import { ACTIVE_STATUSES, PAYMENT_METHOD_LABEL, PAYMENT_METHODS, REQUEST_SOURCES, type Status } from '@/lib/constants'
+import { ACTIVE_STATUSES, PAYMENT_METHODS, REQUEST_SOURCES, type Status } from '@/lib/constants'
 import { ageGender, cx, dayNum, initialsOf, phone as fmtPhone, taka, time as fmtTime } from '@/lib/format'
 import { firstOpen, SlotPicker, slotLabel, type SlotBooking } from './SlotPicker'
 import { openConfirmLink, PatientWhatsAppToggle, reserveTab } from '@/components/request-detail/PatientWhatsApp'
@@ -62,7 +62,7 @@ type F = ReturnType<typeof blank>
 const STEPS = [
   { n: 1, title: 'Patient & address', sub: 'Search or create' },
   { n: 2, title: 'Service & schedule', sub: 'Type, priority, slot' },
-  { n: 3, title: 'Clinical & payment', sub: 'Complaint, fee, remarks' },
+  { n: 3, title: 'Clinical & source', sub: 'Complaint, notes, remarks' },
 ] as const
 
 /** W05 — 3-step new request form. Creates the request (NEW), optionally confirms it and hands over to assignment. */
@@ -160,7 +160,6 @@ export function RequestForm({
   const chosen = services.filter((s) => f.serviceCodes.includes(s.code))
   const autoFee = chosen.reduce((a, s) => a + s.fee, 0) + testsTotal(f.testItems) // services + H360 test prices
   const autoDuration = chosen.length ? Math.max(30, ...chosen.map((s) => s.duration)) : 45
-  const fee = f.fee === '' ? autoFee : Number(f.fee)
   const wa = { paired: waPaired, phone: f.mode === 'existing' ? f.patient?.phone ?? '' : f.np.phone.trim(), optOut: false }
 
   function validate(upTo: 1 | 2 | 3, needDate = false) {
@@ -180,7 +179,6 @@ export function RequestForm({
       if (needDate && !f.date) e.date = 'Pick the date of service to confirm'
       if (f.timeMode === 'time' && f.time && !/^\d{2}:\d{2}$/.test(f.time)) e.time = 'Use HH:mm'
     }
-    if (upTo >= 3 && f.fee !== '' && (isNaN(Number(f.fee)) || Number(f.fee) < 0)) e.fee = 'Enter a valid amount'
     setErrors(e)
     const first = Object.keys(e)[0]
     if (first) {
@@ -240,8 +238,6 @@ export function RequestForm({
         clinicalNotes: f.notes.trim() || undefined,
         referringDoctor: f.refDoctor.trim() || undefined,
         allergies: f.allergies.trim() ? f.allergies.split(',').map((s) => s.trim()).filter(Boolean) : undefined,
-        estimatedFee: fee,
-        paymentMethod: f.payment || undefined,
         transportNeeded: f.transport,
         source: f.source,
         remarks: f.remarks.trim() || undefined,
@@ -311,7 +307,7 @@ export function RequestForm({
       <div className="flex min-w-0 flex-1 flex-col gap-4">
         {step === 1 && <StepPatient f={f} set={set} setIn={setIn} zones={zones} errors={errors} initialQuery={initialQuery} />}
         {step === 2 && <StepService f={f} set={set} services={services} slots={slots} booking={booking} today={today} errors={errors} autoDuration={autoDuration} />}
-        {step === 3 && <StepClinical f={f} set={set} services={chosen} autoFee={autoFee} fee={fee} errors={errors} />}
+        {step === 3 && <StepClinical f={f} set={set} services={chosen} autoFee={autoFee} />}
         {step === 3 && canConfirm && (
           <div className="max-w-[720px]">
             <PatientWhatsAppToggle on={notifyWa} onChange={setNotifyWa} wa={wa} label="Save & confirm: send the confirmation to the patient on WhatsApp" />
@@ -789,7 +785,7 @@ function StepService({ f, set, services, slots, booking, today, errors, autoDura
 }
 
 // ==================================================================== step 3
-function StepClinical({ f, set, services, autoFee, fee, errors }: { f: F; set: SetF; services: Service[]; autoFee: number; fee: number; errors: Record<string, string> }) {
+function StepClinical({ f, set, services, autoFee }: { f: F; set: SetF; services: Service[]; autoFee: number }) {
   const who = f.mode === 'existing' ? f.patient?.name : f.np.name
   return (
     <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
@@ -810,21 +806,8 @@ function StepClinical({ f, set, services, autoFee, fee, errors }: { f: F; set: S
             </Field>
           </div>
         </SectionCard>
-        <SectionCard title="Payment & source">
+        <SectionCard title="Source & remarks">
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Estimated fee (৳)" error={errors.fee} hint={f.fee === '' ? `Auto: services + H360 test prices (${taka(autoFee)})` : <button type="button" className="font-semibold text-primary-700 hover:underline" onClick={() => set('fee', '')}>Reset to {taka(autoFee)}</button>}>
-              <input className={cx('hc-input', errCls(errors.fee))} inputMode="numeric" value={f.fee === '' ? String(autoFee) : f.fee} onChange={(e) => set('fee', e.target.value.replace(/[^\d.]/g, ''))} />
-            </Field>
-            <div>
-              <span className="hc-label">Payment method</span>
-              <div className="grid grid-cols-4 gap-2">
-                {PAYMENT_METHODS.map((m) => (
-                  <button key={m} type="button" onClick={() => set('payment', f.payment === m ? '' : m)} className={cx('h-10 rounded-lg border text-sm font-semibold', f.payment === m ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}>
-                    {PAYMENT_METHOD_LABEL[m]}
-                  </button>
-                ))}
-              </div>
-            </div>
             <Field label="Source">
               <select className="hc-input" value={f.source} onChange={(e) => set('source', e.target.value as F['source'])}>
                 {REQUEST_SOURCES.map((s) => (
@@ -850,7 +833,7 @@ function StepClinical({ f, set, services, autoFee, fee, errors }: { f: F; set: S
           <Row k="Priority" v={f.priority[0] + f.priority.slice(1).toLowerCase()} />
           <Row k="When" v={f.date ? `${dayNum(`${f.date}T12:00:00+06:00`)} · ${f.timeMode === 'slot' ? (f.slot ? slotLabel(f.slot) : 'any slot') : f.time || 'any time'}` : 'ASAP'} />
           <Row k="Transport" v={f.transport ? 'Unico car' : 'Own'} />
-          <Row k="Estimated fee" v={taka(fee)} />
+          <Row k="Estimated fee" v={taka(autoFee)} sub="Auto (services + tests) · fee and payment are set when confirming" />
         </dl>
       </aside>
     </div>
