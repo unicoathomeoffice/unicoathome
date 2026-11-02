@@ -7,12 +7,13 @@ export type BoardRow = {
   priority: string
   patientId: string
   patient: string
+  patientPhoto?: string
   ageGender: string
   phone: string
   area: string
   services: string
   schedule: string
-  staff: { id: string; name: string; short: string } | null
+  staff: { id: string; name: string; short: string; photoUrl?: string } | null
   sla: { tone: string; label: string } | null
   /** live elapsed timer (IN_PROGRESS) */
   checkInAt: string | null

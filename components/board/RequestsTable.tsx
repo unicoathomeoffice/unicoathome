@@ -84,7 +84,7 @@ export function RequestsTable({ rows: loaded, canAssign, canMessage }: { rows: B
                 </Link>
               </div>
               <div className="flex min-w-0 items-center gap-2 pr-3">
-                <Avatar name={r.patient} size={28} />
+                <Avatar name={r.patient} photo={r.patientPhoto} size={28} />
                 <div className="min-w-0">
                   <div className="truncate font-semibold">
                     {r.patient} <span className="font-normal text-slate-500">{r.ageGender}</span>
@@ -105,7 +105,7 @@ export function RequestsTable({ rows: loaded, canAssign, canMessage }: { rows: B
               <div className="flex min-w-0 items-center gap-2 pr-3">
                 {r.staff ? (
                   <>
-                    <Avatar name={r.staff.name} size={24} />
+                    <Avatar name={r.staff.name} photo={r.staff.photoUrl} size={24} />
                     <span className="truncate" title={r.staff.name}>
                       {r.staff.short}
                     </span>

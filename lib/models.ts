@@ -127,6 +127,7 @@ const PatientSchema = new Schema<any>(
     uhid: { type: String, index: { sparse: true } }, // hospital MRN / UHID
     name: { type: String, required: true },
     phone: { type: String, required: true, index: true },
+    photoUrl: String, // profile photo (/api/v1/avatars/<id>, lib/avatars.ts)
     altPhone: String,
     gender: { type: String, enum: ['M', 'F', 'O'] },
     dob: Date,
@@ -164,7 +165,7 @@ const RequestSchema = new Schema<any>(
   {
     requestNo: { type: String, required: true, unique: true },
     patientId: { type: ObjectId, ref: 'Patient', required: true, index: true },
-    patientSnapshot: { name: String, phone: String, ageYears: Number, gender: String, uhid: String, area: String, address: String },
+    patientSnapshot: { name: String, phone: String, ageYears: Number, gender: String, uhid: String, area: String, address: String, photoUrl: String },
     requester: { type: { type: String, enum: ['SELF', 'RELATIVE', 'STAFF'], default: 'SELF' }, name: String, relation: String, phone: String },
     services: [{ _id: false, serviceTypeId: { type: ObjectId, ref: 'ServiceType' }, code: String, name: String }],
     tests: [String], // Test / procedure details (Google Form)
@@ -388,7 +389,7 @@ const AttachmentSchema = new Schema<any>(
     ownerType: { type: String, enum: ['REQUEST', 'PATIENT', 'USER', 'CHAT'] },
     ownerId: { type: ObjectId, index: true },
     requestId: { type: ObjectId, ref: 'HomecareRequest', index: true },
-    kind: { type: String, enum: ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'INVOICE', 'REQUISITION', 'GATE_PASS', 'CLAIM', 'RECEIPT', 'OTHER'] },
+    kind: { type: String, enum: ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'INVOICE', 'REQUISITION', 'GATE_PASS', 'CLAIM', 'RECEIPT', 'AVATAR', 'OTHER'] },
     filename: String,
     mime: String,
     size: Number,

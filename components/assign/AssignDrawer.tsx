@@ -11,6 +11,7 @@ export type Candidate = {
   id: string
   name: string
   initials: string
+  photoUrl?: string
   role: string
   designation?: string
   employeeId: string
@@ -306,7 +307,7 @@ export function AssignDrawer(p: AssignProps) {
               className={cx('cursor-pointer rounded-card border-[1.5px] p-3.5 transition', sel ? 'border-primary bg-[#F8FCFE]' : 'border-slate-200 bg-white hover:border-slate-300')}
             >
               <div className="flex items-center gap-3">
-                <Avatar initials={c.initials} size={40} />
+                <Avatar initials={c.initials} photo={c.photoUrl} size={40} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 text-[14px] font-bold">
                     <span className="truncate">{c.name}</span>

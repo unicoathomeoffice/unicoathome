@@ -16,7 +16,7 @@ export default async function MyVisits() {
   const current = rows.filter((r) => !DONE.includes(r.status)).map(toCard)
   const past = rows.filter((r) => DONE.includes(r.status)).map(toCard)
   return (
-    <PortalShell patient={{ name: patient.name, initials: patient.initials }} hotline={s.general.hospitalPhone}>
+    <PortalShell patient={{ name: patient.name, initials: patient.initials, photoUrl: patient.photoUrl }} hotline={s.general.hospitalPhone}>
       <Greeting name={patient.name.split(' ')[0]} />
       <div className="mt-2 grid gap-4 md:grid-cols-[1fr_320px] md:items-start">
         <div className="flex flex-col gap-6">

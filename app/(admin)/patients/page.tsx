@@ -92,7 +92,7 @@ export default async function PatientsPage({ searchParams }: { searchParams: SP 
           return (
             <Tr key={r.id} cols={COLS}>
               <Link href={`/patients/${r.id}`} className="flex min-w-0 items-center gap-2.5">
-                <Avatar name={r.name} size={30} />
+                <Avatar name={r.name} photo={r.photoUrl} size={30} />
                 <span className="min-w-0 truncate">
                   <span className="font-semibold text-slate-900">{r.name}</span>
                   <span className="text-slate-500">

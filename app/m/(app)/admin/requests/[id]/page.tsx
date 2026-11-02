@@ -148,7 +148,7 @@ export default async function CoordRequest({ params }: { params: Promise<{ id: s
         <MList>
           {team.map((m: any, i: number) => (
             <MRow key={m.id}>
-              <Avatar name={m.name} size={36} tone={i === 0 ? 'blue' : 'slate'} />
+              <Avatar name={m.name} photo={m.photoUrl} size={36} tone={i === 0 ? 'blue' : 'slate'} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15px] font-semibold">{m.name}</div>
                 <div className="truncate text-[12px] text-slate-500">

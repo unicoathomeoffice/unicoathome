@@ -11,6 +11,7 @@ import { Avatar, Card, CardHeader, LinkButton, MapEmbed, StatusChip, Tabs, Tag, 
 import { WhatsAppButton } from '@/components/client'
 import { PatientDrawerButton } from '@/components/people/PatientDrawer'
 import { UploadDocButton } from '@/components/people/UploadDocButton'
+import { PhotoPicker } from '@/components/client/PhotoPicker'
 import { maskPhone } from '@/components/people/patient-board'
 import { ago, cx, date, dayNum, dateTime, minutesBetween, phone as fmtPhone, taka, time } from '@/lib/format'
 
@@ -92,7 +93,7 @@ export default async function PatientProfile({ params, searchParams }: { params:
     <AdminPage title={patient.name} crumbs={<Link href="/patients">Patients</Link>}>
       {/* header */}
       <div className="mb-5 flex flex-wrap items-center gap-4">
-        <Avatar name={patient.name} size={56} />
+        {canEdit ? <PhotoPicker endpoint={`/patients/${patient._id}/photo`} photo={patient.photoUrl} name={patient.name} size={56} /> : <Avatar name={patient.name} photo={patient.photoUrl} size={56} />}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-[22px] font-bold tracking-[-.01em]">{patient.name}</h2>

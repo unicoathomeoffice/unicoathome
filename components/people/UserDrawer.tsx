@@ -6,6 +6,7 @@ import { api, ChipPicker, Drawer, Segmented, useToast } from '@/components/clien
 import { btnClass } from '@/components/ui'
 import { AVAILABILITY, AVAILABILITY_LABEL, ROLES, ROLE_LABEL, SHIFTS, SKILLS, defaultPlatformAccess, type Role } from '@/lib/constants'
 import { CheckPill, Field, FormError, useFieldErrors } from './form'
+import { PhotoPicker } from '@/components/client/PhotoPicker'
 import { cx } from '@/lib/format'
 
 export type StaffOptions = {
@@ -21,6 +22,7 @@ export type StaffUser = {
   _id: string
   employeeId: string
   name: string
+  photoUrl?: string
   username?: string
   phone: string
   whatsapp?: string
@@ -251,6 +253,12 @@ export function UserDrawer({ user, options, canManage, onClose, presetRole }: { 
       }
     >
       <FormError message={fe.message} />
+      {editing && user && canManage && (
+        <div className="mb-4 flex items-center gap-3 rounded-lg bg-slate-50 px-3.5 py-3">
+          <PhotoPicker endpoint={`/users/${user._id}/photo`} photo={user.photoUrl} name={user.name} size={56} />
+          <div className="text-[12.5px] text-slate-500">Profile photo — shown next to {user.name.split(' ')[0]}’s name across the app and to patients in their care team.</div>
+        </div>
+      )}
       {!canManage && !editing && (
         <div className="mb-4 rounded-lg bg-primary-50 px-3.5 py-2.5 text-[13px] text-primary-700">Only a super admin can create active users. This user will be saved as <b>Pending</b> and appear in Approvals.</div>
       )}

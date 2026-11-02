@@ -70,10 +70,13 @@ const AV_TONE = {
   violet: 'bg-[#EDE9FE] text-[#6D28D9]',
   green: 'bg-[#DCFCE7] text-[#15803D]',
 } as const
-export function Avatar({ name, initials, size = 40, tone = 'blue', className }: { name?: string | null; initials?: string; size?: number; tone?: keyof typeof AV_TONE; className?: string }) {
+/** Round avatar: the profile photo when there is one (`photo` = a User / Patient `photoUrl`), else initials.
+ *  The initials stay underneath, so a photo that fails to load still leaves the initials visible. */
+export function Avatar({ name, initials, photo, size = 40, tone = 'blue', className }: { name?: string | null; initials?: string; photo?: string | null; size?: number; tone?: keyof typeof AV_TONE; className?: string }) {
   return (
-    <div className={cx('flex flex-none items-center justify-center rounded-full font-bold', AV_TONE[tone], className)} style={{ width: size, height: size, fontSize: Math.round(size * 0.36) }}>
+    <div className={cx('relative flex flex-none items-center justify-center overflow-hidden rounded-full font-bold', AV_TONE[tone], className)} style={{ width: size, height: size, fontSize: Math.round(size * 0.36) }}>
       {initials ?? initialsOf(name)}
+      {photo && <img src={photo} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" className="absolute inset-0 size-full object-cover" />}
     </div>
   )
 }

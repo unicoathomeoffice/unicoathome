@@ -8,7 +8,7 @@ import { api } from '@/components/client/api'
 import type { Permission } from '@/lib/constants'
 
 /** perms: what the signed-in user holds (custom role included) — computed on the server with permissionsFor() */
-type NavUser = { name: string; initials: string; roleLabel: string; perms: Permission[] }
+type NavUser = { name: string; initials: string; photoUrl?: string; roleLabel: string; perms: Permission[] }
 
 type Perm = Permission | ((perms: Permission[]) => boolean)
 
@@ -102,7 +102,10 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Promise<Recor
       </nav>
       <div className="relative mt-3">
         <button onClick={() => setMenu((m) => !m)} className="flex w-full items-center gap-2.5 rounded-[10px] bg-white/[.08] px-3 py-2.5 text-left">
-          <div className="flex size-9 flex-none items-center justify-center rounded-full bg-teal text-[13px] font-bold">{user.initials}</div>
+          <div className="relative flex size-9 flex-none items-center justify-center overflow-hidden rounded-full bg-teal text-[13px] font-bold">
+            {user.initials}
+            {user.photoUrl && <img src={user.photoUrl} alt="" referrerPolicy="no-referrer" className="absolute inset-0 size-full object-cover" />}
+          </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13px] font-semibold">{user.name}</div>
             <div className="truncate text-[11.5px] text-white/60">{user.roleLabel}</div>

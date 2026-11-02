@@ -7,6 +7,7 @@ export type BoardFilters = { q?: string; zone?: string; status?: string; priorit
 export type BoardRow = {
   id: string
   name: string
+  photoUrl?: string
   ageYears?: number
   gender?: string
   phone: string
@@ -41,7 +42,7 @@ export async function loadPatientBoard(fl: BoardFilters): Promise<BoardRow[]> {
     f.$or = [{ name: new RegExp(esc(q), 'i') }, { uhid: new RegExp(`^${esc(q)}`, 'i') }, ...(digits.length >= 4 ? [{ phone: new RegExp(digits.slice(-10)) }, { altPhone: new RegExp(digits.slice(-10)) }] : [])]
   }
   if (fl.zone) f['address.area'] = fl.zone
-  const patients = await Patient.find(f).select('name ageYears gender phone uhid address.area updatedAt').sort({ updatedAt: -1 }).limit(2000).lean<any[]>()
+  const patients = await Patient.find(f).select('name ageYears gender phone uhid address.area updatedAt photoUrl').sort({ updatedAt: -1 }).limit(2000).lean<any[]>()
   const reqs = await HomecareRequest.find({ patientId: { $in: patients.map((p) => p._id) }, deletedAt: null })
     .select('patientId requestNo status priority scheduledAt slot preferred timeline.requestedAt createdAt services assignment.primaryStaffId')
     .sort({ createdAt: -1 })
@@ -65,6 +66,7 @@ export async function loadPatientBoard(fl: BoardFilters): Promise<BoardRow[]> {
     return {
       id: String(p._id),
       name: p.name,
+      photoUrl: p.photoUrl,
       ageYears: p.ageYears,
       gender: p.gender,
       phone: p.phone,

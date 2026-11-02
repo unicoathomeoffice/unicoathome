@@ -328,6 +328,7 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
       uhid: patient.uhid,
       area: patient.address?.area,
       address: [patient.address?.full, patient.address?.area].filter(Boolean).join(', '),
+      photoUrl: patient.photoUrl,
     },
     requester: input.requester ?? (hasAnyRole(user, FIELD_ROLES) ? { type: 'STAFF', name: user.name } : { type: 'SELF' }),
     services,
@@ -907,6 +908,7 @@ export type Candidate = {
   id: string
   name: string
   initials: string
+  photoUrl?: string
   role: string
   designation?: string
   employeeId: string
@@ -927,7 +929,7 @@ export async function rankCandidates(r: any, limit = 20, roleFilter?: string[]):
   const [types, staff, todays] = await Promise.all([
     serviceIds.length ? ServiceType.find({ _id: { $in: serviceIds } }).select('requiredSkills').lean<any[]>() : [],
     User.find({ $or: [{ role: { $in: roleFilter ?? ['DOCTOR', 'NURSE', 'ALLIED'] } }, { roles: { $in: roleFilter ?? ['DOCTOR', 'NURSE', 'ALLIED'] } }], status: 'ACTIVE', deletedAt: null })
-      .select('name role designationId employeeId availability skills zones').lean<any[]>(),
+      .select('name role designationId employeeId availability skills zones photoUrl').lean<any[]>(),
     HomecareRequest.find({
       _id: { $ne: r._id }, scheduledAt: { $gte: start, $lt: end },
       status: { $in: ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED'] },
@@ -961,6 +963,7 @@ export async function rankCandidates(r: any, limit = 20, roleFilter?: string[]):
         id: String(u._id),
         name: u.name,
         initials: (u.name ?? '').replace(/^(Dr\.?|Md\.?|Mst\.?)\s+/i, '').split(/\s+/).map((x: string) => x[0]).slice(0, 2).join('').toUpperCase(),
+        photoUrl: u.photoUrl,
         role: u.role,
         designation: desigs.find((d) => String(d._id) === String(u.designationId))?.title,
         employeeId: u.employeeId,
@@ -989,7 +992,7 @@ export async function withPeople<T extends any[]>(rows: T): Promise<T> {
   }
   const vehicleIds = [...new Set(rows.map((r) => r.transport?.vehicleId).filter(Boolean).map(String))]
   const [users, vehicles] = await Promise.all([
-    ids.size ? User.find({ _id: { $in: [...ids] } }).select('name role employeeId phone designationId').lean<any[]>() : [],
+    ids.size ? User.find({ _id: { $in: [...ids] } }).select('name role employeeId phone designationId photoUrl').lean<any[]>() : [],
     vehicleIds.length ? Vehicle.find({ _id: { $in: vehicleIds } }).lean<any[]>() : [],
   ])
   const designationIds = [...new Set(users.map((u) => u.designationId).filter(Boolean).map(String))]
@@ -997,7 +1000,7 @@ export async function withPeople<T extends any[]>(rows: T): Promise<T> {
   const person = (id: unknown) => {
     const u = users.find((x) => String(x._id) === String(id))
     if (!u) return null
-    return { id: String(u._id), name: u.name, role: u.role, employeeId: u.employeeId, phone: u.phone, designation: desigs.find((d) => String(d._id) === String(u.designationId))?.title }
+    return { id: String(u._id), name: u.name, role: u.role, employeeId: u.employeeId, phone: u.phone, photoUrl: u.photoUrl as string | undefined, designation: desigs.find((d) => String(d._id) === String(u.designationId))?.title }
   }
   for (const r of rows) {
     r.primaryStaff = person(r.assignment?.primaryStaffId)

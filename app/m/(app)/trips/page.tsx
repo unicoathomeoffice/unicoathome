@@ -52,7 +52,7 @@ async function SupervisorTrips({ user, bell }: { user: SessionUser; bell: React.
   const order = (r: any) => (!r.transport?.status || r.transport.status === 'REQUESTED' ? 0 : r.transport.status === 'IN_TRIP' ? 1 : 2)
   const isAdmin = user.role !== 'TRANSPORT_SUPERVISOR'
   return (
-    <MScreen header={<SignedInHeader initials={user.initials} name={user.name} sub={`${ROLE_LABEL[user.role]} · Transport · ${user.employeeId}`} right={bell} />} tab={isAdmin ? 'admin' : 'trips'}>
+    <MScreen header={<SignedInHeader initials={user.initials} photo={user.photoUrl} name={user.name} sub={`${ROLE_LABEL[user.role]} · Transport · ${user.employeeId}`} right={bell} />} tab={isAdmin ? 'admin' : 'trips'}>
       <AutoRefresh seconds={30} />
       <div className="flex gap-2">
         <MiniKpi n={toAssign.length} label="To assign" color="#C2410C" active={toAssign.length > 0} />
@@ -165,7 +165,7 @@ async function DriverTrips({ user, bell }: { user: SessionUser; bell: React.Reac
   const team = current ? [current.primaryStaff, ...(current.secondaryStaff ?? [])].filter(Boolean) : []
   const navHref = leg && ['pickup', 'return'].includes(leg.key) ? mapsUrl('Unico Hospitals') : mapsUrl(current?.patientSnapshot?.address, patient?.address?.lat, patient?.address?.lng)
   return (
-    <MScreen header={<SignedInHeader initials={user.initials} name={user.name} sub={`Driver${car ? ` · ${car.name} · ${car.plate}` : ' · no car assigned'}`} right={bell} />} tab="trips">
+    <MScreen header={<SignedInHeader initials={user.initials} photo={user.photoUrl} name={user.name} sub={`Driver${car ? ` · ${car.name} · ${car.plate}` : ' · no car assigned'}`} right={bell} />} tab="trips">
       <AutoRefresh seconds={30} />
       <div className="flex gap-2">
         <MiniKpi n={rows.length} label="Trips today" />

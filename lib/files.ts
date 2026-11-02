@@ -19,6 +19,7 @@ export const ATTACHMENT_KINDS = [
   'GATE_PASS',
   'CLAIM',
   'RECEIPT',
+  'AVATAR',
   'OTHER',
 ] as const
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number]

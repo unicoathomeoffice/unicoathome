@@ -159,7 +159,7 @@ function LivePanel({ d, compact, canAssign }: { d: Data; compact?: boolean; canA
         <div className="flex flex-col gap-3">
           {d.live.map((v) => (
             <Link key={v.id} href={`/requests/${v.id}`} className={cx('flex items-center gap-3 rounded-[10px] bg-slate-50 hover:bg-slate-100', compact ? 'px-3 py-2.5' : 'px-3.5 py-3')}>
-              <Avatar name={v.patient} size={36} />
+              <Avatar name={v.patient} photo={v.patientPhoto} size={36} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold">{v.patient}</div>
                 <div className="truncate text-[12px] text-slate-500">{v.line}</div>

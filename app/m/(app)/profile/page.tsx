@@ -5,6 +5,7 @@ import { Col } from '@/components/field/bar'
 import { FHeader } from '@/components/field'
 import { AvailabilitySeg } from '@/components/field/home'
 import { PrefsRow, DevicesRow, PasswordRow, SignOutButton } from '@/components/field/profile'
+import { PhotoPicker } from '@/components/client/PhotoPicker'
 import { teamFilter } from '@/components/field/data'
 import { requireAppUser } from '@/lib/auth'
 import { db, plain } from '@/lib/db'
@@ -45,12 +46,7 @@ export default async function Profile() {
     <MScreen tab="profile" header={<FHeader title="Profile" />}>
       <Col>
       <div className="flex items-center gap-4 py-1">
-        {u?.photoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={u.photoUrl} alt={user.name} className="size-16 flex-none rounded-full object-cover" />
-        ) : (
-          <div className="flex size-16 flex-none items-center justify-center rounded-full bg-primary-50 text-[22px] font-bold text-primary-700">{user.initials}</div>
-        )}
+        <PhotoPicker endpoint="/users/me/photo" photo={u?.photoUrl ?? user.photoUrl} name={user.name} size={64} className="flex-none" />
         <div className="min-w-0">
           <div className="text-[20px] font-bold leading-6">{user.name}</div>
           <div className="text-[14px] text-slate-500">

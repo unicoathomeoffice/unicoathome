@@ -185,7 +185,7 @@ function KanbanCard({
         <div className="flex min-w-0 max-w-full items-center gap-1.5 text-[12px] text-slate-700">
           {r.staff ? (
             <>
-              <Avatar name={r.staff.name} size={22} />
+              <Avatar name={r.staff.name} photo={r.staff.photoUrl} size={22} />
               <span className="truncate" title={r.staff.name}>
                 {r.schedule}
               </span>

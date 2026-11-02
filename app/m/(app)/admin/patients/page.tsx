@@ -100,7 +100,7 @@ export default async function PatientBoard({ searchParams }: { searchParams: Pro
         return (
           <div key={String(p._id)} className="rounded-card bg-white px-3.5 py-3 shadow-card">
             <Link href={reqHref} className="flex items-center gap-3">
-              <Avatar name={p.name} size={40} />
+              <Avatar name={p.name} photo={p.photoUrl} size={40} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15px] font-bold">
                   {p.name} <span className="font-normal text-slate-500">· {ageG(p.ageYears, p.gender)}</span>

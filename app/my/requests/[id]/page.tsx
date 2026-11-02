@@ -29,7 +29,7 @@ export default async function MyRequest({ params }: { params: Promise<{ id: stri
   const when = r.scheduledAt ? `${relDay(r.scheduledAt)} · ${time(r.scheduledAt)}` : r.preferred?.date ? `${relDay(r.preferred.date)}${r.preferred.slot ? ` · ${r.preferred.slot}` : ''}` : '—'
 
   return (
-    <PortalShell patient={{ name: patient.name, initials: patient.initials }} hotline={s.general.hospitalPhone}>
+    <PortalShell patient={{ name: patient.name, initials: patient.initials, photoUrl: patient.photoUrl }} hotline={s.general.hospitalPhone}>
       <Link href="/my" className="inline-flex h-10 items-center gap-1 text-[14px] font-semibold text-slate-600">
         <ChevronLeft size={18} /> {patient.name.split(' ')[0]}
       </Link>
@@ -52,7 +52,7 @@ export default async function MyRequest({ params }: { params: Promise<{ id: stri
               <ul className="flex flex-col gap-2">
                 {team.map((m: any) => (
                   <li key={m.id} className="flex items-center gap-3">
-                    <span className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-primary to-teal text-[13px] font-bold text-white">
+                    <span className="relative flex size-10 flex-none items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary to-teal text-[13px] font-bold text-white">
                       {m.name
                         .replace(/^(Dr\.?|Md\.?)\s+/i, '')
                         .split(/\s+/)
@@ -60,6 +60,7 @@ export default async function MyRequest({ params }: { params: Promise<{ id: stri
                         .map((p: string) => p[0])
                         .join('')
                         .toUpperCase()}
+                      {m.photoUrl && <img src={m.photoUrl} alt="" referrerPolicy="no-referrer" className="absolute inset-0 size-full object-cover" />}
                     </span>
                     <span>
                       <span className="block text-[15px] font-semibold">{m.name}</span>

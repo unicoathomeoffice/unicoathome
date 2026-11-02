@@ -8,7 +8,7 @@ import { PAYMENT_METHOD_LABEL, ROLE_LABEL, TRANSPORT_MODE_LABEL, type Role } fro
 import { ago, cx, date, dateTime, dayNum, dur, minutesBetween, phone, taka, time } from '@/lib/format'
 import { directionsUrl } from '@/lib/maps'
 import { Field, MetricsTable, Panel, Stepper, SubTitle, VitalTiles } from './ui'
-import { bytes, GENDER, lifecycleSteps, timingMetrics, vitalRows, who, whoInitials, type People, type Sla } from './lib'
+import { bytes, GENDER, lifecycleSteps, timingMetrics, vitalRows, who, whoInitials, type People, type Sla, whoPhoto } from './lib'
 import { Expander, EmailPreview, ResendButton, AttachmentUploader, DeleteAttachment } from './widgets'
 import { PettyTag } from './actions'
 import { ComposeButton } from '@/components/comms/Compose'
@@ -60,7 +60,7 @@ export function OverviewTab({
           }
         >
           <div className="flex items-center gap-3.5">
-            <Avatar name={r.patientSnapshot?.name} size={52} />
+            <Avatar name={r.patientSnapshot?.name} photo={r.patientSnapshot?.photoUrl} size={52} />
             <div className="min-w-0">
               <div className="truncate text-[18px] font-bold">{p.name ?? r.patientSnapshot?.name}</div>
               <div className="text-[13px] text-slate-500">
@@ -158,7 +158,7 @@ export function OverviewTab({
           {primary ? (
             <>
               <div className="flex items-center gap-3 rounded-[10px] bg-slate-50 p-3">
-                <Avatar name={primary.name} size={44} />
+                <Avatar name={primary.name} photo={primary.photoUrl} size={44} />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[15px] font-bold">{primary.name}</div>
                   <div className="text-[12px] text-slate-500">{[primary.designation ?? ROLE_LABEL[primary.role as Role], primary.employeeId, phone(primary.phone)].filter(Boolean).join(' · ')}</div>
@@ -388,7 +388,7 @@ export function AssignmentTab({ r, people, logs }: { r: any; people: People; log
             <div className="flex flex-col gap-2">
               {team.map((s: any) => (
                 <div key={s.id} className="flex items-center gap-3 rounded-[10px] bg-slate-50 p-3">
-                  <Avatar name={s.name} size={40} />
+                  <Avatar name={s.name} photo={s.photoUrl} size={40} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[14px] font-bold">{s.name}</div>
                     <div className="truncate text-[12px] text-slate-500">{[s.designation ?? ROLE_LABEL[s.role as Role], s.employeeId, phone(s.phone)].filter(Boolean).join(' · ')}</div>
@@ -415,7 +415,7 @@ export function AssignmentTab({ r, people, logs }: { r: any; people: People; log
             <div className="flex flex-col">
               {declines.map((d: any, i: number) => (
                 <div key={i} className="flex items-start gap-3 border-t border-slate-100 py-2.5 first:border-t-0">
-                  <Avatar name={who(people, d.staffId)} size={32} tone="slate" />
+                  <Avatar name={who(people, d.staffId)} photo={whoPhoto(people, d.staffId)} size={32} tone="slate" />
                   <div className="min-w-0 flex-1 text-[13px]">
                     <div className="font-semibold">{who(people, d.staffId)}</div>
                     <div className="text-slate-500">
@@ -822,7 +822,7 @@ export function MessagesTab({ msgs, chat, people, canResend, compose }: { msgs: 
                 </div>
               ) : (
                 <div key={c._id} className="flex gap-2">
-                  <Avatar name={who(people, c.senderId)} size={28} tone="slate" />
+                  <Avatar name={who(people, c.senderId)} photo={whoPhoto(people, c.senderId)} size={28} tone="slate" />
                   <div className="min-w-0 max-w-[85%]">
                     <div className="text-[11.5px] text-slate-500">
                       <b className="text-slate-700">{who(people, c.senderId)}</b> · {time(c.createdAt)}

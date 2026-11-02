@@ -217,7 +217,7 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
           </div>
           {r.transport.mode === 'UNICO_CAR' && r.vehicle ? (
             <div className="mt-2 flex items-center gap-3">
-              <Avatar name={r.driver?.name} size={40} tone="amber" />
+              <Avatar name={r.driver?.name} photo={r.driver?.photoUrl} size={40} tone="amber" />
               <div className="min-w-0 flex-1">
                 <div className="text-[15px] font-semibold">
                   {r.vehicle.name} · {r.driver?.name ?? 'Driver TBC'}
@@ -264,7 +264,7 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
         <div className="mt-2 flex flex-col gap-2">
           {[r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean).map((s: any, i: number) => (
             <div key={s.id} className="flex items-center gap-3">
-              <Avatar name={s.name} size={36} tone={i ? 'slate' : 'blue'} />
+              <Avatar name={s.name} photo={s.photoUrl} size={36} tone={i ? 'slate' : 'blue'} />
               <div className="min-w-0 flex-1">
                 <div className="text-[14px] font-semibold">
                   {s.name}

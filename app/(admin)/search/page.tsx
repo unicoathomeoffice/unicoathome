@@ -97,7 +97,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
                 <Tr key={String(r._id)} cols={REQ_COLS} href={`/requests/${r._id}`}>
                   <span className="font-bold">{r.requestNo}</span>
                   <div className="flex min-w-0 items-center gap-2">
-                    <Avatar name={r.patientSnapshot?.name} size={28} />
+                    <Avatar name={r.patientSnapshot?.name} photo={r.patientSnapshot?.photoUrl} size={28} />
                     <div className="min-w-0">
                       <div className="truncate font-semibold">
                         {r.patientSnapshot?.name} <span className="font-normal text-slate-500">{ageGender(r.patientSnapshot?.ageYears, r.patientSnapshot?.gender)}</span>
@@ -126,7 +126,7 @@ export default async function SearchPage({ searchParams }: { searchParams: Promi
               {patients.map((p) => (
                 <Tr key={String(p._id)} cols={PAT_COLS}>
                   <Link href={`/patients/${p._id}`} className="flex min-w-0 items-center gap-2 hover:text-primary-700">
-                    <Avatar name={p.name} size={28} />
+                    <Avatar name={p.name} photo={p.photoUrl} size={28} />
                     <div className="truncate font-semibold">
                       {p.name} <span className="font-normal text-slate-500">{ageGender(p.ageYears, p.gender)}</span>
                     </div>

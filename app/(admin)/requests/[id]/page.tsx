@@ -100,8 +100,8 @@ export default async function RequestDetailPage({ params, searchParams }: { para
 
   // ---- people referenced anywhere on the page
   const ids = [...new Set([...collectUserIds(r), ...extraIds.filter(Boolean).map(String)])].filter(isOid)
-  const users = await User.find({ _id: { $in: ids } }).select('name employeeId role').lean<any[]>()
-  const people: People = Object.fromEntries(users.map((u) => [String(u._id), { name: u.name, initials: initialsOf(u.name), employeeId: u.employeeId, role: u.role }]))
+  const users = await User.find({ _id: { $in: ids } }).select('name employeeId role photoUrl').lean<any[]>()
+  const people: People = Object.fromEntries(users.map((u) => [String(u._id), { name: u.name, initials: initialsOf(u.name), employeeId: u.employeeId, role: u.role, photoUrl: u.photoUrl }]))
   for (const m of msgs) m.initiatedByName = m.initiatedBy ? people[String(m.initiatedBy)]?.name ?? 'Unknown' : 'System'
 
   // ---- assign drawer (W06)

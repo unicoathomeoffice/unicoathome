@@ -147,9 +147,10 @@ export const ACTIVE_VISIT: string[] = ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_P
 export const GENDER: Record<string, string> = { M: 'Male', F: 'Female', O: 'Other' }
 
 /** Map of user id → display info, built on the server from every id referenced by a request. */
-export type People = Record<string, { name: string; initials: string; employeeId?: string; role?: string }>
+export type People = Record<string, { name: string; initials: string; employeeId?: string; role?: string; photoUrl?: string }>
 export const who = (people: People, id: unknown) => (id ? people[String(id)]?.name ?? 'Unknown' : '—')
 export const whoInitials = (people: People, id: unknown) => (id ? people[String(id)]?.initials ?? '?' : '')
+export const whoPhoto = (people: People, id: unknown) => (id ? people[String(id)]?.photoUrl : undefined)
 
 export function collectUserIds(r: any): string[] {
   const ids = new Set<string>()

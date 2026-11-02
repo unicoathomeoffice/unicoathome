@@ -92,10 +92,13 @@ export function MiniKpi({ n, label, color = '#0F172A', href, active }: { n: Reac
 }
 
 /** "Signed in as" header (S4 / D1) */
-export function SignedInHeader({ initials, name, sub, right, tone = 'orange' }: { initials: string; name: string; sub: ReactNode; right?: ReactNode; tone?: 'orange' | 'blue' }) {
+export function SignedInHeader({ initials, name, sub, right, tone = 'orange', photo }: { initials: string; name: string; sub: ReactNode; right?: ReactNode; tone?: 'orange' | 'blue'; photo?: string | null }) {
   return (
     <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white px-5 pb-3.5 pt-[max(14px,env(safe-area-inset-top))]">
-      <div className={cx('flex size-11 flex-none items-center justify-center rounded-full text-base font-bold', tone === 'orange' ? 'bg-[#FFEDD5] text-[#C2410C]' : 'bg-primary-50 text-primary-700')}>{initials}</div>
+      <div className={cx('relative flex size-11 flex-none items-center justify-center overflow-hidden rounded-full text-base font-bold', tone === 'orange' ? 'bg-[#FFEDD5] text-[#C2410C]' : 'bg-primary-50 text-primary-700')}>
+        {initials}
+        {photo && <img src={photo} alt="" referrerPolicy="no-referrer" className="absolute inset-0 size-full object-cover" />}
+      </div>
       <div className="min-w-0 flex-1">
         <div className="text-[12px] text-slate-500">Signed in as</div>
         <div className="truncate text-[17px] font-bold leading-[22px]">{name}</div>

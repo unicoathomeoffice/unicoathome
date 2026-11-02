@@ -156,7 +156,7 @@ export function PatientCard({ r, patient, compact }: { r: any; patient: any; com
   return (
     <div className="rounded-card bg-white px-4 py-3.5 shadow-card">
       <div className="flex items-center gap-3">
-        <Avatar name={ps.name} size={48} />
+        <Avatar name={ps.name} photo={ps.photoUrl} size={48} />
         <div className="min-w-0 flex-1">
           <div className="text-[17px] font-bold leading-6">{ps.name}</div>
           <div className="text-[13px] text-slate-500">

@@ -55,8 +55,9 @@ export async function AdminPage({
             <Unread userId={user.id} />
           </Suspense>
         </Link>
-        <Link href="/account" className="hidden size-10 flex-none items-center justify-center rounded-full bg-teal text-[13px] font-bold text-white sm:flex" title={user.name}>
+        <Link href="/account" className="relative hidden size-10 flex-none items-center justify-center overflow-hidden rounded-full bg-teal text-[13px] font-bold text-white sm:flex" title={user.name}>
           {user.initials}
+          {user.photoUrl && <img src={user.photoUrl} alt="" referrerPolicy="no-referrer" className="absolute inset-0 size-full object-cover" />}
         </Link>
       </header>
       <main className={cx('hc-enter min-h-0 flex-1 overflow-y-auto', pad && 'px-4 py-6 lg:px-8', className)}>{children}</main>

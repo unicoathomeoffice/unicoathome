@@ -9,7 +9,7 @@ import { telUrl } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { LangProvider, LangSwitch, useLang } from '@/components/public/i18n'
 
-type Patient = { name: string; initials: string }
+type Patient = { name: string; initials: string; photoUrl?: string }
 
 export function PortalShell({ patient, hotline, children }: { patient: Patient; hotline: string; children: ReactNode }) {
   return (
@@ -57,7 +57,10 @@ function Shell({ patient, hotline, children }: { patient: Patient; hotline: stri
             <Phone size={17} />
           </a>
           <div className="ml-1 flex items-center gap-2">
-            <span className="flex size-9 items-center justify-center rounded-full bg-gradient-to-br from-primary to-teal text-[13px] font-bold text-white">{patient.initials}</span>
+            <span className="relative flex size-9 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary to-teal text-[13px] font-bold text-white">
+              {patient.initials}
+              {patient.photoUrl && <img src={patient.photoUrl} alt="" className="absolute inset-0 size-full object-cover" />}
+            </span>
             <button type="button" onClick={signOut} disabled={busy} className="hidden h-9 items-center gap-1.5 rounded-full px-2.5 text-[13px] font-semibold text-slate-500 hover:bg-slate-100 md:flex" title={t.signOut}>
               <LogOut size={15} /> {t.signOut}
             </button>

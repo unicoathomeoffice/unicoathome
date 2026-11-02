@@ -13,7 +13,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   ]).then(([open, unread]) => ({ open, unread }))
   return (
     <div className="flex h-dvh overflow-hidden bg-page">
-      <Sidebar user={{ name: user.name, initials: user.initials, perms: permissionsFor(user), roleLabel: user.designation ?? ROLE_LABEL[user.role] }} counts={counts} />
+      <Sidebar user={{ name: user.name, initials: user.initials, photoUrl: user.photoUrl, perms: permissionsFor(user), roleLabel: user.designation ?? ROLE_LABEL[user.role] }} counts={counts} />
       {children}
     </div>
   )

@@ -132,7 +132,7 @@ export default async function StaffPage({ searchParams }: { searchParams: SP }) 
           return (
             <Tr key={String(u._id)} cols={COLS} className={cx(u.status === 'SUSPENDED' && 'bg-slate-50/70 text-slate-500')}>
               <UserOpenButton user={su} options={options} canManage={canManage} autoOpen={sp.edit === String(u._id)}>
-                <Avatar name={u.name} size={32} tone={u.status === 'SUSPENDED' ? 'slate' : 'blue'} />
+                <Avatar name={u.name} photo={u.photoUrl} size={32} tone={u.status === 'SUSPENDED' ? 'slate' : 'blue'} />
                 <span className="min-w-0">
                   <span className="block truncate font-semibold text-slate-900 hover:text-primary-700">{u.name}</span>
                   <span className="block truncate text-[11.5px] text-slate-500">

@@ -72,7 +72,7 @@ export default async function Home() {
           <SyncBanner />
           <div className="flex items-center gap-3 border-b border-slate-200 bg-white px-5 pb-3.5 pt-[max(14px,env(safe-area-inset-top))]">
             <Link href="/m/profile">
-              <Avatar name={user.name} initials={user.initials} size={44} />
+              <Avatar name={user.name} initials={user.initials} photo={user.photoUrl} size={44} />
             </Link>
             <div className="min-w-0 flex-1">
               <div className="text-[12px] text-slate-500">Signed in as</div>

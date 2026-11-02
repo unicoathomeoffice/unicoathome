@@ -7,6 +7,7 @@ import { AVAILABILITY_LABEL, ROLE_LABEL } from '@/lib/constants'
 import { ago, dateTime, phone } from '@/lib/format'
 import { PasswordForm, Prefs, Sessions, type SessionRow } from './AccountForms'
 import { SignatureCard } from '@/components/client/SignatureCard'
+import { PhotoPicker } from '@/components/client/PhotoPicker'
 import { getSettings } from '@/lib/settings'
 
 export const metadata = { title: 'My account' }
@@ -52,7 +53,7 @@ export default async function AccountPage() {
         <div className="flex min-w-0 flex-col gap-5">
           <Card>
             <div className="flex items-center gap-4">
-              <Avatar initials={me.initials} size={64} tone="teal" />
+              <PhotoPicker endpoint="/users/me/photo" photo={me.photoUrl} name={me.name} size={64} tone="teal" />
               <div className="min-w-0">
                 <div className="truncate text-[20px] font-bold">{u?.name ?? me.name}</div>
                 <div className="text-[13px] text-slate-500">
