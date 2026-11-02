@@ -2,7 +2,7 @@ import 'server-only'
 import { ExpenseClaim, HomecareRequest, Setting } from '../models'
 import { getSettings } from '../settings'
 import { renderTemplate, waNumber } from '../messaging'
-import { isPaired } from '../wa/status'
+import { canQueue } from '../wa/status'
 import { dayRange, isoDay, taka } from '../format'
 
 // Daily WhatsApp summary (Settings → Notification rules): today's visits, timings, money and tomorrow's bookings,
@@ -73,7 +73,7 @@ export async function sendDailySummary(opts: { force?: boolean; initiatedBy?: st
   const s = await getSettings()
   const cfg = s.dailyWhatsApp
   if (!opts.force && (!cfg.enabled || dhakaHM() < (cfg.time || '20:00'))) return { sent: 0, skipped: 'not yet' }
-  if (!(await isPaired())) return { sent: 0, skipped: 'WhatsApp not paired' }
+  if (!(await canQueue())) return { sent: 0, skipped: 'WhatsApp not paired' }
   const day = isoDay()
   if (!opts.force) {
     // claim today's send once, across instances (unique key)

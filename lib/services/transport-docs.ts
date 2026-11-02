@@ -2,7 +2,7 @@ import 'server-only'
 import { Department, Designation, HomecareRequest, Patient, User, Vehicle } from '../models'
 import { getSettings } from '../settings'
 import { queueEmail, waNumber } from '../messaging'
-import { isPaired } from '../wa/status'
+import { canQueue } from '../wa/status'
 import { readFile, storeFile } from '../files'
 import { fillRequisition } from '../forms/requisition'
 import { makeGatePass } from '../forms/gatepass'
@@ -133,7 +133,7 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
     stage === 'allotted'
       ? `Unico @ Home car allotted · ${r.requestNo}\n${when}\nVehicle ${vehicle?.plate ?? ''} · driver ${r.driver?.name ?? ''}\nTo: ${r.patientSnapshot?.area ?? ''}`
       : `${stage === 'updated' ? 'UPDATED · ' : ''}Unico @ Home car requested · ${r.requestNo}\n${when}\nTo: ${address || r.patientSnapshot?.area || ''}\nRequested by ${requester?.name ?? 'Home Care'}`
-  if ((await isPaired()) && (wantReq || wantGate)) {
+  if ((await canQueue()) && (wantReq || wantGate)) {
     const { queueWhatsApp } = await import('../wa/service')
     // on-call security supervisors + everyone in an alert group that takes the car paperwork (Security / Transport)
     const { groupRecipients } = await import('./hod')

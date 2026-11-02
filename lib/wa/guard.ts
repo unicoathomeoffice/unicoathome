@@ -13,6 +13,13 @@ const PROVIDER = 'wa_baileys'
 /** Templates that must not wait (quiet hours) and go first when the queue is limited. */
 export const URGENT_KEYS = new Set(['hod_new_request', 'patient_en_route', 'patient_confirmed', 'vehicle_requisition', 'gate_pass', 'staff_assigned', 'test', 'car_requested', 'car_allotted', 'car_changed', 'car_cancelled', 'car_out', 'car_back'])
 const LOW_KEYS = new Set(['daily_summary', 'visit_update', 'patient_visit_summary', 'claim_form'])
+/** How long a queued message is still worth sending (e.g. after WhatsApp was unlinked for hours). Others never expire. */
+const STALE_AFTER_H: Record<string, number> = { patient_en_route: 2, car_out: 3, car_back: 3, staff_assigned: 8, hod_new_request: 12, car_requested: 12, car_allotted: 12, car_changed: 12, daily_summary: 20, visit_update: 24, patient_confirmed: 48 }
+export function tooLate(m: { templateKey?: string; at?: Date }) {
+  const h = m.templateKey ? STALE_AFTER_H[m.templateKey] : undefined
+  return h != null && !!m.at && Date.now() - new Date(m.at).getTime() > h * 3600_000 ? h : null
+}
+
 export function priorityOf(templateKey?: string) {
   return templateKey && URGENT_KEYS.has(templateKey) ? 10 : templateKey && LOW_KEYS.has(templateKey) ? -10 : 0
 }

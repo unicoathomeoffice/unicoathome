@@ -5,7 +5,7 @@ import { background, waNumber } from '../messaging'
 import { acquireLock, connect, type Conn } from './client'
 import { isPaired, mongoAuthState, pairedPhone } from './auth-state'
 import { linkState } from './status'
-import { allowance, calmDown, checkFresh, contactState, inQuietHours, isDuplicate, isPushback, needsOptOutFooter, OPT_OUT_FOOTER, optOut, pausedUntil, priorityOf, rand, recipientRoom, rememberCheck, sleep, STOP_RX, tripBreaker, typingMs } from './guard'
+import { allowance, calmDown, checkFresh, contactState, inQuietHours, isDuplicate, isPushback, needsOptOutFooter, OPT_OUT_FOOTER, optOut, pausedUntil, priorityOf, rand, recipientRoom, rememberCheck, sleep, STOP_RX, tooLate, tripBreaker, typingMs } from './guard'
 
 // WhatsApp auto-send. Messages are rows in message_logs (channel WHATSAPP, provider wa_baileys) with
 // status QUEUED; pumpWhatsApp() delivers them in one short connection. See lib/wa/client.ts.
@@ -117,6 +117,13 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
       if ((await contactState(m.to))?.optOut) {
         m.status = 'SKIPPED'
         m.events.push({ status: 'SKIPPED', at: new Date(), note: 'Opted out (replied STOP)' })
+        await m.save()
+        continue
+      }
+      const late = tooLate(m)
+      if (late) {
+        m.status = 'SKIPPED'
+        m.events.push({ status: 'SKIPPED', at: new Date(), note: `Too late to send (waited over ${late} h — WhatsApp was not linked)` })
         await m.save()
         continue
       }

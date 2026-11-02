@@ -5,7 +5,7 @@ import { isCoordinator } from '../constants'
 import { audit } from '../audit'
 import { bad, forbidden, notFound } from '../api'
 import { background } from '../messaging'
-import { isPaired } from '../wa/status'
+import { canQueue } from '../wa/status'
 import { getSettings } from '../settings'
 import { readFile, storeFile } from '../files'
 import { fillRequisition } from '../forms/requisition'
@@ -142,7 +142,7 @@ export async function sendRideDocs(requestId: unknown, rideId: string, initiated
   })
   const file = await storeFile({ data: pdf, mime: 'application/pdf', filename: `Ride-${ride.mode}-${r.requestNo}.pdf`, kind: 'REQUISITION', requestId: r._id, uploadedBy: initiatedBy, caption: `Own ride · ${ride.mode} · ${legLabel(ride.leg)}` })
   await HomecareRequest.updateOne({ _id: r._id, 'rides._id': ride._id }, { $set: { 'rides.$.requisitionId': file._id } })
-  if (!(await isPaired())) return { sent: 0, requisitionId: String(file._id) }
+  if (!(await canQueue())) return { sent: 0, requisitionId: String(file._id) }
   const { queueWhatsApp } = await import('../wa/service')
   const caption = `Own ride · ${r.requestNo}\n${ride.mode} · ${legLabel(ride.leg)}${ride.amount ? ` · ${taka(ride.amount)}` : ''}\nBy ${payer?.name ?? 'staff'} · ${fmtDate(at)} ${fmtTime(at)}`
   let sent = 0

@@ -5,7 +5,7 @@ import { can, TRANSPORT_MODE_LABEL } from '../constants'
 import { audit } from '../audit'
 import { bad, conflict, forbidden, notFound } from '../api'
 import { notifyRoles, notifyUsers, waNumber } from '../messaging'
-import { isPaired } from '../wa/status'
+import { canQueue } from '../wa/status'
 import { getSettings } from '../settings'
 import { readFile, storeFile } from '../files'
 import { claimPdf, claimXlsx } from '../forms/claim'
@@ -165,7 +165,7 @@ export async function buildClaimFiles(c: any) {
 
 /** WhatsApp the claim files to the on-call security supervisor(s) and a copy to the staff member. */
 async function sendClaim(c: any, e: Awaited<ReturnType<typeof employee>>, x: any, p: any, initiatedBy?: string) {
-  if (!(await isPaired())) return 0
+  if (!(await canQueue())) return 0
   const { queueWhatsApp } = await import('../wa/service')
   const caption = `Bill submission · ${c.claimNo}\n${e.name} (${e.employeeId}) · ${e.designation}\nTotal ${taka(c.total)} · ${c.lines.length} item${c.lines.length === 1 ? '' : 's'}${c.status !== 'SUBMITTED' ? ` · ${c.status.toLowerCase()}` : ''}`
   let sent = 0

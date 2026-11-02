@@ -4,7 +4,7 @@ import { HomecareRequest, Patient } from '../models'
 import { VITALS } from '../constants'
 import { getSettings } from '../settings'
 import { renderTemplate, waNumber } from '../messaging'
-import { isPaired } from '../wa/status'
+import { canQueue } from '../wa/status'
 import { ageGender, date as fmtDate, taka, time as fmtTime } from '../format'
 import { bad } from '../api'
 import { withPeople } from './requests'
@@ -108,7 +108,7 @@ export async function sendVisitUpdate(requestId: unknown, mode: 'auto' | 'manual
     const claimed = await HomecareRequest.updateOne({ _id: requestId, 'visit.updateSentAt': null }, { $set: { 'visit.updateSentAt': new Date() } })
     if (!claimed.modifiedCount) return { sent: 0 }
   }
-  if (!(await isPaired())) {
+  if (!(await canQueue())) {
     if (mode === 'manual') throw bad('WhatsApp is not paired — pair it in Settings → WhatsApp first')
     return { sent: 0 }
   }

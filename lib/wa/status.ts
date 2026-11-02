@@ -28,6 +28,15 @@ export async function linkState(): Promise<LinkState> {
   return keys > 0 ? { state: 'connected' } : { state: 'needs_rescan', reason: 'The last QR scan did not finish linking' }
 }
 
+/**
+ * A hospital number has been linked (working now, or waiting for a re-scan): messages may be QUEUED and they go out
+ * as soon as the link works again (the sweep pumps the queue). Never-linked → nothing to queue for.
+ * Senders use this, not isPaired(), so a requisition made while WhatsApp needed a re-scan is not silently dropped.
+ */
+export async function canQueue() {
+  return (await linkState()).state !== 'not_paired'
+}
+
 export async function pairedPhone(): Promise<string | null> {
   const c = await creds()
   return c?.me?.id ? String(c.me.id).split(':')[0].split('@')[0] : null

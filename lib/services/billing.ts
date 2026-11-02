@@ -5,7 +5,7 @@ import { can } from '../constants'
 import { audit } from '../audit'
 import { bad, forbidden, notFound } from '../api'
 import { renderTemplate } from '../messaging'
-import { isPaired } from '../wa/status'
+import { canQueue } from '../wa/status'
 import { date as fmtDate, taka } from '../format'
 import { templateVars } from './requests'
 import type { SessionUser } from '../auth'
@@ -156,7 +156,7 @@ export async function setBillingStatus(r: any, status: 'PAID' | 'PARTIAL' | 'DUE
 /** WhatsApp the chosen bill files to the patient and/or care team (as documents, from the paired number). */
 export async function sendInvoices(r: any, input: z.infer<typeof SendInvoicesInput>, user: SessionUser, meta: Meta) {
   if (!can(user, 'billing.invoice') || !can(user, 'messages.send')) throw forbidden()
-  if (!(await isPaired())) throw bad('WhatsApp is not paired — pair it in Settings → WhatsApp to send files')
+  if (!(await canQueue())) throw bad('WhatsApp is not paired — pair it in Settings → WhatsApp to send files')
   const list = (r.billing?.invoices ?? []).filter((x: any) => input.invoiceIds.includes(String(x._id)))
   if (!list.length) throw bad('Pick at least one invoice')
   const noFile = list.filter((x: any) => !x.attachmentId)

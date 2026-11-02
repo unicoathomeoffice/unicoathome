@@ -3,7 +3,7 @@ import { HomecareRequest, MessageLog, ServiceType, User, Vehicle } from '../mode
 import { getSettings, HOD_CATEGORIES, type HodContact, type HodGroup } from '../settings'
 import { CAR_EVENTS, type AlertEvent } from '../constants'
 import { getTemplate, renderTemplate, waNumber } from '../messaging'
-import { isPaired } from '../wa/status'
+import { canQueue } from '../wa/status'
 import { time as fmtTime } from '../format'
 
 // Department-head alert groups (Settings → Notification rules). The four built-in groups follow a service category
@@ -74,7 +74,7 @@ export async function carAlert(event: CarEvent, requestId: unknown, extra: { rea
   if (!r?.transport?.needed) return 0
   if (r.transport.mode && r.transport.mode !== 'UNICO_CAR') return 0 // own transport: no hospital car involved
   const to = await groupRecipients(event)
-  if (!to.length || !(await isPaired())) return 0
+  if (!to.length || !(await canQueue())) return 0
   if ((await getTemplate(key)).isActive === false) return 0
   const [vehicle, driver] = await Promise.all([
     r.transport.vehicleId ? Vehicle.findById(r.transport.vehicleId).select('name plate').lean<any>() : null,
