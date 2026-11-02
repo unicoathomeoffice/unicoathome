@@ -377,7 +377,7 @@ export function TimelineTab({ r, people, sla }: { r: any; people: People; sla: S
 }
 
 // ================================================================ Assignment
-const LOG_TONE: Record<string, Tone> = { ASSIGN: 'violet', REASSIGN: 'indigo', ACCEPT: 'green', DECLINE: 'red', TIMEOUT: 'amber', HANDOVER: 'orange' }
+const LOG_TONE: Record<string, Tone> = { ASSIGN: 'violet', REASSIGN: 'indigo', ACCEPT: 'green', ACCEPT_BY_OVERRIDE: 'green', DECLINE: 'red', TIMEOUT: 'amber', HANDOVER: 'orange' }
 
 export function AssignmentTab({ r, people, logs }: { r: any; people: People; logs: any[] }) {
   const team = [r.primaryStaff && { ...r.primaryStaff, primary: true }, ...(r.secondaryStaff ?? [])].filter(Boolean)
@@ -451,7 +451,7 @@ export function AssignmentTab({ r, people, logs }: { r: any; people: People; log
             <div key={l._id} className="grid min-h-12 grid-cols-[130px_100px_1fr_1fr_120px] items-center border-t border-slate-100 px-5 py-2 text-[13px] first:border-t-0">
               <div className="text-slate-600">{dateTime(l.at)}</div>
               <div>
-                <Tag tone={LOG_TONE[l.action] ?? 'slate'}>{l.action}</Tag>
+                <Tag tone={LOG_TONE[l.action] ?? 'slate'}>{l.action === 'ACCEPT_BY_OVERRIDE' ? 'ACCEPTED FOR STAFF' : l.action}</Tag>
               </div>
               <div className="min-w-0 pr-3">
                 {l.fromStaffId && l.toStaffId ? (

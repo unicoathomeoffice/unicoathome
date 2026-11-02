@@ -1,7 +1,7 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { Check, Loader2, ChevronDown } from 'lucide-react'
-import { api, useAction, useToast } from '@/components/client'
+import { api, useAction, useToast, Toggle } from '@/components/client'
 import { cx } from '@/lib/format'
 import { FLabel, SLabel, FixedBottom, bbtn, scoreColor } from './ui'
 
@@ -28,7 +28,8 @@ const GROUPS: { role: string; label: string }[] = [
 ]
 
 /** S3 / M18 — team number, ranked candidates grouped by role, primary + others, instructions. */
-export function AssignForm({ id, requestNo, candidates, need, initialTeam, initialSize, instructions: initialInstr, transport }: { id: string; requestNo: string; candidates: Cand[]; need: Record<string, number>; initialTeam: string[]; initialSize: number; instructions?: string; transport: boolean }) {
+export function AssignForm({ id, requestNo, candidates, need, initialTeam, initialSize, instructions: initialInstr, transport, canOverride = false }: { id: string; requestNo: string; candidates: Cand[]; need: Record<string, number>; initialTeam: string[]; initialSize: number; instructions?: string; transport: boolean; canOverride?: boolean }) {
+  const [acceptNow, setAcceptNow] = useState(canOverride)
   const [size, setSize] = useState(Math.min(5, Math.max(1, initialSize)))
   const [picked, setPicked] = useState<string[]>(initialTeam)
   const [instructions, setInstructions] = useState(initialInstr ?? '')
@@ -127,7 +128,16 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
         <FLabel>Instructions to team</FLabel>
         <textarea className="hc-input hc-input-lg h-20 py-2.5" placeholder="Optional" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
       </div>
-      <div className="text-center text-[12px] text-slate-400">Score = skill 40 · availability 30 · zone 20 · workload 10. The first pick is primary and must accept within the timeout.</div>
+      {canOverride && (
+        <div className="flex items-center justify-between gap-3 rounded-card bg-[#FFFBEB] px-3.5 py-3 ring-1 ring-[#FDE68A]">
+          <div className="text-[13.5px]">
+            <b>Accept on their behalf</b>
+            <div className="text-[12px] text-slate-600">No waiting for the staff to tap Accept (override, audited)</div>
+          </div>
+          <Toggle on={acceptNow} onChange={setAcceptNow} label="Accept on their behalf" />
+        </div>
+      )}
+      <div className="text-center text-[12px] text-slate-400">Score = skill 40 · availability 30 · zone 20 · workload 10. The first pick is primary{canOverride && acceptNow ? '.' : ' and must accept within the timeout.'}</div>
 
       <FixedBottom note={!picked.length ? undefined : !ready ? `Pick ${size - picked.length} more or lower the team number` : transport ? 'The car supervisor already has the trip request' : undefined}>
         <button
@@ -136,7 +146,7 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
           className={bbtn('p', 'flex-1')}
           onClick={() =>
             run(
-              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), teamSize: size, instructions: instructions.trim() || undefined } }),
+              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: canOverride && acceptNow ? true : undefined } }),
               `${requestNo} assigned · team notified`,
               { redirect: `/m/admin/requests/${id}` },
             )

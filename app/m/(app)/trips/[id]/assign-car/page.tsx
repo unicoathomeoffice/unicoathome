@@ -4,7 +4,7 @@ import { AssignCarForm } from '@/components/transport/actions'
 import { requireTransport, fleet, availability } from '@/components/transport/data'
 import { shortName } from '@/components/coord/ui'
 import { dhakaParts } from '@/components/coord/data'
-import { HomecareRequest, isOid } from '@/lib/models'
+import { HomecareRequest, User, isOid } from '@/lib/models'
 import { can } from '@/lib/constants'
 import { withPeople } from '@/lib/services/requests'
 import { isoDay, time, day } from '@/lib/format'
@@ -26,7 +26,10 @@ export default async function AssignCarPage({ params, searchParams }: { params: 
   const at = r.scheduledAt ? new Date(r.scheduledAt).getTime() : Date.now()
   const pickup = r.transport?.pickupAt ? new Date(r.transport.pickupAt).getTime() : at - 40 * 60_000
   const ret = r.transport?.returnAt ? new Date(r.transport.returnAt).getTime() : at + ((r.expectedDurationMin ?? 45) + 60) * 60_000
-  const cars = await fleet(isoDay(r.scheduledAt ?? new Date()))
+  const [cars, drivers] = await Promise.all([
+    fleet(isoDay(r.scheduledAt ?? new Date())),
+    User.find({ status: 'ACTIVE', deletedAt: null, $or: [{ role: 'DRIVER' }, { roles: 'DRIVER' }] }).sort({ name: 1 }).select('name').lean<any[]>(),
+  ])
   const opts = cars.map((c) => {
     const a = availability(c, [pickup, ret], id)
     return { id: c.id, name: c.name, plate: c.plate, model: c.model, seats: c.seats, driver: c.driver ? { id: c.driver.id, name: c.driver.name } : null, ok: a.ok, label: a.label }
@@ -51,6 +54,8 @@ export default async function AssignCarPage({ params, searchParams }: { params: 
           pickup={dhakaParts(new Date(pickup)).time}
           ret={dhakaParts(new Date(ret)).time}
           currentVehicleId={r.transport?.vehicleId ? String(r.transport.vehicleId) : undefined}
+          currentDriverId={r.transport?.driverId ? String(r.transport.driverId) : undefined}
+          drivers={drivers.map((d: any) => ({ id: String(d._id), name: d.name }))}
           initialMode={sp.mode === 'own' || r.transport?.status === 'OWN' ? 'own' : 'car'}
         />
       </div>

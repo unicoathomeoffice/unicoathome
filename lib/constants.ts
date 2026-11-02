@@ -50,6 +50,8 @@ export const PERMISSIONS = {
   'patients.edit': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK'],
   'requests.manage': ['SUPER_ADMIN', 'HC_ADMIN'], // verify / confirm / reschedule / cancel / close
   'requests.assign': ['SUPER_ADMIN', 'HC_ADMIN'],
+  // force-assign (accept for staff), do visit steps for the team, complete directly, car + any driver
+  'requests.override': ['SUPER_ADMIN'],
   'visit.execute': ['DOCTOR', 'NURSE', 'ALLIED'],
   'billing.invoice': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK'],
   'transport.manage': ['SUPER_ADMIN', 'HC_ADMIN', 'TRANSPORT_SUPERVISOR'],

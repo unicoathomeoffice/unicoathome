@@ -47,6 +47,8 @@ export type AssignProps = {
   dayStartMs: number
   acceptTimeoutMin: number
   slots: string[]
+  /** override access: may put the team on as already accepted (no waiting for Accept) */
+  canOverride?: boolean
 }
 
 const ROLE_CHIPS = [
@@ -126,6 +128,7 @@ export function AssignDrawer(p: AssignProps) {
   const [fee, setFee] = useState(p.fee?.toString() ?? '')
   const [instructions, setInstructions] = useState(p.instructions)
   const [notify, setNotify] = useState(true)
+  const [acceptNow, setAcceptNow] = useState(!!p.canOverride)
   const [done, setDone] = useState<null | { id: string; name: string; others: { id: string; name: string }[] }>(null)
   const [all, setAll] = useState<Record<string, Candidate>>({})
 
@@ -202,9 +205,10 @@ export function AssignDrawer(p: AssignProps) {
             expectedDurationMin: Number(duration) || undefined,
             instructions: instructions.trim() || undefined,
             fee: fee === '' ? undefined : Number(fee),
+            acceptNow: p.canOverride && acceptNow ? true : undefined,
           },
         }),
-      `${p.reassign ? 'Reassigned' : 'Assigned'} to ${chosen?.name ?? 'staff'}${sec.length ? ` + ${sec.length}` : ''}`,
+      `${p.reassign ? 'Reassigned' : 'Assigned'} to ${chosen?.name ?? 'staff'}${sec.length ? ` + ${sec.length}` : ''}${p.canOverride && acceptNow ? ' · accepted' : ''}`,
     )
     if (r === undefined) return
     if (notify) setDone({ id: primary, name: chosen?.name ?? 'staff', others: sec.map((id) => ({ id, name: nameOf(id) })) })
@@ -224,7 +228,7 @@ export function AssignDrawer(p: AssignProps) {
             {done.name} has been assigned{done.others.length ? ` with ${done.others.map((o) => o.name).join(', ')}` : ''}
           </div>
           <div className="max-w-sm text-[13px] text-slate-500">
-            They got a push and in-app card and must accept within {p.acceptTimeoutMin} min. Send the staff_assigned WhatsApp from your phone as well.
+            {p.canOverride && acceptNow ? 'Accepted on their behalf — they got a push and in-app card, no need to wait.' : `They got a push and in-app card and must accept within ${p.acceptTimeoutMin} min.`} Send the staff_assigned WhatsApp from your phone as well.
           </div>
           <WhatsAppButton requestId={p.requestId} templateKey="staff_assigned" to="staff" staffId={done.id} kind="g" size="lg" className="mt-2 w-full max-w-xs">
             Notify {done.name.replace(/^(Dr\.?|Md\.?|Mst\.?)\s+/i, '').split(' ')[0]} via WhatsApp
@@ -250,7 +254,7 @@ export function AssignDrawer(p: AssignProps) {
       width={560}
       footer={
         <>
-          <span className="mr-auto text-[12px] text-slate-500">Staff must accept within {p.acceptTimeoutMin} min</span>
+          <span className="mr-auto text-[12px] text-slate-500">{p.canOverride && acceptNow ? 'Goes straight to Accepted' : `Staff must accept within ${p.acceptTimeoutMin} min`}</span>
           <button className={btnClass('o', 'md', 'h-10 px-[18px]')} onClick={p.onClose}>
             Cancel
           </button>
@@ -460,6 +464,14 @@ export function AssignDrawer(p: AssignProps) {
           <span className="hc-label">Instructions to staff</span>
           <input className="hc-input" value={instructions} placeholder="e.g. Bring resistance bands. Family requests female staff." onChange={(e) => setInstructions(e.target.value)} />
         </label>
+        {p.canOverride && (
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-[#FFFBEB] px-3 py-2.5 ring-1 ring-[#FDE68A]">
+            <div className="text-[13px]">
+              <b>Accept on their behalf</b> <span className="text-slate-600">· no waiting for the staff to tap Accept (override, audited)</span>
+            </div>
+            <Toggle on={acceptNow} onChange={setAcceptNow} label="Accept on their behalf" />
+          </div>
+        )}
         <div className="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2.5">
           <div className="text-[13px]">
             <b>Notify via WhatsApp</b> <span className="text-slate-500">· staff_assigned template, opens on your phone</span>

@@ -59,8 +59,20 @@ export async function loadRequest(id: string, user: SessionUser) {
   return r
 }
 
+/** Someone with override access doing a care-team step for the team (not a member themselves). */
+export function onBehalf(user: SessionUser, r: any) {
+  return !isTeamMember(user, r) && can(user, 'requests.override')
+}
+
+/** The care team — or an override user acting for them (each such step gets an extra "on behalf" audit row). */
 function requireTeam(user: SessionUser, r: any) {
-  if (!isTeamMember(user, r)) throw forbidden('Only the assigned care team can do this')
+  if (isTeamMember(user, r)) return
+  if (!can(user, 'requests.override')) throw forbidden('Only the assigned care team can do this')
+  const staffId = r.assignment?.primaryStaffId
+  background(async () => {
+    const staff = staffId ? await User.findById(staffId).select('name').lean<any>() : null
+    await audit(user, 'request.on_behalf', 'request', r._id, { after: { status: r.status, for: staff?.name ?? 'care team' }, label: r.requestNo })
+  })
 }
 
 // ============================================================== state machine
@@ -435,6 +447,8 @@ export const AssignInput = z.object({
   expectedDurationMin: z.coerce.number().int().positive().optional(),
   instructions: z.string().optional(),
   fee: z.coerce.number().nonnegative().optional(),
+  /** override: put the team on the visit as already accepted — no waiting for the staff to tap Accept */
+  acceptNow: z.boolean().optional(),
 })
 
 export async function assign(r: any, input: z.infer<typeof AssignInput>, user: SessionUser, meta: Meta) {
@@ -460,14 +474,24 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   r.set('assignment.acceptedAt', undefined)
   r.set('assignment.respondBy', new Date(Date.now() + s.sla.acceptTimeoutMin * 60_000))
   r.set('assignment.instructions', input.instructions)
+  const forced = !!input.acceptNow && can(user, 'requests.override')
+  if (forced) {
+    move(r, 'ACCEPTED', 'acceptedAt')
+    r.set('assignment.acceptedAt', new Date())
+    r.set('assignment.respondBy', undefined)
+  }
   await r.save()
   await AssignmentLog.create({ requestId: r._id, fromStaffId: prevPrimary ?? undefined, toStaffId: input.primaryStaffId, action: isReassign ? 'REASSIGN' : 'ASSIGN', by: user.id, reason: input.instructions })
+  if (forced) {
+    await AssignmentLog.create({ requestId: r._id, toStaffId: input.primaryStaffId, action: 'ACCEPT_BY_OVERRIDE', by: user.id, reason: 'Assigned and accepted by coordinator' })
+    await audit(user, 'request.accept_override', 'request', r._id, { after: { status: 'ACCEPTED', for: staff.find((x) => String(x._id) === input.primaryStaffId)?.name }, label: r.requestNo }, meta)
+  }
   await audit(user, isReassign ? 'request.reassign' : 'request.assign', 'request', r._id, { before: { primaryStaffId: prevPrimary }, after: { team: staff.map((x) => x.name), scheduledAt: r.scheduledAt }, label: r.requestNo }, meta)
   background(async () => {
     const when = `${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`
     await notifyUsers([input.primaryStaffId], {
       type: 'ASSIGNED',
-      title: `New visit ${r.requestNo} · respond in ${s.sla.acceptTimeoutMin} min`,
+      title: forced ? `New visit ${r.requestNo} · assigned & accepted for you by ${user.name}` : `New visit ${r.requestNo} · respond in ${s.sla.acceptTimeoutMin} min`,
       body: `${r.patientSnapshot.name} · ${r.services.map((x: any) => x.name).join(', ')} · ${when} · ${r.patientSnapshot.area ?? ''}`,
       requestId: r._id,
       url: appUrl(r._id),
@@ -552,12 +576,22 @@ export async function saveInvoice(r: any, input: Partial<z.infer<typeof CloseInp
 
 // ============================================================== staff actions
 export async function accept(r: any, user: SessionUser, meta: Meta, deviceAt?: string) {
-  if (String(r.assignment?.primaryStaffId) !== user.id && !isTeamMember(user, r)) throw forbidden('This visit is not assigned to you')
+  const forced = onBehalf(user, r)
+  if (!forced && String(r.assignment?.primaryStaffId) !== user.id && !isTeamMember(user, r)) throw forbidden('This visit is not assigned to you')
   if (r.status === 'ACCEPTED') return
+  if (forced && !r.assignment?.primaryStaffId) throw conflict('NO_TEAM', 'Assign staff first')
   move(r, 'ACCEPTED', 'acceptedAt')
   r.set('assignment.acceptedAt', new Date())
-  deviceStamp(r, user, 'accept', deviceAt)
+  r.set('assignment.respondBy', undefined)
+  if (!forced) deviceStamp(r, user, 'accept', deviceAt)
   await r.save()
+  if (forced) {
+    const staff = await User.findById(r.assignment.primaryStaffId).select('name').lean<any>()
+    await AssignmentLog.create({ requestId: r._id, toStaffId: r.assignment.primaryStaffId, action: 'ACCEPT_BY_OVERRIDE', by: user.id, reason: `Accepted by ${user.name} for ${staff?.name ?? 'staff'}` })
+    await audit(user, 'request.accept_override', 'request', r._id, { after: { status: 'ACCEPTED', for: staff?.name }, label: r.requestNo }, meta)
+    background(() => notifyUsers([r.assignment.primaryStaffId, ...(r.assignment.secondaryStaffIds ?? [])], { type: 'ACCEPTED', as: 'STAFF', title: `${r.requestNo} accepted for you by ${user.name}`, body: `${r.patientSnapshot.name} · ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`, requestId: r._id, url: appUrl(r._id), priority: 'high' }))
+    return
+  }
   await AssignmentLog.create({ requestId: r._id, toStaffId: user.id, action: 'ACCEPT', by: user.id })
   await audit(user, 'request.accept', 'request', r._id, { after: { status: 'ACCEPTED' }, label: r.requestNo }, meta)
   background(() => notifyRoles(['HC_ADMIN'], { type: 'ACCEPTED', title: `${r.requestNo} accepted`, body: `${user.name} accepted · ${r.patientSnapshot.name}`, requestId: r._id, url: url(r._id) }))
@@ -595,11 +629,12 @@ export async function enRoute(r: any, input: z.infer<typeof Stamp>, user: Sessio
   move(r, 'EN_ROUTE', 'enRouteAt')
   deviceStamp(r, user, 'en_route', input.deviceAt, input.offline)
   const s = await getSettings()
-  const token = s.features.liveTracking ? startOut(r, user.id) : null
+  const forced = onBehalf(user, r) // a coordinator marking it for the team: their own phone is not the one travelling
+  const token = s.features.liveTracking && !forced ? startOut(r, user.id) : null
   await r.save()
   await audit(user, 'visit.en_route', 'request', r._id, { after: { status: 'EN_ROUTE', tracking: !!token }, label: r.requestNo }, meta)
   background(async () => {
-    await closeOpenReturns(user.id, r._id) // left straight from the last visit: that way back is over
+    if (!forced) await closeOpenReturns(user.id, r._id) // left straight from the last visit: that way back is over
     await notifyRoles(['HC_ADMIN'], { type: 'EN_ROUTE', title: `${user.name} is on the way`, body: `${r.requestNo} · ${r.patientSnapshot.name}`, requestId: r._id, url: url(r._id) })
     if (token && s.features.shareTrackingWithPatient) await whatsappPatient(r, 'patient_en_route', user, user.id)
     // a Unico car the driver didn't stamp out: the team leaving is the car leaving
@@ -610,7 +645,8 @@ export async function enRoute(r: any, input: z.infer<typeof Stamp>, user: Sessio
 export async function checkIn(r: any, input: z.infer<typeof Stamp>, user: SessionUser, meta: Meta) {
   requireTeam(user, r)
   const s = await getSettings()
-  if (s.features.gpsRequiredCheckIn && (input.lat == null || input.lng == null)) throw bad('GPS location is required to check in')
+  // GPS proves the team is at the patient — not asked of a coordinator entering it for them (audited "on behalf")
+  if (s.features.gpsRequiredCheckIn && (input.lat == null || input.lng == null) && !onBehalf(user, r)) throw bad('GPS location is required to check in')
   const now = new Date()
   move(r, 'IN_PROGRESS', 'checkInAt', now)
   stopTracking(r)
@@ -749,7 +785,7 @@ export async function checkOut(r: any, input: z.infer<typeof CheckOutInput>, use
   if (input.transportMode) r.set('transport.mode', input.transportMode)
   if (input.remarks != null) r.set('visit.remarks', input.remarks)
   deviceStamp(r, user, 'check_out', input.deviceAt, input.offline)
-  const returning = await startReturn(r, user.id) // way back to the hospital (live tracking + hospital pin set)
+  const returning = onBehalf(user, r) ? false : await startReturn(r, user.id) // way back to the hospital (live tracking + hospital pin set)
   await audit(user, 'visit.check_out', 'request', r._id, { after: { at: now, durationMin: duration, billAmount: input.billAmount, billingStatus: input.billingStatus, returnTracking: returning }, label: r.requestNo }, meta)
   if (input.complete !== false) await completeVisit(r, user, meta)
   else await r.save()
@@ -800,6 +836,60 @@ export async function completeVisit(r: any, user: SessionUser, meta: Meta) {
   })
 }
 
+export const CompleteNowInput = z.object({
+  start: z.string().regex(/^\d\d:\d\d$/).optional(), // HH:mm on the visit day — when the team actually started
+  end: z.string().regex(/^\d\d:\d\d$/).optional(),
+  note: z.string().trim().max(300).optional(),
+})
+/**
+ * Override: finish the visit for the team in one go (e.g. the staff did the visit but never used the app). Accepts it if
+ * needed, stamps the missing check-in / check-out times (now, or the times given), ticks open mandatory checklist items as
+ * "entered by coordinator" and completes it the normal way (visit update, patient message, report). Fully audited.
+ */
+export async function completeNow(r: any, input: z.infer<typeof CompleteNowInput>, user: SessionUser, meta: Meta) {
+  if (!can(user, 'requests.override')) throw forbidden('Needs override access')
+  if (!['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS'].includes(r.status)) throw conflict('INVALID_TRANSITION', `A ${String(r.status).replace('_', ' ').toLowerCase()} visit can't be completed`)
+  if (!r.assignment?.primaryStaffId) throw conflict('NO_TEAM', 'Assign staff first')
+  const day = isoDay(r.scheduledAt ?? new Date())
+  const now = new Date()
+  const start = input.start ? dhakaDate(day, input.start) : r.timeline?.checkInAt ? new Date(r.timeline.checkInAt) : now
+  const end = input.end ? dhakaDate(day, input.end) : now
+  if (end.getTime() < start.getTime()) throw bad('The end time is before the start time', { end: 'Before start' })
+  const from = r.status
+  if (r.status === 'ASSIGNED') {
+    move(r, 'ACCEPTED', 'acceptedAt', now)
+    r.set('assignment.acceptedAt', now)
+    r.set('assignment.respondBy', undefined)
+    await AssignmentLog.create({ requestId: r._id, toStaffId: r.assignment.primaryStaffId, action: 'ACCEPT_BY_OVERRIDE', by: user.id, reason: 'Completed by coordinator' })
+  }
+  if (r.status === 'ACCEPTED' || r.status === 'EN_ROUTE') {
+    move(r, 'IN_PROGRESS', 'checkInAt', start)
+    r.set('visit.checkIn', { at: start })
+    const late = minutesBetween(r.scheduledAt, start)
+    r.set('visit.lateMin', late != null && late > 0 ? late : 0)
+  }
+  stopTracking(r)
+  const ticked: string[] = []
+  for (const c of r.visit?.checklist ?? []) {
+    if (!c.mandatory || c.done) continue
+    c.done = true
+    c.doneAt = end
+    c.doneBy = user.id
+    c.note = c.note || 'Entered by coordinator'
+    ticked.push(c.label)
+  }
+  if (ticked.length) r.markModified('visit.checklist')
+  if (!r.timeline?.checkOutAt) {
+    r.set('visit.checkOut', { at: end })
+    r.set('timeline.checkOutAt', end)
+    r.set('visit.durationMin', minutesBetween(r.timeline?.checkInAt ?? start, end) ?? 0)
+  }
+  if (input.note) r.set('visit.remarks', [r.visit?.remarks, input.note].filter(Boolean).join(' · '))
+  const staff = await User.findById(r.assignment.primaryStaffId).select('name').lean<any>()
+  await audit(user, 'visit.complete_override', 'request', r._id, { before: { status: from }, after: { for: staff?.name, start, end, ticked, note: input.note }, label: r.requestNo }, meta)
+  await completeVisit(r, user, meta)
+}
+
 // ============================================================== petty cash
 export const PettyCashInput = z.object({ amount: z.coerce.number().positive(), purpose: z.string().min(1), note: z.string().optional() })
 export async function requestPettyCash(r: any, input: z.infer<typeof PettyCashInput>, user: SessionUser, meta: Meta) {
@@ -834,7 +924,11 @@ export const TransportInput = z.object({
   returnTime: z.string().optional(),
 })
 export async function assignTransport(r: any, input: z.infer<typeof TransportInput>, user: SessionUser, meta: Meta) {
-  if (!can(user, 'transport.manage')) throw forbidden()
+  if (!can(user, 'transport.manage') && !can(user, 'requests.override')) throw forbidden()
+  if (input.driverId) {
+    // any active driver (the supervisor may say which one) — not only the car's usual driver
+    if (!isOid(input.driverId) || !(await User.exists({ _id: input.driverId, status: 'ACTIVE', deletedAt: null, $or: [{ role: 'DRIVER' }, { roles: 'DRIVER' }] }))) throw bad('Pick an active driver', { driverId: 'Not an active driver' })
+  }
   const day = isoDay(r.scheduledAt ?? new Date())
   r.set('transport.needed', true)
   r.set('transport.mode', input.mode)

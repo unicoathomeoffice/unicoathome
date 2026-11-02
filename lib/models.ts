@@ -395,7 +395,7 @@ const AssignmentLogSchema = new Schema<any>(
     requestId: { type: ObjectId, ref: 'HomecareRequest', index: true },
     fromStaffId: { type: ObjectId, ref: 'User' },
     toStaffId: { type: ObjectId, ref: 'User' },
-    action: { type: String, enum: ['ASSIGN', 'REASSIGN', 'ACCEPT', 'DECLINE', 'TIMEOUT', 'HANDOVER'] },
+    action: { type: String, enum: ['ASSIGN', 'REASSIGN', 'ACCEPT', 'ACCEPT_BY_OVERRIDE', 'DECLINE', 'TIMEOUT', 'HANDOVER'] },
     reason: String,
     by: { type: ObjectId, ref: 'User' },
     at: { type: Date, default: Date.now },

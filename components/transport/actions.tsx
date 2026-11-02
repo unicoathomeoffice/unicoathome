@@ -73,16 +73,19 @@ export function LegButton({ id, leg, label, className }: { id: string; leg: stri
 export type CarOpt = { id: string; name: string; plate: string; model?: string; seats?: number; driver: { id: string; name: string } | null; ok: boolean; label: string }
 
 /** S4b — "Which car goes?" sheet body: Unico car vs own transport, cars with state, pick-up / return times. */
-export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVehicleId, initialMode }: { id: string; requestNo: string; sub: string; cars: CarOpt[]; pickup: string; ret: string; currentVehicleId?: string; initialMode: 'car' | 'own' }) {
+export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVehicleId, currentDriverId, initialMode, drivers = [] }: { id: string; requestNo: string; sub: string; cars: CarOpt[]; pickup: string; ret: string; currentVehicleId?: string; currentDriverId?: string; initialMode: 'car' | 'own'; drivers?: { id: string; name: string }[] }) {
   const [mode, setMode] = useState<'car' | 'own'>(initialMode)
   const firstOk = cars.find((c) => c.id === currentVehicleId) ?? cars.find((c) => c.ok && c.driver)
   const [car, setCar] = useState<string>(firstOk?.id ?? '')
+  // any active driver can take the car (the supervisor may say which one); defaults to the car's usual driver
+  const [driverId, setDriverId] = useState<string>(currentDriverId ?? firstOk?.driver?.id ?? '')
   const [p, setP] = useState(pickup)
   const [r, setR] = useState(ret)
   const [own, setOwn] = useState<string>('UBER')
   const { run, busy } = useAction()
   const chosen = cars.find((c) => c.id === car)
-  const label = mode === 'own' ? `Save · ${OWN.find((o) => o.value === own)?.label}` : chosen ? `Assign ${chosen.name}${chosen.driver ? ` · ${chosen.driver.name.split(' ')[0]}` : ''}` : 'Pick a car'
+  const driver = drivers.find((d) => d.id === driverId) ?? (chosen?.driver && chosen.driver.id === driverId ? chosen.driver : null)
+  const label = mode === 'own' ? `Save · ${OWN.find((o) => o.value === own)?.label}` : chosen ? `Assign ${chosen.name}${driver ? ` · ${driver.name.split(' ')[0]}` : ''}` : 'Pick a car'
   return (
     <>
       <div>
@@ -103,9 +106,16 @@ export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVe
           <div className="overflow-hidden rounded-card border border-slate-200 bg-white">
             {cars.map((c, i) => {
               const on = c.id === car
-              const disabled = !c.driver || c.label.startsWith('In service')
+              const disabled = (!c.driver && !drivers.length) || c.label.startsWith('In service')
               return (
-                <button key={c.id} type="button" disabled={disabled} onClick={() => setCar(c.id)} className={cx('flex w-full items-center gap-3 px-3.5 py-3 text-left', i > 0 && 'border-t border-slate-100', on && 'bg-primary-50', (!c.ok || disabled) && !on && 'opacity-50')}>
+                <button
+                  key={c.id}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    setCar(c.id)
+                    if (c.driver) setDriverId(c.driver.id)
+                  }} className={cx('flex w-full items-center gap-3 px-3.5 py-3 text-left', i > 0 && 'border-t border-slate-100', on && 'bg-primary-50', (!c.ok || disabled) && !on && 'opacity-50')}>
                   <span className={cx('flex size-[22px] flex-none items-center justify-center rounded-full border-2', on ? 'border-primary' : 'border-slate-300')}>{on && <span className="size-2.5 rounded-full bg-primary" />}</span>
                   <div className="min-w-0 flex-1">
                     <div className="text-[15px] font-bold">
@@ -123,6 +133,20 @@ export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVe
             })}
           </div>
           {chosen && !chosen.ok && <div className="-mt-1 text-[12px] font-semibold text-[#B45309]">{chosen.name} has another trip in this window — check the times.</div>}
+          {drivers.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-[13px] font-semibold text-slate-700">Driver</div>
+              <select className="hc-input hc-input-lg" value={driverId} onChange={(e) => setDriverId(e.target.value)}>
+                <option value="">Pick a driver…</option>
+                {drivers.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                    {cars.find((c) => c.driver?.id === d.id) ? ` · usual car ${cars.find((c) => c.driver?.id === d.id)!.name}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2.5">
             <div>
               <div className="mb-1.5 text-[13px] font-semibold text-slate-700">Pick-up at hospital</div>
@@ -138,7 +162,7 @@ export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVe
               <Check size={16} className="flex-none text-[#16A34A]" strokeWidth={3} />
               <span>
                 <b>Notify</b> · driver and care team get “{chosen.name}
-                {chosen.driver ? ` · ${chosen.driver.name.split(' ')[0]}` : ''} · {p}”
+                {driver ? ` · ${driver.name.split(' ')[0]}` : ''} · {p}”
               </span>
             </div>
           )}
@@ -159,11 +183,11 @@ export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVe
         </Link>
         <button
           type="button"
-          disabled={busy || (mode === 'car' && !chosen)}
+          disabled={busy || (mode === 'car' && (!chosen || !driver))}
           className={bbtn('p', 'flex-[1.8]')}
           onClick={() =>
             run(
-              () => api(`/requests/${id}/transport`, { body: mode === 'own' ? { mode: own } : { mode: 'UNICO_CAR', vehicleId: car, driverId: chosen?.driver?.id, pickupTime: p || undefined, returnTime: r || undefined } }),
+              () => api(`/requests/${id}/transport`, { body: mode === 'own' ? { mode: own } : { mode: 'UNICO_CAR', vehicleId: car, driverId: driver?.id, pickupTime: p || undefined, returnTime: r || undefined } }),
               mode === 'own' ? `${requestNo} · own transport` : `${chosen?.name} assigned · driver notified`,
               { redirect: '/m/trips' },
             )

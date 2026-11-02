@@ -4,7 +4,7 @@ import { AutoRefresh } from '@/components/client'
 import { PriorityBadge, SlaPill, StatusChip, Tabs } from '@/components/ui'
 import { requireWebUser } from '@/lib/auth'
 import { db, plain } from '@/lib/db'
-import { AssignmentLog, Attachment, AuditLog, ChatMessage, HomecareRequest, LabResult, MessageLog, Patient, Prescription, User, isOid } from '@/lib/models'
+import { AssignmentLog, Attachment, AuditLog, ChatMessage, HomecareRequest, LabResult, MessageLog, Patient, Prescription, User, Vehicle, isOid } from '@/lib/models'
 import { canView, slaInfo, withPeople } from '@/lib/services/requests'
 import { getSettings } from '@/lib/settings'
 import { initialsOf, isoDay, dayRange, dayNum, time, dur, date } from '@/lib/format'
@@ -23,6 +23,7 @@ import { InvoiceTab } from '@/components/request-detail/InvoiceTab'
 import { TransportDocsBox } from '@/components/request-detail/TransportDocsBox'
 import { RidesCard } from '@/components/request-detail/RidesCard'
 import { liveView } from '@/lib/services/tracking'
+import { OverridePanel } from '@/components/request-detail/OverridePanel'
 
 export const metadata = { title: 'Request detail' }
 
@@ -142,8 +143,23 @@ export default async function RequestDetailPage({ params, searchParams }: { para
       dayStartMs: start.getTime(),
       acceptTimeoutMin: sla.acceptTimeoutMin,
       slots: settings.general.slots,
+      canOverride: can(user, 'requests.override'),
     }
   }
+
+  // ---- "Act for the team" (override) + car & any driver
+  const canOverride = can(user, 'requests.override')
+  const canCar = canOverride || can(user, 'transport.manage')
+  const carRelevant = canCar && r.transport?.needed && (!r.transport.mode || r.transport.mode === 'UNICO_CAR')
+  const [carList, driverList] =
+    carRelevant || canOverride
+      ? await Promise.all([
+          carRelevant ? Vehicle.find({ isActive: { $ne: false } }).sort({ name: 1 }).select('name plate driverId status').lean<any[]>() : [],
+          carRelevant ? User.find({ status: 'ACTIVE', deletedAt: null, $or: [{ role: 'DRIVER' }, { roles: 'DRIVER' }] }).sort({ name: 1 }).select('name phone').lean<any[]>() : [],
+        ])
+      : [[], []]
+  const hhmm = (d?: Date | null) => (d ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hour12: false }).format(d) : '')
+  const visitAt = r.scheduledAt ? new Date(r.scheduledAt) : null
 
   // ---- compact request for client dialogs
   const team = [r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean).map((s: any) => s.name)
@@ -237,6 +253,25 @@ export default async function RequestDetailPage({ params, searchParams }: { para
         {!['NEW', 'VERIFIED', 'CANCELLED'].includes(status) && (
           <ConfirmationStatus requestId={id} wa={lite.wa} last={confirmMsg ? { status: confirmMsg.status, at: new Date(confirmMsg.at).toISOString(), error: confirmMsg.error, provider: confirmMsg.provider } : null} />
         )}
+        <OverridePanel
+          requestId={id}
+          requestNo={r.requestNo}
+          status={status}
+          staffName={r.primaryStaff?.name ?? null}
+          canOverride={canOverride}
+          canCar={canCar}
+          transport={{
+            needed: !!r.transport?.needed,
+            mode: r.transport?.mode ?? null,
+            vehicleId: r.transport?.vehicleId ? String(r.transport.vehicleId) : null,
+            driverId: r.transport?.driverId ? String(r.transport.driverId) : null,
+            pickup: hhmm(r.transport?.pickupAt ? new Date(r.transport.pickupAt) : visitAt ? new Date(visitAt.getTime() - 40 * 60_000) : null),
+            ret: hhmm(r.transport?.returnAt ? new Date(r.transport.returnAt) : visitAt ? new Date(visitAt.getTime() + ((r.expectedDurationMin ?? 45) + 60) * 60_000) : null),
+          }}
+          cars={carList.map((c: any) => ({ id: String(c._id), name: c.name, plate: c.plate, driverId: c.driverId ? String(c.driverId) : undefined, status: c.status }))}
+          drivers={driverList.map((d: any) => ({ id: String(d._id), name: d.name, phone: d.phone }))}
+          openChecklist={(r.visit?.checklist ?? []).filter((c: any) => c.mandatory && !c.done).length}
+        />
         {tab === 'overview' && r.transport?.needed && (!r.transport.mode || r.transport.mode === 'UNICO_CAR') && status !== 'CANCELLED' && (
           <TransportDocsBox
             requestId={id}

@@ -8,6 +8,7 @@ import { ServiceType } from '@/lib/models'
 import { rankCandidates } from '@/lib/services/requests'
 import { relDay, time, dayNum, dur, clock } from '@/lib/format'
 import { plain } from '@/lib/db'
+import { can } from '@/lib/constants'
 
 export const metadata = { title: 'Assign team' }
 
@@ -60,6 +61,7 @@ export default async function AssignPage({ params }: { params: Promise<{ id: str
         initialSize={team.length || needTotal}
         instructions={r.assignment?.instructions}
         transport={!!r.transport?.needed}
+        canOverride={can(user, 'requests.override')}
       />
       </div>
     </MScreen>

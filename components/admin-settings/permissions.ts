@@ -12,6 +12,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   'patients.edit': 'Edit patient registry',
   'requests.manage': 'Verify / confirm / reschedule / cancel / close',
   'requests.assign': 'Assign / reassign staff',
+  'requests.override': 'Override: accept for staff, do visit steps for them, complete directly, pick car & any driver',
   'visit.execute': 'Accept, check-in, checklist, vitals, complete (own visits)',
   'billing.invoice': 'Issue invoice · print status',
   'transport.manage': 'Assign cars & drivers · manage fleet',
