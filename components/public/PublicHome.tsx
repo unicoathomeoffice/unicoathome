@@ -231,28 +231,40 @@ function Page({ hospital: h, services, zones, booking, legacySlots, bnFont }: Pr
             </div>
           </div>
 
-          <footer id="contact" className="mt-6 flex flex-wrap gap-x-5 gap-y-2 px-2 pb-28 text-[13px] text-slate-500 sm:px-2 lg:pb-0">
-            <span className="w-full text-slate-700">
-              {h.name} · {h.address} ·{' '}
-              <a href={telUrl(h.phone)} className="font-semibold text-primary-700">
-                {h.phone}
+          <footer id="contact" className="mb-28 mt-4 rounded-2xl bg-white/95 p-4 text-[13px] text-slate-500 shadow-[0_6px_24px_rgba(31,56,100,0.08)] ring-1 ring-slate-100 backdrop-blur sm:p-5 lg:mb-6">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
+              <div className="flex w-full min-w-0 items-center gap-3 sm:w-auto sm:flex-1">
+                <span className="flex size-10 flex-none items-center justify-center rounded-xl bg-primary-50 text-primary">
+                  <House size={19} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[14.5px] font-bold leading-snug text-navy">{h.name}</span>
+                  <span className="block text-[12.5px] leading-snug text-slate-500">{h.address}</span>
+                </span>
+              </div>
+              <a href={telUrl(h.phone)} className="inline-flex h-11 w-full flex-none items-center justify-center gap-2 rounded-full bg-primary-50 px-4 text-[14px] font-bold text-primary-700 transition hover:bg-primary hover:text-white sm:h-10 sm:w-auto">
+                <Phone size={16} /> {h.phone}
               </a>
-            </span>
-            <Link href="/privacy" className="hover:text-primary-700">
-              {t.privacy}
-            </Link>
-            <Link href="/terms" className="hover:text-primary-700">
-              {t.terms}
-            </Link>
-            <Link href={accountHref} className="hover:text-primary-700">
-              {patient ? t.navMyVisits : t.navSignIn}
-            </Link>
-            <Link href={staff.href} className="hover:text-primary-700">
-              {staff.signedIn ? t.openDashboard : t.staffSignIn}
-            </Link>
-            <Link href="/join" className="hover:text-primary-700">
-              {t.join}
-            </Link>
+            </div>
+            <nav className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3.5 text-[13px] font-medium text-slate-600 sm:gap-x-1">
+              {[
+                { href: '/privacy', label: t.privacyTitle },
+                { href: '/terms', label: t.terms },
+                { href: accountHref, label: patient ? t.navMyVisits : t.navSignIn },
+                { href: staff.href, label: staff.signedIn ? t.openDashboard : t.staffSignIn },
+                { href: '/join', label: t.join },
+              ].map((l, i) => (
+                <span key={l.href + i} className="inline-flex items-center gap-1">
+                  {i > 0 && <span className="hidden px-1 text-slate-300 sm:inline" aria-hidden>·</span>}
+                  <Link href={l.href} className="rounded px-0.5 hover:text-primary-700 hover:underline">
+                    {l.label}
+                  </Link>
+                </span>
+              ))}
+            </nav>
+            <div className="mt-2.5 text-[11.5px] text-slate-400">
+              © {new Date().getFullYear()} {h.name} · {h.department} · {t.rights}
+            </div>
           </footer>
         </div>
       </section>
