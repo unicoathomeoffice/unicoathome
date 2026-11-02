@@ -1,6 +1,6 @@
 import 'server-only'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import { drawInBox, embedImage, fitText, readForm, tick, wrapText } from './pdf'
+import { drawInBox, embedImage, fitText, photoBudget, readForm, savePdf, tick, wrapText } from './pdf'
 
 // Fills the hospital's paper "Annex-3: Vehicle Requisition Form" (assets/forms/vehicle-requisition.pdf, US Letter
 // 612×792 pt). Coordinates were measured once against a 20-pt grid laid over the template.
@@ -80,7 +80,7 @@ export async function fillRequisition(d: RequisitionData) {
 
   // ride screenshots / receipts, one per page
   for (const im of d.appendImages ?? []) {
-    const img = await embedImage(doc, im.data, im.mime)
+    const img = await embedImage(doc, im.data, im.mime, 'photo', photoBudget((d.appendImages ?? []).length))
     if (!img) continue
     const p = doc.addPage([612, 792])
     fitText(p, im.label, { x: 40, y: 760, maxWidth: 532, font: bold, size: 12, color: INK })
@@ -89,5 +89,5 @@ export async function fillRequisition(d: RequisitionData) {
 
   if (d.updated) page.drawText('UPDATED', { x: 470, y: 712, size: 14, font: bold, color: rgb(0.75, 0.1, 0.1) })
   if (d.footer) fitText(page, d.footer, { x: 92, y: 40, maxWidth: 430, font, size: 7.5, color: rgb(0.45, 0.47, 0.52) })
-  return Buffer.from(await doc.save())
+  return savePdf(doc)
 }

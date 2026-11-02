@@ -64,14 +64,46 @@ export function tick(page: PDFPage, x: number, y: number, s = 11) {
   page.drawLine({ start: { x: x + s * 0.42, y: y + 2 }, end: { x: x + s + 1, y: y + s + 1 }, thickness: 1.6 })
 }
 
-/** Embed a stored signature / photo (PNG or JPG bytes). */
-export async function embedImage(doc: PDFDocument, data: Buffer, mime: string): Promise<PDFImage | null> {
+// Forms go out on WhatsApp to the security supervisor: keep every PDF under ~50 KB. The template's fonts are subset
+// (assets/forms), text is standard Helvetica (not embedded), and images are shrunk here before embedding.
+export const PDF_MAX_BYTES = 50 * 1024
+export const savePdf = async (doc: PDFDocument) => Buffer.from(await doc.save({ useObjectStreams: true }))
+
+/**
+ * Shrink an image for a form: a signature becomes a small grey palette PNG (a few KB); a photo / ride screenshot /
+ * receipt becomes a JPEG stepped down in size and quality until it fits `maxBytes`.
+ */
+export async function shrinkImage(data: Buffer, kind: 'signature' | 'photo', maxBytes = 18 * 1024): Promise<{ data: Buffer; mime: string } | null> {
   try {
-    return /png/i.test(mime) ? await doc.embedPng(data) : /jpe?g/i.test(mime) ? await doc.embedJpg(data) : null
+    const sharp = (await import('sharp')).default
+    if (kind === 'signature') {
+      const out = await sharp(data).rotate().flatten({ background: '#ffffff' }).resize({ width: 360, height: 160, fit: 'inside', withoutEnlargement: true }).grayscale().png({ palette: true, colours: 16, compressionLevel: 9 }).toBuffer()
+      return { data: out, mime: 'image/png' }
+    }
+    let out: Buffer | null = null
+    for (const [w, q] of [[1000, 55], [850, 50], [720, 45], [600, 40], [480, 35]] as const) {
+      out = await sharp(data).rotate().flatten({ background: '#ffffff' }).resize({ width: w, height: Math.round(w * 1.6), fit: 'inside', withoutEnlargement: true }).jpeg({ quality: q, mozjpeg: true }).toBuffer()
+      if (out.length <= maxBytes) break
+    }
+    return out ? { data: out, mime: 'image/jpeg' } : null
   } catch {
     return null
   }
 }
+
+/** Embed a stored signature / photo (PNG or JPG bytes), shrunk first (see shrinkImage). */
+export async function embedImage(doc: PDFDocument, data: Buffer, mime: string, kind: 'signature' | 'photo' = 'signature', maxBytes?: number): Promise<PDFImage | null> {
+  try {
+    const small = await shrinkImage(data, kind, maxBytes)
+    const img = small ?? { data, mime }
+    return /png/i.test(img.mime) ? await doc.embedPng(img.data) : /jpe?g/i.test(img.mime) ? await doc.embedJpg(img.data) : null
+  } catch {
+    return null
+  }
+}
+
+/** Per-photo budget so a form with n photos still lands under PDF_MAX_BYTES (the form itself is ~30 KB). */
+export const photoBudget = (n: number, formBytes = 30 * 1024) => Math.max(8 * 1024, Math.floor((PDF_MAX_BYTES - formBytes) / Math.max(1, n)))
 
 /** Draw an image inside a box (keeps aspect ratio, bottom-left anchored). */
 export function drawInBox(page: PDFPage, img: PDFImage, x: number, y: number, w: number, h: number) {
@@ -86,7 +118,7 @@ export function logoPng() {
     try {
       const sharp = (await import('sharp')).default
       const svg = await fs.readFile(path.join(process.cwd(), 'public', 'logo.svg'))
-      return await sharp(svg, { density: 300 }).resize({ height: 160 }).png().toBuffer()
+      return await sharp(svg, { density: 200 }).resize({ height: 90 }).png({ palette: true, colours: 64, compressionLevel: 9 }).toBuffer()
     } catch {
       return null
     }

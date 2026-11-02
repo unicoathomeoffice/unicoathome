@@ -4,8 +4,9 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['mongoose', 'bcryptjs', 'nodemailer', 'sharp', '@whiskeysockets/baileys', 'pino', 'pdf-lib', 'exceljs'],
   // hospital form templates (requisition PDF, bill submission workbook) + the logo for generated PDFs are read from
   // disk at runtime: ship them with every server function (documents are generated from many routes / after()).
+  // harfbuzz-subset.wasm shrinks the fonts inside H360 bill copies (lib/forms/pdf-fonts.ts).
   outputFileTracingIncludes: {
-    '/**': ['./assets/forms/**/*', './public/logo.svg'],
+    '/**': ['./assets/forms/**/*', './public/logo.svg', './node_modules/harfbuzzjs/dist/harfbuzz-subset.wasm'],
   },
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },

@@ -1,6 +1,6 @@
 import 'server-only'
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
-import { ansi, drawInBox, embedImage, fitText, readForm } from './pdf'
+import { ansi, drawInBox, embedImage, fitText, photoBudget, readForm, savePdf } from './pdf'
 
 // The hospital's "Bill Submission Form Unico @ Home.xlsx" (assets/forms/bill-submission.xlsx): three sheets —
 // Top Sheet (Bill Submission Form), Conveyance Claim Form, Food Allowance Claim Form — each with Date, Name,
@@ -193,11 +193,11 @@ export async function claimPdf(f: ClaimForm) {
       } catch {}
       continue
     }
-    const img = await embedImage(doc, r.data, r.mime)
+    const img = await embedImage(doc, r.data, r.mime, 'photo', photoBudget((f.receipts ?? []).length, 20 * 1024))
     if (!img) continue
     p = doc.addPage(A4)
     p.drawText(ansi(`Voucher · ${r.label}`), { x: 40, y: 805, size: 11, font: bold, color: NAVY })
     drawInBox(p, img, 40, 60, 515, 730)
   }
-  return Buffer.from(await doc.save())
+  return savePdf(doc)
 }

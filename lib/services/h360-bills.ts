@@ -1,12 +1,13 @@
 import 'server-only'
 // Invoice tab ↔ H360 Billing List: find this patient's bills, add one with the hospital's own bill copy (PDF + items +
 // live paid / due), and refresh paid / due later (e.g. after the patient pays the due at the counter). Read-only on H360.
-import { HomecareRequest, Patient } from '../models'
+import { Attachment, HomecareRequest, Patient } from '../models'
 import { audit } from '../audit'
 import { bad, notFound } from '../api'
 import { billPdf, searchBills, H360Error, type H360Bill } from '../h360'
 import { parseBill } from '../bill-parse'
 import { storeFile } from '../files'
+import { shrinkPdfFonts } from '../forms/pdf-fonts'
 import { amounts, recompute } from './billing'
 import type { SessionUser } from '../auth'
 
@@ -62,9 +63,12 @@ async function itemsFromPdf(pdf: Buffer) {
   }
 }
 
-async function storeBillPdf(r: any, b: H360Bill, user: SessionUser) {
-  const pdf = await billPdf(b)
+async function storeBillPdf(r: any, b: H360Bill, user: SessionUser, replaces?: unknown) {
+  // H360 embeds a whole font (~90 KB): keep only the glyphs used → ~20 KB, same look, quick on WhatsApp
+  const pdf = await shrinkPdfFonts(await billPdf(b))
   const att = await storeFile({ data: pdf, mime: 'application/pdf', filename: `Unico-Bill-${b.invoiceNo}.pdf`, kind: 'INVOICE', uploadedBy: user.id, requestId: r._id, caption: `Invoice ${b.invoiceNo} (H360)` })
+  // a refreshed copy replaces the old file instead of piling up duplicates
+  if (replaces && String(replaces) !== String(att._id)) await Attachment.updateOne({ _id: replaces, deletedAt: null }, { $set: { deletedAt: new Date() } })
   return { attachmentId: att._id, parsed: await itemsFromPdf(pdf) }
 }
 
@@ -79,7 +83,8 @@ export async function importH360Bill(r: any, invoiceNo: string, opts: { otherPat
   const elsewhere = await HomecareRequest.findOne({ _id: { $ne: r._id }, 'billing.invoices.invoiceNo': invoiceNo }).select('requestNo').lean<any>()
   if (elsewhere) throw bad(`Invoice ${invoiceNo} is already on ${elsewhere.requestNo}`, { invoiceNo: 'Already on another request' })
 
-  const { attachmentId, parsed } = await storeBillPdf(r, b, user)
+  const existingFile = (r.billing?.invoices ?? []).find((x: any) => x.invoiceNo === invoiceNo)?.attachmentId
+  const { attachmentId, parsed } = await storeBillPdf(r, b, user, existingFile)
   const now = new Date()
   const fields = {
     invoiceNo: b.invoiceNo,
@@ -121,7 +126,7 @@ export async function syncH360Bills(r: any, user: SessionUser, meta: Meta) {
         const before = { paid: inv.paid, due: inv.due, total: inv.total }
         Object.assign(inv, next, { trxId: newTrx ?? inv.trxId, updatedAt: new Date() })
         if (inv.source === 'H360' || !inv.attachmentId) {
-          const { attachmentId } = await storeBillPdf(r, b, user)
+          const { attachmentId } = await storeBillPdf(r, b, user, inv.source === 'H360' ? inv.attachmentId : undefined)
           inv.attachmentId = attachmentId
         }
         changed++

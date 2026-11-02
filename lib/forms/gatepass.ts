@@ -1,6 +1,6 @@
 import 'server-only'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import { ansi, drawInBox, embedImage, fitText, logoPng } from './pdf'
+import { ansi, drawInBox, embedImage, fitText, logoPng, savePdf } from './pdf'
 
 // Vehicle gate pass for a Unico @ Home car trip (A5 portrait), generated when the transport section allots a car.
 
@@ -90,5 +90,5 @@ export async function makeGatePass(d: GatePassData) {
   page.drawText('In:    ____________________', { x: bx + 8, y: y - 36, size: 8.5, font, color: NAVY })
 
   if (d.footer) fitText(page, d.footer, { x: M, y: 22, maxWidth: W - 2 * M, font, size: 7, color: GREY })
-  return Buffer.from(await doc.save())
+  return savePdf(doc)
 }

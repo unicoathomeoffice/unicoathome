@@ -19,6 +19,7 @@
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
+    "harfbuzzjs": "1.6.3",
     "jose": "^6.2.12",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.47.0",
