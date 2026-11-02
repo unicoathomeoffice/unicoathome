@@ -5,6 +5,7 @@ import { X, Loader2, MessageCircle } from 'lucide-react'
 import { api, useAction } from './api'
 import { btnClass, type BtnKind } from '@/components/ui'
 import { cx, mmss } from '@/lib/format'
+import { isScanned } from '@/components/scanner/output'
 
 export { api, useAction, stamp } from './api'
 export { useToast } from './toast'
@@ -301,9 +302,10 @@ export function UnreadBadge({ initial, className }: { initial: number; className
 }
 
 // ---------------------------------------------------------------- uploads
-/** Compress an image in the browser (max 1600px, JPEG 0.8) and stamp the time on it. */
+/** Compress an image in the browser (max 1600px, JPEG 0.8) and stamp the time on it.
+ *  Document-scanner output is already sized and encoded for upload, so it passes through untouched. */
 export async function compressImage(file: File, watermark = true): Promise<File> {
-  if (!file.type.startsWith('image/')) return file
+  if (!file.type.startsWith('image/') || isScanned(file)) return file
   const bmp = await createImageBitmap(file)
   const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height))
   const canvas = document.createElement('canvas')

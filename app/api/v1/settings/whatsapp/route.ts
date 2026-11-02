@@ -5,6 +5,7 @@ import { getSettings, saveSetting } from '@/lib/settings'
 import { audit } from '@/lib/audit'
 import { pumpWhatsApp, queueWhatsApp, unpairWhatsApp, waStatus } from '@/lib/wa/service'
 import { bdMobile } from '@/lib/services/public'
+import { resume, safetyStatus } from '@/lib/wa/guard'
 
 export const maxDuration = 60 // a WhatsApp session may take ~10–30 s to open and send
 
@@ -12,7 +13,7 @@ export const maxDuration = 60 // a WhatsApp session may take ~10–30 s to open 
 export const GET = route(async ({ user }) => {
   if (!canOpenSettings(user)) throw forbidden()
   const s = await getSettings()
-  return { status: await waStatus(), autoSend: s.whatsapp.autoSend !== false }
+  return { status: await waStatus(), autoSend: s.whatsapp.autoSend !== false, safety: await safetyStatus() }
 })
 
 /** PATCH { autoSend } */
@@ -29,6 +30,7 @@ const Action = z.discriminatedUnion('action', [
   z.object({ action: z.literal('test'), to: z.string().min(6), text: z.string().trim().min(1).max(1000).optional() }),
   z.object({ action: z.literal('pump') }),
   z.object({ action: z.literal('disconnect') }),
+  z.object({ action: z.literal('resume') }),
 ])
 
 /** POST — test message · send queued now · disconnect */
@@ -44,7 +46,12 @@ export const POST = route(async ({ req, user }) => {
     await audit(user, 'settings.test_whatsapp', 'settings', 'whatsapp', { after: { to, ...r } }, meta)
     return { ok: true, ...r }
   }
-  if (input.action === 'pump') return { ok: true, ...(await pumpWhatsApp(30)) }
+  if (input.action === 'pump') return { ok: true, ...(await pumpWhatsApp()) }
+  if (input.action === 'resume') {
+    await resume()
+    await audit(user, 'settings.whatsapp_resume', 'settings', 'whatsapp', { label: 'WhatsApp sending resumed' }, meta)
+    return { ok: true, ...(await pumpWhatsApp()) }
+  }
   await unpairWhatsApp()
   await audit(user, 'settings.whatsapp_disconnect', 'settings', 'whatsapp', { label: 'WhatsApp disconnected' }, meta)
   return { ok: true }

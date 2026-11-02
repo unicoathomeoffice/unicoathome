@@ -1,5 +1,6 @@
 import 'server-only'
 import { ServiceType, Zone } from './models'
+import { db } from './db'
 import { forget, memo } from './memo'
 
 // Slow-changing master lists shared by many pages, read at most every 30 s per instance.
@@ -8,15 +9,16 @@ const TTL = 30_000
 
 /** Active service types, in display order, with the fields pages need for pickers and fees. */
 export const activeServices = () =>
-  memo('master:services', TTL, () =>
-    ServiceType.find({ isActive: { $ne: false } })
+  memo('master:services', TTL, async () => {
+    await db()
+    return ServiceType.find({ isActive: { $ne: false } })
       .sort({ sortOrder: 1, name: 1 })
       .select('code name category fee defaultDurationMin requiresPrescription')
-      .lean<{ _id: unknown; code: string; name: string; category?: string; fee?: number; defaultDurationMin?: number; requiresPrescription?: boolean }[]>(),
-  )
+      .lean<{ _id: unknown; code: string; name: string; category?: string; fee?: number; defaultDurationMin?: number; requiresPrescription?: boolean }[]>()
+  })
 
 /** Active zone names, in display order. */
-export const activeZones = () => memo('master:zones', TTL, async () => (await Zone.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('name').lean<{ name: string }[]>()).map((z) => z.name))
+export const activeZones = () => memo('master:zones', TTL, async () => (await db(), await Zone.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('name').lean<{ name: string }[]>()).map((z) => z.name))
 
 export const forgetMaster = () => {
   forget('master:')

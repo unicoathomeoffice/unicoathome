@@ -14,6 +14,8 @@ import { cx } from '@/lib/format'
 import vercel from '@/vercel.json'
 import { canOpenSettings, hasRole } from '@/lib/constants'
 import { H360Card } from '@/components/settings/H360Card'
+import { WaSafetyCard } from '@/components/settings/WaSafetyCard'
+import { safetyStatus } from '@/lib/wa/guard'
 import { DEFAULT_H360_URL, getH360Config, h360Status } from '@/lib/h360'
 
 export const metadata: Metadata = { title: 'Settings & integrations' }
@@ -98,6 +100,8 @@ export default async function SettingsPage() {
         )}
 
         <WhatsAppCard initial={plain(s.whatsapp)} envCountry={process.env.WA_DEFAULT_COUNTRY ?? '880'} status={JSON.parse(JSON.stringify(await (await import('@/lib/wa/service')).waStatus()))} /* Baileys loads only on this page */ autoSend={s.whatsapp.autoSend !== false} />
+
+        <WaSafetyCard initial={plain(s.whatsappSafety)} status={plain(await safetyStatus()) as any} />
 
         <SCard title="Push · in-app" sub="Notification centre now · Expo push (FCM / APNs) next">
           {[

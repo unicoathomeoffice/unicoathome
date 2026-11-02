@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },
   },
+  // there is no /admin page: the web admin home is /dashboard (people type /admin and land on a 404 after login)
+  async redirects() {
+    return [{ source: '/admin', destination: '/dashboard', permanent: false }]
+  },
 }
 
 export default nextConfig

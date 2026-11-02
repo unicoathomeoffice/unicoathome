@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { Loader2, Upload } from 'lucide-react'
 import { uploadFile, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
+import { useScanner } from '@/components/scanner/useScanner'
 
 const KINDS = [
   ['REPORT', 'Report'],
@@ -19,6 +20,7 @@ export function UploadDocButton({ patientId }: { patientId: string }) {
   const toast = useToast()
   const [busy, setBusy] = useState(false)
   const [kind, setKind] = useState<string>('REPORT')
+  const { scan, scanner } = useScanner()
   return (
     <div className="flex items-center gap-1.5">
       <select aria-label="Document type" value={kind} onChange={(e) => setKind(e.target.value)} className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-[12.5px] text-slate-700 outline-none">
@@ -37,12 +39,14 @@ export function UploadDocButton({ patientId }: { patientId: string }) {
         accept="image/jpeg,image/png,image/webp,application/pdf"
         className="hidden"
         onChange={async (e) => {
-          const file = e.target.files?.[0]
+          const picked = Array.from(e.target.files ?? [])
           e.target.value = ''
-          if (!file) return
+          // photos open the document scanner (pages → one PDF); PDFs go straight up
+          const files = kind === 'PHOTO' ? picked : await scan(picked, { title: 'Scan document' })
+          if (!files?.length) return
           setBusy(true)
           try {
-            await uploadFile(file, { kind, patientId })
+            for (const file of files) await uploadFile(file, { kind, patientId })
             toast('Document uploaded')
             router.refresh()
           } catch (err: any) {
@@ -52,6 +56,7 @@ export function UploadDocButton({ patientId }: { patientId: string }) {
           }
         }}
       />
+      {scanner}
     </div>
   )
 }

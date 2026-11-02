@@ -1,5 +1,5 @@
 import 'server-only'
-import { HomecareRequest, AssignmentLog, Notification, User, Attachment } from '../models'
+import { HomecareRequest, AssignmentLog, Notification, User, Attachment, MessageLog } from '../models'
 import { notifyRoles, notifyUsers, queueEmail } from '../messaging'
 import { getSettings, ruleAllows } from '../settings'
 import { audit } from '../audit'
@@ -83,6 +83,12 @@ export async function sweep(force = false) {
   const { finishReturn } = await import('./tracking')
   const stale = await HomecareRequest.find({ 'tracking.active': true, 'tracking.phase': 'RETURN', 'returnTrip.startedAt': { $lt: new Date(now.getTime() - 4 * 3600_000) } }).select('_id').lean<any[]>()
   for (const r of stale) await finishReturn(r._id, 'timeout')
+  // WhatsApp heartbeat: messages held back by the sending limits or quiet hours go out on a later sweep
+  // (only for messages waiting 2+ min — fresh ones are already being sent by their own trigger)
+  if (await MessageLog.exists({ channel: 'WHATSAPP', provider: 'wa_baileys', status: 'QUEUED', at: { $lt: new Date(now.getTime() - 120_000) } })) {
+    const { pumpWhatsApp } = await import('../wa/service')
+    await pumpWhatsApp().catch(() => {})
+  }
   // daily WhatsApp summary: sent once, at the first sweep after the chosen time
   const { sendDailySummary } = await import('./daily')
   const daily = await sendDailySummary().catch((e) => ({ sent: 0, skipped: String(e?.message ?? e) }))

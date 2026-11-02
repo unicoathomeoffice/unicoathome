@@ -128,6 +128,30 @@ export const PATCH = route(
       if (!r.success) throw bad(`Car requisition: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`)
       input.value = r.data
     }
+    if (input.key === 'whatsappSafety') {
+      const n = (min: number, max: number) => z.number().int().min(min).max(max)
+      const r = z
+        .object({
+          perMinute: n(1, 20),
+          perHour: n(5, 300),
+          perDay: n(20, 1500),
+          perRecipientHour: n(1, 20),
+          perRecipientDay: n(1, 60),
+          delayMinSec: n(1, 30),
+          delayMaxSec: n(1, 60),
+          typing: z.boolean(),
+          checkNumbers: z.boolean(),
+          dedupeMin: n(0, 240),
+          quietHours: z.boolean(),
+          warmUpDays: n(0, 30),
+          optOut: z.boolean(),
+        })
+        .partial()
+        .strict()
+        .safeParse(input.value)
+      if (!r.success) throw bad(`WhatsApp safety: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`)
+      input.value = r.data
+    }
     if (input.key === 'dailyWhatsApp') {
       const r = z
         .object({

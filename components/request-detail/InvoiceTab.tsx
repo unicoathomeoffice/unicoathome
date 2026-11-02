@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Download, Eye, FileText, Loader2, MessageCircle, Pencil, Plus, Trash2, Upload } from 'lucide-react'
 import { api, Drawer, useToast, compressImage } from '@/components/client'
 import { btnClass } from '@/components/ui'
+import { useScanner } from '@/components/scanner/useScanner'
 import { cx, taka } from '@/lib/format'
 
 type Invoice = { _id: string; invoiceNo: string; date?: string; total: number; discount?: number; payable: number; paid: number; due: number; attachmentId?: string; source?: 'UPLOAD' | 'H360'; note?: string }
@@ -227,6 +228,7 @@ function InvoiceForm({ requestId, edit, onClose }: { requestId: string; edit?: I
   const router = useRouter()
   const toast = useToast()
   const [file, setFile] = useState<File | null>(null)
+  const { scan, scanner } = useScanner()
   const [v, setV] = useState({
     invoiceNo: edit?.invoiceNo ?? '',
     date: edit?.date ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date(edit.date)) : today(),
@@ -290,8 +292,20 @@ function InvoiceForm({ requestId, edit, onClose }: { requestId: string; edit?: I
           <Upload size={20} className="text-primary-700" />
           <span className="text-[14px] font-semibold">{file ? file.name : edit?.attachmentId ? 'Replace the bill file (optional)' : 'Choose the bill file (PDF or photo)'}</span>
           <span className="text-[12px] text-slate-500">PDF, JPG or PNG · up to 4 MB</span>
-          <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          <input
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            className="sr-only"
+            onChange={async (e) => {
+              const picked = Array.from(e.target.files ?? [])
+              e.target.value = ''
+              // a photo of the bill opens the scanner (a multi-page bill becomes one PDF)
+              const out = await scan(picked, { title: 'Scan bill' })
+              if (out?.[0]) setFile(out[0])
+            }}
+          />
         </label>
+        {scanner}
         <div className="grid grid-cols-2 gap-3">
           <label>
             <span className="hc-label">Invoice no *</span>

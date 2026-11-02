@@ -6,6 +6,7 @@ import { Calendar, Camera, Check, ChevronLeft, Clock, Loader2, Search, X, AlertT
 import { api, useToast, Segmented, uploadFile } from '@/components/client'
 import { AddressBlock, ADDRESS_LABELS_EN, composeFull, type AddressValue } from '@/components/client/AddressBlock'
 import { ApiClientError } from '@/components/client/api'
+import { useScanner } from '@/components/scanner/useScanner'
 import { SLOTS, ZONES, STATUS_COLORS, STATUS_LABEL, type Status } from '@/lib/constants'
 import { cx, isoDay, day as fmtDay, taka } from '@/lib/format'
 import { FLabel, SLabel, FixedBottom, bbtn, chipClass, ageG } from './ui'
@@ -119,6 +120,7 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
   const [remarks, setRemarks] = useState('')
   const [files, setFiles] = useState<File[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
+  const { scan, scanner } = useScanner()
   // submit
   const [busy, setBusy] = useState(false)
   const [dup, setDup] = useState<string | null>(null)
@@ -763,11 +765,15 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
               accept="image/*,application/pdf"
               multiple
               className="hidden"
-              onChange={(e) => {
-                setFiles([...files, ...Array.from(e.target.files ?? [])].slice(0, 6))
+              onChange={async (e) => {
+                const picked = Array.from(e.target.files ?? [])
                 e.target.value = ''
+                // photos of the prescription open the document scanner (crop, flatten, filter; pages → one PDF)
+                const out = await scan(picked, { title: 'Scan prescription' })
+                if (out) setFiles((fs) => [...fs, ...out].slice(0, 6))
               }}
             />
+            {scanner}
           </div>
           <SLabel>Commercial</SLabel>
           <div className="grid grid-cols-[1fr_1.6fr] gap-2.5">

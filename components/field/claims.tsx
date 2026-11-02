@@ -8,6 +8,7 @@ import { Camera, Car, CheckCircle2, FileSpreadsheet, FileText, Loader2, Plus, Re
 import { api, compressImage, Sheet, useToast } from '@/components/client'
 import { cx, taka } from '@/lib/format'
 import { bigBtn } from './bar'
+import { useScanner } from '@/components/scanner/useScanner'
 
 type Line = { _id: string; kind: 'CONVEYANCE' | 'FOOD' | 'OTHER'; requestId?: string; leg?: 'OUT' | 'BACK'; at?: string; uhid?: string; patientName?: string; invoiceNo?: string; from?: string; to?: string; mode?: string; amount: number; receiptIds?: string[]; note?: string }
 type Claim = { _id: string; claimNo: string; status: string; lines: Line[]; total: number; submittedAt?: string; decisionNote?: string; pdfId?: string; xlsxId?: string }
@@ -199,6 +200,7 @@ function LineSheet({ line, preset, onClose, onSaved }: { line?: Line; preset?: P
   })
   const [receipts, setReceipts] = useState<string[]>(src.receiptIds ?? [])
   const [uploading, setUploading] = useState(false)
+  const { scan, scanner } = useScanner()
   const [busy, setBusy] = useState(false)
   const set = (k: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement>) => setV({ ...v, [k]: e.target.value })
 
@@ -323,9 +325,20 @@ function LineSheet({ line, preset, onClose, onSaved }: { line?: Line; preset?: P
               <label className="flex size-16 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border-[1.5px] border-dashed border-slate-300 text-[11px] text-slate-500">
                 {uploading ? <Loader2 size={18} className="animate-spin" /> : <Camera size={18} />}
                 Add
-                <input type="file" accept="image/*,application/pdf" className="sr-only" onChange={(e) => (addReceipt(e.target.files?.[0]), (e.target.value = ''))} />
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="sr-only"
+                  onChange={async (e) => {
+                    const picked = Array.from(e.target.files ?? [])
+                    e.target.value = ''
+                    const out = await scan(picked, { title: 'Scan receipt' })
+                    for (const f of out ?? []) await addReceipt(f)
+                  }}
+                />
               </label>
             )}
+            {scanner}
           </div>
         </div>
         <button type="button" disabled={busy || uploading} onClick={save} className={bigBtn('p', 'w-full')}>

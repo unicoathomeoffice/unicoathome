@@ -422,6 +422,9 @@ const MessageLogSchema = new Schema<any>(
     providerId: String,
     // WhatsApp file message: the Attachment sent as a document / image, renderedText is its caption
     attachmentId: { type: ObjectId, ref: 'Attachment' },
+    // WhatsApp sending safety (lib/wa/guard.ts): higher goes first; sentAt drives the rate limits
+    priority: { type: Number, default: 0 },
+    sentAt: Date,
     fileName: String,
     error: String,
     attempts: { type: Number, default: 0 },
@@ -432,6 +435,7 @@ const MessageLogSchema = new Schema<any>(
 MessageLogSchema.index({ requestId: 1, at: -1 })
 MessageLogSchema.index({ channel: 1, at: -1 })
 MessageLogSchema.index({ status: 1, at: 1 })
+MessageLogSchema.index({ channel: 1, provider: 1, sentAt: -1, to: 1 }, { partialFilterExpression: { sentAt: { $exists: true } } }) // WhatsApp rate limits
 export const MessageLog = model('MessageLog', MessageLogSchema, 'message_logs')
 
 const TemplateSchema = new Schema<any>(
@@ -657,6 +661,11 @@ const ExpenseClaimSchema = new Schema<any>(
 )
 ExpenseClaimSchema.index({ status: 1, submittedAt: -1 })
 export const ExpenseClaim = model('ExpenseClaim', ExpenseClaimSchema, 'expense_claims')
+
+// ---------------------------------------------------------------- WhatsApp numbers seen by the sender (lib/wa/guard.ts)
+// exists: the number is on WhatsApp (checked before the first message, cached 30 days); optOut: replied STOP.
+const WaContactSchema = new Schema<any>({ _id: String, exists: Boolean, checkedAt: Date, optOut: Boolean, optOutAt: Date }, { versionKey: false })
+export const WaContact = model('WaContact', WaContactSchema, 'wa_contacts')
 
 // ---------------------------------------------------------------- live location pings (tracking trail)
 const LocationPingSchema = new Schema<any>(

@@ -16,7 +16,7 @@ type Service = { code: string; name: string; category: string; requiresPrescript
 type Errors = Record<string, string>
 type SlotState = 'open' | 'full' | 'past' | 'blocked' | 'closed'
 export type BookingDay = { date: string; weekday: number; closed: boolean; slots: { start: string; end: string; label: string; booked: number; capacity: number; state: SlotState }[] }
-type Doc = { uid: number; name: string; kind: 'image' | 'pdf'; preview?: string; busy: boolean; id?: string; token?: string; err?: string }
+type Doc = { uid: number; name: string; kind: 'image' | 'pdf'; preview?: string; busy: boolean; id?: string; token?: string; err?: string; original?: File }
 let docSeq = 1
 
 const dhakaDay = (offset: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date(Date.now() + offset * 86400_000))
@@ -112,14 +112,36 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
       const preview = isPdf ? undefined : URL.createObjectURL(file)
       setDocs((d) => [...d, { uid, name: file.name, kind: isPdf ? 'pdf' : 'image', preview, busy: true }])
       try {
+        // photos are scanned automatically: page found + flattened + cleaned (built-in detector, no big download)
+        let up = file
+        if (!isPdf) {
+          const { autoScan } = await import('@/components/scanner/autoScan')
+          up = (await autoScan(file)).file
+          if (up !== file) setDocs((d) => d.map((x) => (x.uid === uid ? { ...x, preview: URL.createObjectURL(up) } : x)))
+        }
         const form = new FormData()
-        form.append('file', isPdf ? file : await compressImage(file, false))
+        form.append('file', isPdf ? file : await compressImage(up, false))
         const r = await api<{ id: string; token: string }>('/public/uploads', { form })
-        setDocs((d) => d.map((x) => (x.uid === uid ? { ...x, busy: false, id: r.id, token: r.token } : x)))
+        setDocs((d) => d.map((x) => (x.uid === uid ? { ...x, busy: false, id: r.id, token: r.token, original: up !== file ? file : undefined } : x)))
         setErrors(({ attachments: _, ...rest }) => rest)
       } catch (e: any) {
         setDocs((d) => d.map((x) => (x.uid === uid ? { ...x, busy: false, err: e.message } : x)))
       }
+    }
+  }
+
+  /** Undo the automatic scan: upload the photo exactly as taken (the scanned copy is swept up as an unlinked upload). */
+  async function keepOriginal(doc: Doc) {
+    if (!doc.original) return
+    const file = doc.original
+    setDocs((d) => d.map((x) => (x.uid === doc.uid ? { ...x, busy: true, err: undefined } : x)))
+    try {
+      const form = new FormData()
+      form.append('file', await compressImage(file, false))
+      const r = await api<{ id: string; token: string }>('/public/uploads', { form })
+      setDocs((d) => d.map((x) => (x.uid === doc.uid ? { ...x, busy: false, id: r.id, token: r.token, original: undefined, preview: URL.createObjectURL(file) } : x)))
+    } catch (e: any) {
+      setDocs((d) => d.map((x) => (x.uid === doc.uid ? { ...x, busy: false, err: e.message } : x)))
     }
   }
 
@@ -436,7 +458,14 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
                   )}
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13.5px] font-semibold">{d.name}</span>
-                    <span className={cx('block text-[12px]', d.err ? 'text-[#B91C1C]' : d.busy ? 'text-slate-500' : 'text-[#15803D]')}>{d.err ? d.err : d.busy ? t.uploading : '✓'}</span>
+                    <span className={cx('block text-[12px]', d.err ? 'text-[#B91C1C]' : d.busy ? 'text-slate-500' : 'text-[#15803D]')}>
+                      {d.err ? d.err : d.busy ? t.uploading : d.original ? (lang === 'bn' ? '✓ স্ক্যান করে পরিষ্কার করা হয়েছে' : '✓ Scanned & cleaned up') : '✓'}
+                    </span>
+                    {d.original && !d.busy && (
+                      <button type="button" onClick={() => keepOriginal(d)} className="text-[12px] font-semibold text-primary-700 underline">
+                        {lang === 'bn' ? 'আসল ছবি ব্যবহার করুন' : 'Use original photo'}
+                      </button>
+                    )}
                   </span>
                   {d.busy ? (
                     <Loader2 size={18} className="animate-spin text-slate-400" />

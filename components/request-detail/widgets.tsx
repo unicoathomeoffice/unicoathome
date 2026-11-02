@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ChevronDown, Clock, Loader2, RotateCw, Trash2, Upload } from 'lucide-react'
 import { api, useAction, uploadFile } from '@/components/client'
 import { btnClass } from '@/components/ui'
+import { useScanner } from '@/components/scanner/useScanner'
 import { cx, mmss } from '@/lib/format'
 
 /** Live mm:ss since `from`. Hydration-safe (the shared <Elapsed> can differ by a second between SSR and hydration). */
@@ -81,11 +82,16 @@ export function AttachmentUploader({ requestId }: { requestId: string }) {
   const [kind, setKind] = useState('PRESCRIPTION')
   const [caption, setCaption] = useState('')
   const [busy, setBusy] = useState(false)
-  async function onFiles(files: FileList | null) {
+  const { scan, scanner } = useScanner()
+  async function onFiles(list: FileList | null) {
+    const picked = Array.from(list ?? [])
+    if (input.current) input.current.value = ''
+    // photos open the document scanner first (several photos → one PDF); PDFs go straight up
+    const files = await scan(picked, { title: 'Scan document' })
     if (!files?.length) return
     setBusy(true)
     try {
-      for (const f of Array.from(files)) await uploadFile(f, { kind, requestId, caption: caption.trim() || undefined })
+      for (const f of files) await uploadFile(f, { kind, requestId, caption: caption.trim() || undefined })
       toast(files.length > 1 ? `${files.length} files uploaded` : 'File uploaded', 'ok')
       setCaption('')
       router.refresh()
@@ -116,6 +122,7 @@ export function AttachmentUploader({ requestId }: { requestId: string }) {
       <button type="button" className={btnClass('p', 'md', 'h-10')} disabled={busy} onClick={() => input.current?.click()}>
         {busy ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} Upload file
       </button>
+      {scanner}
     </div>
   )
 }

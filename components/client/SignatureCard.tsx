@@ -7,6 +7,7 @@ import { Eraser, Loader2, PenLine, Trash2, Upload } from 'lucide-react'
 import { api, Toggle, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
+import { useScanner } from '@/components/scanner/useScanner'
 
 /** Make near-white pixels transparent and crop to the ink, returning a PNG blob. */
 async function cleanToPng(src: CanvasImageSource, w: number, h: number): Promise<Blob | null> {
@@ -51,6 +52,7 @@ export function SignatureCard({ signatureId, autoSignApprover, isApprover }: { s
   const [mode, setMode] = useState<'view' | 'draw'>(signatureId ? 'view' : 'draw')
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
+  const { scan, scanner } = useScanner()
   const [approve, setApprove] = useState(autoSignApprover)
 
   useEffect(() => {
@@ -115,9 +117,12 @@ export function SignatureCard({ signatureId, autoSignApprover, isApprover }: { s
     if (!blob) return toast('Draw your signature first', 'err')
     upload(blob)
   }
-  async function fromFile(f: File | undefined) {
+  async function fromFile(picked: File | undefined) {
+    if (!picked) return
+    if (!/^image\//.test(picked.type)) return toast('Choose a photo or scan of your signature', 'err')
+    // crop to just the signature and clean the paper first; the white background is removed below
+    const f = (await scan([picked], { title: 'Crop your signature', multiPage: false, filters: ['magic', 'original', 'bw'], defaultFilter: 'magic' }))?.[0]
     if (!f) return
-    if (!/^image\//.test(f.type)) return toast('Choose a photo or scan of your signature', 'err')
     const bmp = await createImageBitmap(f)
     const scale = Math.min(1, 1400 / bmp.width)
     const blob = await cleanToPng(bmp, Math.round(bmp.width * scale), Math.round(bmp.height * scale))
@@ -180,7 +185,7 @@ export function SignatureCard({ signatureId, autoSignApprover, isApprover }: { s
             </button>
             <label className={cx(btnClass('o', 'md'), 'cursor-pointer')}>
               <Upload size={16} /> Upload a photo
-              <input type="file" accept="image/*" className="sr-only" onChange={(e) => fromFile(e.target.files?.[0])} />
+              <input type="file" accept="image/*" className="sr-only" onChange={(e) => (fromFile(e.target.files?.[0]), (e.target.value = ''))} />
             </label>
             {signatureId && (
               <button type="button" className={btnClass('ghost', 'md')} onClick={() => setMode('view')}>
@@ -212,6 +217,7 @@ export function SignatureCard({ signatureId, autoSignApprover, isApprover }: { s
           />
         </div>
       )}
+      {scanner}
     </section>
   )
 }
