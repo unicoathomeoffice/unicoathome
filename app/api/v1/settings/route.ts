@@ -51,22 +51,36 @@ const BookingPatch = z
 const HodPatch = z
   .object({
     enabled: z.boolean(),
+    groups: z
+      .array(
+        z.object({
+          id: z.string().min(1).max(40),
+          name: z.string().trim().min(2, 'Give every group a name').max(60),
+          category: z.string().max(40).optional(),
+          services: z.union([z.literal('ALL'), z.array(z.string().max(40)).max(100)]),
+          message: z.string().max(1000).optional(),
+          active: z.boolean(),
+        }),
+      )
+      .max(30),
     contacts: z
       .array(
         z.object({
           id: z.string().min(1).max(40),
-          category: z.enum(HOD_CATEGORIES),
+          groupId: z.string().min(1).max(40),
+          category: z.enum(HOD_CATEGORIES).optional(),
           name: z.string().trim().min(2, 'Name is required').max(80),
           designation: z.string().trim().min(2, 'Designation is required').max(80),
-          phone: z.string().trim().refine((v) => v.replace(/\D/g, '').length >= 10, 'Enter a full mobile number'),
+          phone: z.string().trim().refine((v) => v.replace(/[^0-9]/g, '').length >= 10, 'Enter a full mobile number'),
+          services: z.array(z.string().max(40)).max(100).optional(),
           active: z.boolean(),
         }),
       )
-      .max(80)
-      .refine((list) => HOD_CATEGORIES.every((c) => list.filter((x) => x.category === c).length <= 20), 'At most 20 people per service'),
+      .max(200),
   })
   .partial()
   .strict()
+  .refine((v) => !v.contacts || !v.groups || v.contacts.every((c) => v.groups!.some((g) => g.id === c.groupId)), 'Every person must belong to a group')
 
 /** PATCH /api/v1/settings { key: 'sla', value: {...} } — non-secret config only. Online booking: requests.manage. */
 export const PATCH = route(

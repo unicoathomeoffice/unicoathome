@@ -1,6 +1,6 @@
 import 'server-only'
 import { z } from 'zod'
-import { HomecareRequest, Patient, ServiceType } from '../models'
+import { HomecareRequest, Patient } from '../models'
 import { VITALS } from '../constants'
 import { getSettings } from '../settings'
 import { renderTemplate, waNumber } from '../messaging'
@@ -88,10 +88,9 @@ async function defaultRecipients(r: any): Promise<Recipient[]> {
   const s = await getSettings()
   const cfg = s.visitUpdates
   const out: Recipient[] = []
-  if (cfg.toHods && s.hodAlerts?.contacts?.length) {
-    const types = await ServiceType.find({ _id: { $in: (r.services ?? []).map((x: any) => x.serviceTypeId).filter(Boolean) } }).select('category').lean<any[]>()
-    const cats = new Set(types.map((t) => String(t.category ?? '').toLowerCase()))
-    for (const c of s.hodAlerts.contacts) if (c.active && cats.has(c.category.toLowerCase())) out.push({ name: `${c.name} (${c.designation})`, phone: c.phone, kind: 'hod' })
+  if (cfg.toHods) {
+    const { hodRecipients } = await import('./hod')
+    for (const c of await hodRecipients(r)) out.push({ name: `${c.name} (${c.designation})`, phone: c.phone, kind: 'hod' })
   }
   for (const e of cfg.extra ?? []) out.push({ name: e.name, phone: e.phone, kind: 'extra' })
   return out

@@ -5,7 +5,11 @@ import { SLOTS } from './constants'
 import { forget, memo } from './memo'
 
 export const HOD_CATEGORIES = ['Doctor', 'Nursing', 'Lab', 'Physio'] as const
-export type HodContact = { id: string; category: (typeof HOD_CATEGORIES)[number]; name: string; designation: string; phone: string; active: boolean }
+/** groupId: which alert group; services: optional ServiceType codes this person is limited to.
+ *  category: first-version field (contacts keyed by category) — read as group `cat-<category>`. */
+export type HodContact = { id: string; groupId?: string; category?: (typeof HOD_CATEGORIES)[number]; name: string; designation: string; phone: string; services?: string[]; active: boolean }
+/** category: built-in group following a ServiceType category; services: codes, or 'ALL'; message: own WhatsApp text */
+export type HodGroup = { id: string; name: string; category?: string; services: 'ALL' | string[]; message?: string; active: boolean }
 
 /** Non-secret configuration editable from Settings (W15 / A5). Secrets stay in env vars. */
 export const DEFAULT_SETTINGS = {
@@ -65,6 +69,7 @@ export const DEFAULT_SETTINGS = {
    *  category = ServiceType.category (Doctor · Nursing · Lab · Physio); several people per category. */
   hodAlerts: {
     enabled: true,
+    groups: [] as HodGroup[], // empty = the four built-in category groups (lib/services/hod.ts)
     contacts: [] as HodContact[],
   },
   features: {

@@ -8,6 +8,7 @@ import { NotificationRules } from '@/components/settings/NotificationRules'
 import { canOpenSettings } from '@/lib/constants'
 import { ExtraRecipients } from '@/components/settings/ExtraRecipients'
 import { HodContacts } from '@/components/settings/HodContacts'
+import { hodConfig } from '@/lib/services/hod'
 import { VisitUpdateSettings } from '@/components/settings/VisitUpdateSettings'
 import { activeServices } from '@/lib/cached'
 import { isPaired, pairedPhone } from '@/lib/wa/status'
@@ -18,8 +19,6 @@ export default async function NotificationRulesPage() {
   const user = await requireWebUser()
   if (!canOpenSettings(user)) redirect('/dashboard?denied=1')
   const [s, services, paired, phone] = await Promise.all([getSettings(), activeServices(), isPaired(), pairedPhone()])
-  const byCat: Record<string, string[]> = {}
-  for (const t of services) (byCat[String(t.category ?? '').toLowerCase()] ??= []).push(t.name)
   return (
     <AdminPage title="Notification rules" crumbs="Settings">
       <NotificationRules
@@ -29,7 +28,7 @@ export default async function NotificationRulesPage() {
         myEmail={user.email}
       />
       <div className="mt-5 max-w-[1200px]">
-        <HodContacts initial={JSON.parse(JSON.stringify(s.hodAlerts))} services={byCat} wa={{ paired, phone }} />
+        <HodContacts initial={JSON.parse(JSON.stringify(hodConfig(s.hodAlerts as any)))} services={services.map((t) => ({ code: t.code, name: t.name, category: t.category ?? '' }))} wa={{ paired, phone }} />
       </div>
       <div className="mt-5 max-w-[900px]">
         <VisitUpdateSettings initial={JSON.parse(JSON.stringify(s.visitUpdates))} />
