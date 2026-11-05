@@ -62,7 +62,7 @@ export default async function RequestsPage({ searchParams }: { searchParams: Pro
       <AutoRefresh seconds={20} />
       <BoardFilters view={view} selects={selects} canCreate={can(user, 'requests.create')} rows={rows} />
       {view === 'table' ? (
-        <RequestsTable rows={rows} canAssign={can(user, 'requests.assign')} canMessage={can(user, 'messages.send')} />
+        <RequestsTable rows={rows} canAssign={can(user, 'requests.assign')} canMessage={can(user, 'messages.send')} canDelete={can(user, 'requests.delete')} />
       ) : (
         <KanbanBoard rows={rows} canManage={can(user, 'requests.manage')} canAssign={can(user, 'requests.assign')} canCreate={can(user, 'requests.create')} />
       )}

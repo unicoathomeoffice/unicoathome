@@ -3,11 +3,12 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BOARD_COLUMNS, type Status } from '@/lib/constants'
-import { Clock, ExternalLink, MoreVertical, UserPlus } from 'lucide-react'
+import { Clock, ExternalLink, MoreVertical, Trash2, UserPlus } from 'lucide-react'
 import { Avatar, PriorityBadge, SlaPill, StatusChip } from '@/components/ui'
 import { Elapsed, useToast, WhatsAppButton } from '@/components/client'
 import { cx } from '@/lib/format'
 import { downloadCsv } from './csv'
+import { DeleteRequestsDialog, type DeleteTarget } from './DeleteRequests'
 import type { BoardRow } from './types'
 
 const COLS = '36px 140px minmax(0,1.3fr) minmax(0,1.2fr) 100px 130px 130px minmax(0,1.2fr) 160px 56px'
@@ -30,13 +31,15 @@ function waTemplate(status: string) {
 }
 
 /** W03-b table view: bulk select, row actions and CSV export of the loaded rows. */
-export function RequestsTable({ rows: loaded, canAssign, canMessage }: { rows: BoardRow[]; canAssign: boolean; canMessage: boolean }) {
+export function RequestsTable({ rows: loaded, canAssign, canMessage, canDelete = false }: { rows: BoardRow[]; canAssign: boolean; canMessage: boolean; canDelete?: boolean }) {
   // lifecycle order (as the Kanban columns), then by schedule as loaded
   const rows = useMemo(() => {
     const col = (s: string) => BOARD_COLUMNS.findIndex((c) => c.statuses.includes(s as Status))
     return loaded.map((r, i) => ({ r, i })).sort((a, b) => col(a.r.status) - col(b.r.status) || a.i - b.i).map((x) => x.r)
   }, [loaded])
   const [sel, setSel] = useState<Set<string>>(new Set())
+  const [del, setDel] = useState<DeleteTarget[] | null>(null)
+  const target = (r: BoardRow): DeleteTarget => ({ id: r.id, requestNo: r.requestNo, patient: r.patient, status: r.status })
   const router = useRouter()
   const toast = useToast()
   // drop selections that are no longer on screen after a refresh / filter change
@@ -125,7 +128,7 @@ export function RequestsTable({ rows: loaded, canAssign, canMessage }: { rows: B
                 )}
               </div>
               <div data-stop>
-                <RowMenu r={r} canAssign={canAssign} canMessage={canMessage} />
+                <RowMenu r={r} canAssign={canAssign} canMessage={canMessage} onDelete={canDelete ? () => setDel([target(r)]) : undefined} />
               </div>
             </div>
           ))}
@@ -155,6 +158,14 @@ export function RequestsTable({ rows: loaded, canAssign, canMessage }: { rows: B
                 Export CSV
               </button>{' '}
               ·{' '}
+              {canDelete && (
+                <>
+                  <button type="button" className="font-semibold text-[#DC2626] hover:underline" onClick={() => setDel(chosen.map(target))}>
+                    Delete
+                  </button>{' '}
+                  ·{' '}
+                </>
+              )}
               <button type="button" className="font-semibold text-slate-600 hover:underline" onClick={() => setSel(new Set())}>
                 Clear
               </button>
@@ -172,6 +183,7 @@ export function RequestsTable({ rows: loaded, canAssign, canMessage }: { rows: B
           Showing {rows.length} of {rows.length}
         </span>
       </div>
+      {del && <DeleteRequestsDialog items={del} onClose={() => setDel(null)} onDone={() => setSel(new Set())} />}
     </div>
   )
 }
@@ -196,7 +208,7 @@ function Check({ on, onClick, label }: { on: boolean; onClick: () => void; label
 }
 
 /** Row action menu. Kept mounted (only hidden) so the WhatsApp "did you send it?" dialog survives. */
-function RowMenu({ r, canAssign, canMessage }: { r: BoardRow; canAssign: boolean; canMessage: boolean }) {
+function RowMenu({ r, canAssign, canMessage, onDelete }: { r: BoardRow; canAssign: boolean; canMessage: boolean; onDelete?: () => void }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -238,6 +250,21 @@ function RowMenu({ r, canAssign, canMessage }: { r: BoardRow; canAssign: boolean
           >
             WhatsApp patient
           </WhatsAppButton>
+        )}
+        {onDelete && (
+          <>
+            <div className="my-1 border-t border-slate-100" />
+            <button
+              type="button"
+              className={cx(item, 'text-[#DC2626] hover:bg-[#FEF2F2]')}
+              onClick={() => {
+                setOpen(false)
+                onDelete()
+              }}
+            >
+              <Trash2 size={15} /> Delete
+            </button>
+          </>
         )}
       </div>
     </div>

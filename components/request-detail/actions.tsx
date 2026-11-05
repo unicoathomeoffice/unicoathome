@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { H360TestPicker } from '@/components/client/H360TestPicker'
 import { testsTotal, type TestItem } from '@/lib/schemas'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { CalendarClock, CheckCircle2, FileText, Loader2, Mail, MessageCircle, Pencil, RefreshCw, ShieldCheck, UserPlus, Users, AlertTriangle, Check, Search } from 'lucide-react'
+import { CalendarClock, CheckCircle2, FileText, Loader2, Mail, MessageCircle, Pencil, RefreshCw, ShieldCheck, Trash2, UserPlus, Users, AlertTriangle, Check, Search } from 'lucide-react'
 import { api, useAction, ActionButton, Drawer, Segmented, Toggle, ChipPicker, WhatsAppButton } from '@/components/client'
 import { btnClass, Avatar } from '@/components/ui'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Status } from '@/lib/constants'
@@ -14,6 +14,7 @@ import { AssignDrawer, type AssignProps } from '@/components/assign/AssignDrawer
 import { openConfirmLink, reserveTab, type WaInfo } from './PatientWhatsApp'
 import { NotifyPicker } from '@/components/client/NotifyPicker'
 import { useConfirmSend } from '@/components/client/ConfirmSend'
+import { DeleteRequestsDialog } from '@/components/board/DeleteRequests'
 
 export type ReqLite = {
   id: string
@@ -106,7 +107,7 @@ export function ActionBar({
   const router = useRouter()
   const pathname = usePathname()
   const sp = useSearchParams()
-  const [dlg, setDlg] = useState<null | 'confirm' | 'reschedule' | 'cancel' | 'close' | 'email' | 'whatsapp'>(null)
+  const [dlg, setDlg] = useState<null | 'confirm' | 'reschedule' | 'cancel' | 'close' | 'email' | 'whatsapp' | 'delete'>(null)
   const [assigning, setAssigning] = useState(assignOpen)
   useEffect(() => setAssigning(assignOpen), [assignOpen])
   const a = availableActions(r.status)
@@ -172,6 +173,11 @@ export function ActionBar({
             Cancel
           </button>
         )}
+        {perms.delete && !['EN_ROUTE', 'IN_PROGRESS'].includes(r.status) && (
+          <button className={cx(iconBtn(), 'text-[#DC2626] hover:bg-[#FEF2F2]')} onClick={() => setDlg('delete')} title="Delete this request">
+            <Trash2 size={16} /> Delete
+          </button>
+        )}
       </div>
       {dlg === 'confirm' && <ConfirmDialog r={r} slots={slots} onClose={close} />}
       {dlg === 'reschedule' && <RescheduleDialog r={r} slots={slots} onClose={close} />}
@@ -179,6 +185,7 @@ export function ActionBar({
       {dlg === 'close' && <CloseDialog r={r} perms={perms} onClose={close} />}
       {dlg === 'email' && <EmailDialog r={r} onClose={close} />}
       {dlg === 'whatsapp' && <WhatsAppDialog r={r} onClose={close} />}
+      {dlg === 'delete' && <DeleteRequestsDialog items={[{ id: r.id, requestNo: r.requestNo, patient: r.patientName, status: r.status }]} onClose={close} redirect="/requests" />}
       {assign && <AssignDrawer {...assign} open={assigning} onClose={closeAssign} />}
     </>
   )

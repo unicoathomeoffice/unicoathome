@@ -403,9 +403,21 @@ const RequestSchema = new Schema<any>(
     createdBy: { type: ObjectId, ref: 'User' },
     version: { type: Number, default: 0 },
     deletedAt: Date,
+    deletedBy: { type: ObjectId, ref: 'User' },
+    deleteReason: String,
   },
   opts,
 )
+// Deleted requests (soft delete: deletedAt) are hidden from every read — board, reports, live map, jobs — unless the
+// query names deletedAt itself (e.g. an audit lookup with { deletedAt: { $ne: null } }).
+function hideDeleted(this: any) {
+  if (!('deletedAt' in (this.getFilter?.() ?? {}))) this.where({ deletedAt: null })
+}
+RequestSchema.pre(['find', 'findOne', 'countDocuments', 'distinct', 'findOneAndUpdate'], hideDeleted)
+RequestSchema.pre('aggregate', function (this: any) {
+  const first = this.pipeline()[0]
+  if (!(first?.$match && 'deletedAt' in first.$match)) this.pipeline().unshift({ $match: { deletedAt: null } })
+})
 RequestSchema.index({ status: 1, scheduledAt: 1 })
 RequestSchema.index({ 'tracking.active': 1, 'tracking.userId': 1 }, { partialFilterExpression: { 'tracking.active': true } })
 RequestSchema.index({ 'tracking.shareToken': 1 }, { sparse: true })

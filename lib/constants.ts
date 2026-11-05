@@ -50,6 +50,7 @@ export const PERMISSIONS = {
   'patients.edit': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK'],
   'requests.manage': ['SUPER_ADMIN', 'HC_ADMIN'], // verify / confirm / reschedule / cancel / close
   'requests.assign': ['SUPER_ADMIN', 'HC_ADMIN'],
+  'requests.delete': ['SUPER_ADMIN', 'HC_ADMIN'], // remove unwanted / duplicate requests (soft delete, audited)
   // force-assign (accept for staff), do visit steps for the team, complete directly, car + any driver
   'requests.override': ['SUPER_ADMIN'],
   'visit.execute': ['DOCTOR', 'NURSE', 'ALLIED'],
