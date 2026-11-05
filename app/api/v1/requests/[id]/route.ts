@@ -62,7 +62,8 @@ export const PATCH = route<{ id: string }>(async ({ req, user, params }) => {
   const carAsked = input.transportNeeded === true && !before.transport
   r.version = (r.version ?? 0) + 1
   await r.save()
-  if (carAsked) background(() => carRequestedLazy(r._id, user.id)) // requisition → on-call security supervisor
+  // requisition → on-call security supervisor, but only once the care team is assigned (assign sends it otherwise)
+  if (carAsked && r.assignment?.primaryStaffId) background(() => carRequestedLazy(r._id, user.id))
   const after = { priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
   await audit(user, 'request.update', 'request', r._id, { ...diff(before, after), label: r.requestNo }, clientMeta(req, user))
   return { ok: true, version: r.version }

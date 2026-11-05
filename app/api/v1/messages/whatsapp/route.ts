@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { route, body, bad, forbidden, clientMeta } from '@/lib/api'
 import { Patient, User } from '@/lib/models'
 import { loadRequest, templateVars } from '@/lib/services/requests'
-import { prepareWhatsApp, renderTemplate, waNumber } from '@/lib/messaging'
+import { prepareWhatsApp, renderTemplate, stripRequestNo, waNumber } from '@/lib/messaging'
 import { isPaired } from '@/lib/wa/status'
 import { date as fmtDate, dhakaDate } from '@/lib/format'
 import { audit } from '@/lib/audit'
@@ -57,6 +57,7 @@ export const POST = route(
       if (input.slot) vars.slot = input.slot
       text = (await renderTemplate(input.templateKey, vars)).text
     }
+    text = stripRequestNo(text) // what WhatsApp will actually carry (no request number)
     if (input.preview) return { text, to: waNumber(phone), toName }
     if (input.mode === 'auto' && (await isPaired())) {
       const { queueWhatsApp } = await import('@/lib/wa/service') // Baileys loads only when actually sending

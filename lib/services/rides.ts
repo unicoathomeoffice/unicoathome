@@ -21,10 +21,12 @@ import type { SessionUser } from '../auth'
 
 type Meta = { ip?: string; userAgent?: string; client?: string }
 export const RIDE_MODES = ['Uber', 'Pathao', 'CNG', 'Rickshaw', 'Bus', 'Other'] as const
+/** OUT hospital → patient · BACK patient → hospital · BOTH one fare for the round trip · OTHER anything else */
+export const RIDE_LEGS = ['OUT', 'BACK', 'BOTH', 'OTHER'] as const
 const TRANSPORT_MODE: Record<string, string> = { Uber: 'UBER', Pathao: 'PATHAO', Rickshaw: 'RICKSHAW' }
 
 export const RideInput = z.object({
-  leg: z.enum(['OUT', 'BACK', 'OTHER']).default('OUT'),
+  leg: z.enum(RIDE_LEGS).default('OUT'),
   mode: z.enum(RIDE_MODES),
   amount: z.coerce.number().positive().max(100_000).optional(),
   at: z.string().optional(), // ISO; default now
@@ -35,7 +37,7 @@ export const RideInput = z.object({
 })
 
 const team = (r: any) => [r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])].filter(Boolean).map(String)
-const legLabel = (l: string) => (l === 'OUT' ? 'To patient' : l === 'BACK' ? 'Back to hospital' : 'Other trip')
+const legLabel = (l: string) => (l === 'OUT' ? 'To patient' : l === 'BACK' ? 'Back to hospital' : l === 'BOTH' ? 'Both ways' : 'Other trip')
 
 /** Patient-side details shared by the PDF and the claim line. */
 async function visitInfo(r: any) {
@@ -99,7 +101,7 @@ export async function addRideToClaim(requestId: unknown, rideId: string) {
   const { hospital, address, uhid } = await visitInfo(r)
   const c = await draftOf({ id: String(ride.userId), employeeId: payer.employeeId })
   const from = ride.leg === 'BACK' ? address : hospital
-  const to = ride.leg === 'BACK' ? hospital : ride.leg === 'OUT' ? address : ride.note || address
+  const to = ride.leg === 'BACK' ? hospital : ride.leg === 'OUT' ? address : ride.leg === 'BOTH' ? `${address} and back` : ride.note || address
   const line = { kind: 'CONVEYANCE', requestId: r._id, leg: ride.leg === 'OTHER' ? undefined : ride.leg, at: ride.at, uhid, patientName: r.patientSnapshot?.name, invoiceNo: r.billing?.invoiceNo, from, to, mode: ride.mode, amount: ride.amount, receiptIds: ride.attachmentIds, note: ride.note }
   const existing = ride.claimLineId ? c.lines.id(ride.claimLineId) : ride.leg !== 'OTHER' ? c.lines.find((l: any) => String(l.requestId) === String(r._id) && l.leg === ride.leg) : null
   if (existing) Object.assign(existing, line)
@@ -129,7 +131,7 @@ export async function sendRideDocs(requestId: unknown, rideId: string, initiated
     requestDate: fmtDate(new Date()),
     tripDate: `${fmtDate(at)} · ${fmtTime(at)}`,
     reporting: ride.leg === 'BACK' ? `${fmtTime(at)} · patient's home` : `${fmtTime(at)} · ${hospital}`,
-    destination: ride.leg === 'BACK' ? hospital : address,
+    destination: ride.leg === 'BACK' ? hospital : ride.leg === 'BOTH' ? `${address} and back to ${hospital}` : address,
     purpose: `Home care visit · ${(r.services ?? []).map((x: any) => x.name).join(', ')} · Patient ${r.patientSnapshot?.name ?? ''} · ${legLabel(ride.leg).toLowerCase()}`,
     passengers: '1',
     duration: ride.amount ? `Fare ${taka(ride.amount)}` : '',
@@ -144,7 +146,7 @@ export async function sendRideDocs(requestId: unknown, rideId: string, initiated
   await HomecareRequest.updateOne({ _id: r._id, 'rides._id': ride._id }, { $set: { 'rides.$.requisitionId': file._id } })
   if (!(await canQueue())) return { sent: 0, requisitionId: String(file._id) }
   const { queueWhatsApp } = await import('../wa/service')
-  const caption = `Own ride · ${r.requestNo}\n${ride.mode} · ${legLabel(ride.leg)}${ride.amount ? ` · ${taka(ride.amount)}` : ''}\nBy ${payer?.name ?? 'staff'} · ${fmtDate(at)} ${fmtTime(at)}`
+  const caption = `Own ride · ${r.patientSnapshot?.name ?? 'home visit'}\n${ride.mode} · ${legLabel(ride.leg)}${ride.amount ? ` · ${taka(ride.amount)}` : ''}\nBy ${payer?.name ?? 'staff'} · ${fmtDate(at)} ${fmtTime(at)}`
   let sent = 0
   for (const sup of await onCallSupervisors()) {
     await queueWhatsApp({ to: sup.phone, toName: `${sup.name} (security supervisor)`, text: caption, templateKey: 'vehicle_requisition', requestId: r._id, initiatedBy, attachmentId: file._id, fileName: file.filename })
@@ -154,7 +156,7 @@ export async function sendRideDocs(requestId: unknown, rideId: string, initiated
   return { sent, requisitionId: String(file._id) }
 }
 
-export const RidePatch = z.object({ amount: z.coerce.number().positive().max(100_000).optional(), attachmentIds: z.array(z.string()).max(5).optional(), note: z.string().max(300).optional(), mode: z.enum(RIDE_MODES).optional(), leg: z.enum(['OUT', 'BACK', 'OTHER']).optional() })
+export const RidePatch = z.object({ amount: z.coerce.number().positive().max(100_000).optional(), attachmentIds: z.array(z.string()).max(5).optional(), note: z.string().max(300).optional(), mode: z.enum(RIDE_MODES).optional(), leg: z.enum(RIDE_LEGS).optional() })
 
 /** Fill in the amount / add screenshots later; the claim line and the PDF follow. */
 export async function updateRide(r: any, rideId: string, patch: z.infer<typeof RidePatch>, user: SessionUser, meta: Meta) {

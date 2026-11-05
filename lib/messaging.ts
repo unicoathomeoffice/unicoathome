@@ -133,8 +133,27 @@ export function waLink(phone: string, text: string) {
   return `https://wa.me/${waNumber(phone)}?text=${encodeURIComponent(text)}`
 }
 
+/** Recipients a person ticked in "Notify on WhatsApp" ('patient' + WhatsApp numbers). Unset: the Settings defaults apply. */
+export type NotifyOnly = Set<string> | undefined
+export const picked = (only: NotifyOnly, key: string) => !only || only.has(key)
+export const notifySet = (notify?: string[] | null): NotifyOnly => (notify ? new Set(notify.map((k) => (k === 'patient' ? k : waNumber(k)))) : undefined)
+
+/** WhatsApp messages never show the home care request number (HC-261102-0002): also catches templates edited in Settings. */
+export function stripRequestNo(text: string) {
+  const NO = String.raw`HC-\d{6}-\d+`
+  return text
+    .replace(new RegExp(String.raw`[ \t]*\(${NO}\)`, 'g'), '')
+    .replace(new RegExp(String.raw`(Request|Ref|Visit)( no\.?)?:\s*${NO}\s*(·\s*)?`, 'gi'), '')
+    .replace(new RegExp(String.raw`[ \t]*[·|—-][ \t]*${NO}`, 'g'), '')
+    .replace(new RegExp(String.raw`${NO}[ \t]*[·|—:-]?[ \t]*`, 'g'), '')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 /** Render and log a WhatsApp message; the user's device opens the link and taps Send. */
 export async function prepareWhatsApp(input: { to: string; toName?: string; text: string; templateKey?: string; requestId?: unknown; patientId?: unknown; initiatedBy?: string }) {
+  input = { ...input, text: stripRequestNo(input.text) }
   const log = await MessageLog.create({
     channel: 'WHATSAPP',
     provider: 'wa_deeplink',

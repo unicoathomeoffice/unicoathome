@@ -1,85 +1,13 @@
 'use client'
-// "Send confirmation to patient on WhatsApp" — one toggle used by every confirm flow (web drawer, mobile confirm,
-// new request → Save & confirm). Paired WhatsApp: the server sends it from the hospital number. Not paired: the
-// caller opens a pre-filled wa.me chat after confirming (openConfirmLink below).
-import { useEffect, useState } from 'react'
-import { ChevronDown, Loader2, MessageCircle } from 'lucide-react'
-import { api, Toggle } from '@/components/client'
+// Patient confirmation on WhatsApp. Who gets it is ticked in "Notify on WhatsApp" (components/client/NotifyPicker).
+// Paired WhatsApp: the server sends it from the hospital number. Not paired: the caller opens a pre-filled wa.me chat
+// after confirming (reserveTab + openConfirmLink below).
+import { useState } from 'react'
+import { Loader2, MessageCircle } from 'lucide-react'
+import { api } from '@/components/client'
 import { useConfirmSend } from '@/components/client/ConfirmSend'
-import { cx, phone as fmtPhone } from '@/lib/format'
 
 export type WaInfo = { paired: boolean; phone: string; optOut: boolean }
-
-export function PatientWhatsAppToggle({
-  on,
-  onChange,
-  wa,
-  requestId,
-  date,
-  slot,
-  label = 'Send confirmation to patient on WhatsApp',
-}: {
-  on: boolean
-  onChange: (v: boolean) => void
-  wa: WaInfo
-  /** existing request: enables the message preview */
-  requestId?: string
-  date?: string
-  slot?: string
-  label?: string
-}) {
-  const [open, setOpen] = useState(false)
-  const [preview, setPreview] = useState<{ text: string } | { error: string } | null>(null)
-  const disabled = wa.optOut || !wa.phone
-
-  useEffect(() => {
-    if (!open || !requestId) return
-    let live = true
-    setPreview(null)
-    const t = setTimeout(() => {
-      api<{ text: string }>('/messages/whatsapp', { body: { requestId, templateKey: 'patient_confirmed', to: 'patient', preview: true, date: date || undefined, slot: slot || undefined } })
-        .then((r) => live && setPreview({ text: r.text }))
-        .catch((e) => live && setPreview({ error: e.message }))
-    }, 300)
-    return () => {
-      live = false
-      clearTimeout(t)
-    }
-  }, [open, requestId, date, slot])
-
-  return (
-    <div className="rounded-lg bg-[#F0FDF4] px-3 py-2.5 ring-1 ring-[#BBF7D0]">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-start gap-2.5">
-          <MessageCircle size={18} className="mt-0.5 flex-none text-[#16A34A]" />
-          <div className="min-w-0 text-[13px]">
-            <b>{label}</b>
-            <div className="text-[12px] text-slate-600">
-              {wa.optOut
-                ? 'Patient opted out of WhatsApp'
-                : !wa.phone
-                  ? 'No phone number on file'
-                  : `${fmtPhone(wa.phone)} · ${wa.paired ? 'sent automatically from the hospital number' : 'WhatsApp not paired — WhatsApp opens with the message filled in'}`}
-            </div>
-          </div>
-        </div>
-        <Toggle on={on && !disabled} onChange={(v) => !disabled && onChange(v)} label={label} />
-      </div>
-      {requestId && on && !disabled && (
-        <>
-          <button type="button" onClick={() => setOpen((o) => !o)} className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-semibold text-[#15803D] hover:underline">
-            <ChevronDown size={14} className={cx('transition-transform', open && 'rotate-180')} /> {open ? 'Hide message' : 'Preview message'}
-          </button>
-          {open && (
-            <div className="mt-1.5 whitespace-pre-wrap rounded-md bg-white px-3 py-2 text-[12.5px] leading-[18px] text-slate-700 ring-1 ring-slate-200">
-              {!preview ? <Loader2 size={14} className="animate-spin text-slate-400" /> : 'text' in preview ? preview.text : <span className="text-[#B91C1C]">{preview.error}</span>}
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  )
-}
 
 /** Not paired: open a tab synchronously in the click (no popup blocker), then point it at the wa.me chat. */
 export function reserveTab(wa: WaInfo, send: boolean) {

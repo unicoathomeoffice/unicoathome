@@ -2,7 +2,8 @@
 import { useMemo, useState } from 'react'
 import { Check, ChevronRight, Loader2, Search, X } from 'lucide-react'
 import { api, useAction, Sheet, Toggle, Segmented } from '@/components/client'
-import { openConfirmLink, PatientWhatsAppToggle, reserveTab, type WaInfo } from '@/components/request-detail/PatientWhatsApp'
+import { openConfirmLink, reserveTab, type WaInfo } from '@/components/request-detail/PatientWhatsApp'
+import { NotifyPicker } from '@/components/client/NotifyPicker'
 import { SLOTS, TESTS_PROCEDURES } from '@/lib/constants'
 import { cx } from '@/lib/format'
 import { FLabel, FixedBottom, bbtn } from './ui'
@@ -101,7 +102,8 @@ export function ConfirmForm(p: Props) {
   const [pay, setPay] = useState<string>(p.payment ?? '')
   const [transport, setTransport] = useState(p.transport)
   const [priority, setPriority] = useState(p.priority)
-  const [sendWa, setSendWa] = useState(!p.wa.optOut && !!p.wa.phone)
+  const [notify, setNotify] = useState<string[] | null>(null)
+  const sendWa = !!notify?.includes('patient')
   const { run, busy } = useAction()
   const known = !!p.patientUhid && uhid.trim() === p.patientUhid
   const missing = !date || !time
@@ -215,12 +217,12 @@ export function ConfirmForm(p: Props) {
       <div className="flex items-center gap-3 rounded-card bg-white px-3.5 py-3 shadow-card">
         <div className="min-w-0 flex-1">
           <div className="text-[15px] font-semibold">Transport needed</div>
-          <div className="text-[12px] text-slate-500">Sends a trip request to the car supervisor</div>
+          <div className="text-[12px] text-slate-500">The car requisition goes once staff are assigned</div>
         </div>
         <Toggle on={transport} onChange={setTransport} label="Transport needed" />
       </div>
 
-      <PatientWhatsAppToggle on={sendWa} onChange={setSendWa} wa={p.wa} requestId={p.id} date={date} slot={slot} />
+      <NotifyPicker params={{ events: ['CONFIRMED'], requestId: p.id }} value={notify} onChange={setNotify} preview={{ templateKey: 'patient_confirmed', date, slot }} />
 
       <FixedBottom note={missing ? 'Set the date and time of service' : !tests.length && !testItems.length ? 'No tests yet — fine for a consultation' : undefined}>
         <CancelRequestButton id={p.id} requestNo={p.requestNo} kind="r" big className="flex-1" redirect="/m/admin/inbox" />
@@ -233,7 +235,7 @@ export function ConfirmForm(p: Props) {
             const ok = await run(
               () =>
                 api(`/requests/${p.id}/confirm`, {
-                  body: { date, time, slot: slot || undefined, uhid: uhid || undefined, tests, testItems, estimatedFee: fee === '' ? undefined : Number(fee), paymentMethod: pay || undefined, transportNeeded: transport, priority, notifyPatient: sendWa },
+                  body: { date, time, slot: slot || undefined, uhid: uhid || undefined, tests, testItems, estimatedFee: fee === '' ? undefined : Number(fee), paymentMethod: pay || undefined, transportNeeded: transport, priority, notify: notify ?? undefined },
                 }),
               sendWa ? `${p.requestNo} confirmed · patient notified` : `${p.requestNo} confirmed`,
               { redirect: p.canAssign ? `/m/admin/requests/${p.id}/assign` : `/m/admin/requests/${p.id}` },

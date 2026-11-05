@@ -1,17 +1,18 @@
 import 'server-only'
 import { Department, Designation, HomecareRequest, Patient, User, Vehicle } from '../models'
 import { getSettings } from '../settings'
-import { queueEmail, waNumber } from '../messaging'
+import { picked, queueEmail, waNumber, type NotifyOnly } from '../messaging'
 import { canQueue } from '../wa/status'
 import { readFile, storeFile } from '../files'
 import { fillRequisition } from '../forms/requisition'
 import { makeGatePass } from '../forms/gatepass'
-import { date as fmtDate, dateTime, time as fmtTime } from '../format'
+import { date as fmtDate, dateTime, isoDay, time as fmtTime } from '../format'
 import { withPeople } from './requests'
 
-// Unico car paperwork. As soon as a car is requested the hospital's Vehicle Requisition Form (Annex-3) is filled
-// (Section A) and sent on WhatsApp to the on-call security supervisor. When the transport section allots a car,
-// Section B is added and a gate pass is made; both go to the supervisor, the gate pass also to the driver.
+// Unico car paperwork. Once the care team is assigned (so Section A names who travels) the hospital's Vehicle
+// Requisition Form (Annex-3) is filled and sent on WhatsApp to the on-call security supervisor. When the transport
+// section allots a car, Section B is added and a gate pass is made; both go to the supervisor, the gate pass also to
+// the driver. `only`: the people ticked in "Notify on WhatsApp" (unset = everyone the settings name).
 // E-signatures are stamped only for the person who did that step (and the approver only if they allowed it).
 
 type Sign = { data: Buffer; mime: string } | null
@@ -51,7 +52,7 @@ export async function onCallSupervisors(at = new Date()) {
 }
 
 /** Build the requisition (and gate pass once a car is allotted), store them on the request and send them. */
-export async function sendTransportDocs(requestId: unknown, stage: 'requested' | 'updated' | 'allotted', initiatedBy?: string) {
+export async function sendTransportDocs(requestId: unknown, stage: 'requested' | 'updated' | 'allotted', initiatedBy?: string, only?: NotifyOnly) {
   const s = await getSettings()
   const cfg = s.transportDocs
   const r = await HomecareRequest.findById(requestId).lean<any>()
@@ -129,28 +130,31 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
   const wantGate = !!gate && cfg.sendGatePass !== false
   let sent = 0
   const when = visit ? `${fmtDate(visit)} · pickup ${hm(pickup)}` : 'date to be confirmed'
+  const who = r.patientSnapshot?.name ?? 'home visit'
+  // WhatsApp shows no request number: file names carry the patient and the visit day instead
+  const tag = [who, visit ? isoDay(visit) : ''].filter(Boolean).join('-').replace(/[^\w]+/g, '-')
   const caption =
     stage === 'allotted'
-      ? `Unico @ Home car allotted · ${r.requestNo}\n${when}\nVehicle ${vehicle?.plate ?? ''} · driver ${r.driver?.name ?? ''}\nTo: ${r.patientSnapshot?.area ?? ''}`
-      : `${stage === 'updated' ? 'UPDATED · ' : ''}Unico @ Home car requested · ${r.requestNo}\n${when}\nTo: ${address || r.patientSnapshot?.area || ''}\nRequested by ${requester?.name ?? 'Home Care'}`
+      ? `Unico @ Home car allotted · ${who}\n${when}\nVehicle ${vehicle?.plate ?? ''} · driver ${r.driver?.name ?? ''}\nTo: ${r.patientSnapshot?.area ?? ''}`
+      : `${stage === 'updated' ? 'UPDATED · ' : ''}Unico @ Home car requested · ${who}\n${when}\nTo: ${address || r.patientSnapshot?.area || ''}\nRequested by ${requester?.name ?? 'Home Care'}`
   if ((await canQueue()) && (wantReq || wantGate)) {
     const { queueWhatsApp } = await import('../wa/service')
     // on-call security supervisors + everyone in an alert group that takes the car paperwork (Security / Transport)
     const { groupRecipients } = await import('./hod')
     const docTo = [...(await onCallSupervisors()).map((x) => ({ name: x.name, phone: x.phone, role: 'security supervisor' })), ...(await groupRecipients('CAR_DOCS')).map((x) => ({ name: x.name, phone: x.phone, role: x.group.name }))]
     const seenDoc = new Set<string>()
-    for (const sup of docTo.filter((x) => { const n = waNumber(x.phone); return !!n && !seenDoc.has(n) && !!seenDoc.add(n) })) {
+    for (const sup of docTo.filter((x) => { const n = waNumber(x.phone); return !!n && picked(only, n) && !seenDoc.has(n) && !!seenDoc.add(n) })) {
       if (wantReq) {
-        await queueWhatsApp({ to: sup.phone, toName: `${sup.name} (${sup.role})`, text: caption, templateKey: 'vehicle_requisition', requestId: r._id, initiatedBy, attachmentId: reqFile._id, fileName: reqFile.filename })
+        await queueWhatsApp({ to: sup.phone, toName: `${sup.name} (${sup.role})`, text: caption, templateKey: 'vehicle_requisition', requestId: r._id, initiatedBy, attachmentId: reqFile._id, fileName: `Vehicle-Requisition-${tag}.pdf` })
         sent++
       }
       if (wantGate) {
-        await queueWhatsApp({ to: sup.phone, toName: `${sup.name} (${sup.role})`, text: `Gate pass · ${r.requestNo}`, templateKey: 'gate_pass', requestId: r._id, initiatedBy, attachmentId: gate._id, fileName: gate.filename })
+        await queueWhatsApp({ to: sup.phone, toName: `${sup.name} (${sup.role})`, text: `Gate pass · ${who}`, templateKey: 'gate_pass', requestId: r._id, initiatedBy, attachmentId: gate._id, fileName: `Gate-Pass-${tag}.pdf` })
         sent++
       }
     }
-    if (wantGate && r.driver?.phone) {
-      await queueWhatsApp({ to: r.driver.phone, toName: `${r.driver.name} (driver)`, text: `Gate pass · ${r.requestNo} · ${when}`, templateKey: 'gate_pass', requestId: r._id, initiatedBy, attachmentId: gate._id, fileName: gate.filename })
+    if (wantGate && r.driver?.phone && picked(only, waNumber(r.driver.phone))) {
+      await queueWhatsApp({ to: r.driver.phone, toName: `${r.driver.name} (driver)`, text: `Gate pass · ${who} · ${when}`, templateKey: 'gate_pass', requestId: r._id, initiatedBy, attachmentId: gate._id, fileName: `Gate-Pass-${tag}.pdf` })
       sent++
     }
   }
@@ -160,8 +164,8 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
   return { sent, requisitionId: String(reqFile._id), gatePassId: gate ? String(gate._id) : null }
 }
 
-/** Hook for every place a Unico car can be asked for: sends the requisition the first time (or "UPDATED"). */
-export async function carRequested(requestId: unknown, userId: string, opts: { updated?: boolean } = {}): Promise<boolean> {
+/** Sends the requisition the first time (or "UPDATED"), once the care team is assigned. */
+export async function carRequested(requestId: unknown, userId: string, opts: { updated?: boolean; only?: NotifyOnly } = {}): Promise<boolean> {
   const r = await HomecareRequest.findById(requestId).select('transport status').lean<any>()
   if (!r?.transport?.needed || r.status === 'CANCELLED') return false
   if (r.transport.mode && r.transport.mode !== 'UNICO_CAR') return false
@@ -172,6 +176,7 @@ export async function carRequested(requestId: unknown, userId: string, opts: { u
     const claim = await HomecareRequest.updateOne({ _id: requestId, 'transport.requisitionSentAt': null }, { $set: { 'transport.requisitionSentAt': new Date() } })
     if (!claim.modifiedCount) return false
   }
-  await sendTransportDocs(requestId, opts.updated ? 'updated' : 'requested', userId)
+  // a car already allotted before the team was (re)assigned: the new form keeps Section B and a fresh gate pass
+  await sendTransportDocs(requestId, r.transport.vehicleId ? 'allotted' : opts.updated ? 'updated' : 'requested', userId, opts.only)
   return true // a new (or updated) car request
 }

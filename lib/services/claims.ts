@@ -65,7 +65,8 @@ export async function suggestions(user: SessionUser) {
     .lean<any[]>()
   if (!visits.length) return []
   const claimed = await ExpenseClaim.find({ userId: user.id, 'lines.requestId': { $in: visits.map((v) => v._id) } }).select('lines.requestId lines.leg').lean<any[]>()
-  const taken = new Set(claimed.flatMap((c) => c.lines.filter((l: any) => l.requestId).map((l: any) => `${l.requestId}:${l.leg ?? ''}`)))
+  // a round-trip ride (BOTH) covers the way out and the way back
+  const taken = new Set(claimed.flatMap((c) => c.lines.filter((l: any) => l.requestId).flatMap((l: any) => (l.leg === 'BOTH' ? ['OUT', 'BACK'] : [l.leg ?? '']).map((leg: string) => `${l.requestId}:${leg}`))))
   const patients = await Patient.find({ _id: { $in: visits.map((v) => v.patientId) } }).select('uhid address').lean<any[]>()
   const s = await getSettings()
   const hospital = s.general.hospitalName.replace(/\s+PLC$/i, '')
@@ -92,7 +93,7 @@ async function checkReceipts(ids: string[], user: SessionUser) {
 export async function addLine(user: SessionUser, input: z.infer<typeof LineInput>, meta: Meta) {
   await checkReceipts(input.receiptIds, user)
   const c = await draftOf(user)
-  if (input.requestId && input.leg && c.lines.some((l: any) => String(l.requestId) === input.requestId && l.leg === input.leg)) throw conflict('DUPLICATE', 'This trip is already on your claim')
+  if (input.requestId && input.leg && c.lines.some((l: any) => String(l.requestId) === input.requestId && (l.leg === input.leg || l.leg === 'BOTH'))) throw conflict('DUPLICATE', 'This trip is already on your claim')
   c.lines.push({ ...input, at: input.at ? new Date(input.at) : new Date() })
   c.total = total(c)
   await c.save()

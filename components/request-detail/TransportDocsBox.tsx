@@ -7,7 +7,7 @@ import { Car, Eye, Loader2, Send } from 'lucide-react'
 import { api, useToast } from '@/components/client'
 import { useConfirmSend } from '@/components/client/ConfirmSend'
 
-export function TransportDocsBox({ requestId, requestNo, requisitionId, gatePassId, sentAt, sent, canSend, to = [], linked = true }: { requestId: string; requestNo?: string; requisitionId: string | null; gatePassId: string | null; sentAt: string | null; sent: { to: string; status: string; at: string; templateKey: string }[]; canSend: boolean; to?: { name: string; phone?: string }[]; linked?: boolean }) {
+export function TransportDocsBox({ requestId, requestNo, requisitionId, gatePassId, sentAt, sent, canSend, to = [], linked = true, assigned = true }: { requestId: string; requestNo?: string; requisitionId: string | null; gatePassId: string | null; sentAt: string | null; sent: { to: string; status: string; at: string; templateKey: string }[]; canSend: boolean; to?: { name: string; phone?: string }[]; linked?: boolean; /** care team assigned: the requisition names them, so it is made only then */ assigned?: boolean }) {
   const router = useRouter()
   const toast = useToast()
   const { confirmSend, confirmDialog } = useConfirmSend()
@@ -46,7 +46,7 @@ export function TransportDocsBox({ requestId, requestNo, requisitionId, gatePass
           <Eye size={14} /> Requisition form
         </a>
       ) : (
-        <span className="text-slate-400">Requisition not made yet</span>
+        <span className="text-slate-400">{assigned ? 'Requisition not made yet' : 'Requisition goes to the security supervisor once staff are assigned'}</span>
       )}
       <span className="text-slate-500">· {line('vehicle_requisition')}</span>
       {gatePassId && (
@@ -57,7 +57,7 @@ export function TransportDocsBox({ requestId, requestNo, requisitionId, gatePass
           <span className="text-slate-500">· {line('gate_pass')}</span>
         </>
       )}
-      {canSend && (
+      {canSend && (assigned || !!requisitionId) && (
         <button type="button" disabled={busy} onClick={resend} className="ml-auto inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-300 px-3 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
           {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} {sentAt ? 'Resend' : 'Make & send'} to security
         </button>

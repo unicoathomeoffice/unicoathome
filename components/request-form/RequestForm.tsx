@@ -8,10 +8,12 @@ import { AlertTriangle, Check, ChevronLeft, ChevronRight, Loader2, MapPin, Plus,
 import { btnClass, StatusChip } from '@/components/ui'
 import { api, Segmented, Toggle, useToast } from '@/components/client'
 import { AddressBlock, ADDRESS_LABELS_EN, composeFull, roadOf } from '@/components/client/AddressBlock'
-import { ACTIVE_STATUSES, PAYMENT_METHODS, REQUEST_SOURCES, type Status } from '@/lib/constants'
+import { ACTIVE_STATUSES, PAYMENT_METHOD_LABEL, PAYMENT_METHODS, REQUEST_SOURCES, type Status } from '@/lib/constants'
 import { ageGender, cx, dayNum, initialsOf, phone as fmtPhone, taka, time as fmtTime } from '@/lib/format'
 import { firstOpen, SlotPicker, slotLabel, type SlotBooking } from './SlotPicker'
-import { openConfirmLink, PatientWhatsAppToggle, reserveTab } from '@/components/request-detail/PatientWhatsApp'
+import { openConfirmLink, reserveTab } from '@/components/request-detail/PatientWhatsApp'
+import { NotifyPicker, type NotifyParams } from '@/components/client/NotifyPicker'
+import { TeamPicker, type Candidate } from '@/components/assign/TeamPicker'
 import { H360PatientSearch, type H360Hit } from '@/components/client/H360PatientSearch'
 
 export type FormPatient = {
@@ -63,9 +65,12 @@ const STEPS = [
   { n: 1, title: 'Patient & address', sub: 'Search or create' },
   { n: 2, title: 'Service & schedule', sub: 'Type, priority, slot' },
   { n: 3, title: 'Clinical & source', sub: 'Complaint, notes, remarks' },
+  { n: 4, title: 'Assign staff', sub: 'Optional · care team, WhatsApp' },
 ] as const
+type Step = 1 | 2 | 3 | 4
 
-/** W05 — 3-step new request form. Creates the request (NEW), optionally confirms it and hands over to assignment. */
+/** W05 — new request form. Creates the request (NEW); "Save & confirm" / "Save & assign" confirm it and put the
+ *  care team on it in the same call (step 4, optional), so the record shows who was assigned from the start. */
 export function RequestForm({
   nextNo,
   today,
@@ -98,13 +103,19 @@ export function RequestForm({
   // default day: the first one with an open slot, like the public form
   const startDate = booking.enabled ? firstOpen(booking.days, today) : today
   const [f, setF] = useState<F>(() => (initialPatient ? pickPatient(blank(startDate), initialPatient) : blank(startDate)))
-  const [step, setStep] = useState<1 | 2 | 3>(1)
+  const [step, setStep] = useState<Step>(1)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<null | 'save' | 'confirm' | 'assign'>(null)
   const [dup, setDup] = useState<{ message: string; requestNo?: string; kind: 'save' | 'confirm' | 'assign' } | null>(null)
   const [savedAt, setSavedAt] = useState<Date | null>(null)
-  const [notifyWa, setNotifyWa] = useState(true) // Save & confirm: send the confirmation to the patient on WhatsApp
+  // step 4: the care team ([0] primary) and what the visit is confirmed with
+  const [team, setTeam] = useState<string[]>([])
+  const [teamSize, setTeamSize] = useState(1)
+  const [instructions, setInstructions] = useState('')
+  const [notify, setNotify] = useState<string[] | null>(null) // "Notify on WhatsApp" (null = Settings defaults)
   const restored = useRef(false)
+  const steps = STEPS.filter((s) => s.n < 4 || canAssign)
+  const lastStep = steps[steps.length - 1].n as Step
 
   const set = <K extends keyof F>(k: K, v: F[K]) => setF((x) => ({ ...x, [k]: v }))
   const setIn = <K extends 'np' | 'addr' | 'requester'>(k: K, patch: Partial<F[K]>) => setF((x) => ({ ...x, [k]: { ...x[k], ...patch } }))
@@ -154,6 +165,8 @@ export function RequestForm({
     setSavedAt(null)
     setStep(1)
     setErrors({})
+    setTeam([])
+    setInstructions('')
   }
 
   // ---------------------------------------------------------------- derived
@@ -161,6 +174,13 @@ export function RequestForm({
   const autoFee = chosen.reduce((a, s) => a + s.fee, 0) + testsTotal(f.testItems) // services + H360 test prices
   const autoDuration = chosen.length ? Math.max(30, ...chosen.map((s) => s.duration)) : 45
   const wa = { paired: waPaired, phone: f.mode === 'existing' ? f.patient?.phone ?? '' : f.np.phone.trim(), optOut: false }
+  const notifyParams: NotifyParams = {
+    events: step === 4 && team.length ? ['NEW_REQUEST', 'ASSIGNED'] : canConfirm ? ['NEW_REQUEST', 'CONFIRMED'] : ['NEW_REQUEST'],
+    serviceCodes: f.serviceCodes,
+    patient: { name: f.mode === 'existing' ? f.patient?.name : f.np.name.trim(), phone: wa.phone },
+    transportNeeded: f.transport,
+    staffIds: step === 4 ? team : undefined,
+  }
 
   function validate(upTo: 1 | 2 | 3, needDate = false) {
     const e: Record<string, string> = {}
@@ -183,20 +203,25 @@ export function RequestForm({
     const first = Object.keys(e)[0]
     if (first) {
       const s = ['patient', 'name', 'phone', 'email', 'ageYears', 'full'].includes(first) ? 1 : ['services', 'date', 'time'].includes(first) ? 2 : 3
-      setStep(s as 1 | 2 | 3)
+      setStep(s as Step)
       toast(e[first], 'err')
       return false
     }
     return true
   }
 
-  function goTo(n: 1 | 2 | 3) {
-    if (n <= step || validate((n - 1) as 1 | 2)) setStep(n)
+  function goTo(n: Step) {
+    if (n <= step || validate(Math.min(3, n - 1) as 1 | 2 | 3, n === 4)) setStep(n)
   }
 
   async function submit(kind: 'save' | 'confirm' | 'assign', ignoreDuplicate = false) {
     if (!validate(3, kind !== 'save')) return
-    const tab = kind !== 'save' ? reserveTab(wa, notifyWa) : null // opened in the click, filled after confirming
+    if (kind === 'assign' && !team.length) {
+      setStep(4)
+      return toast('Pick the care team, or use Save & confirm', 'err')
+    }
+    // not paired: the patient's confirmation opens in WhatsApp on this computer (tab opened in the click, filled after saving)
+    const tab = kind === 'confirm' ? reserveTab(wa, !!notify?.includes('patient')) : null
     setBusy(kind)
     setDup(null)
     try {
@@ -242,24 +267,20 @@ export function RequestForm({
         source: f.source,
         remarks: f.remarks.trim() || undefined,
         ignoreDuplicate: ignoreDuplicate || undefined,
+        // one call: created, confirmed and (Save & assign) the care team put on it — each step audited
+        then: kind === 'save' ? undefined : kind,
+        assign: kind === 'assign' ? { primaryStaffId: team[0], secondaryStaffIds: team.slice(1), instructions: instructions.trim() || undefined } : undefined,
+        estimatedFee: kind === 'assign' && f.fee !== '' ? Number(f.fee) : undefined,
+        paymentMethod: kind === 'assign' ? f.payment || undefined : undefined,
+        notify: notify ?? undefined,
       }
       const r = await api<{ id: string; requestNo: string }>('/requests', { body })
       try {
         localStorage.removeItem(DRAFT_KEY)
       } catch {}
-      if (kind !== 'save') {
-        try {
-          await api(`/requests/${r.id}/confirm`, { body: { date: f.date, slot, time, notifyPatient: notifyWa } })
-          await openConfirmLink(tab, r.id)
-        } catch (e: any) {
-          tab?.close()
-          toast(`${r.requestNo} saved, but not confirmed: ${e?.message ?? 'error'}`, 'err')
-          router.push(`/requests/${r.id}`)
-          return
-        }
-      }
-      toast(kind === 'save' ? `${r.requestNo} created` : `${r.requestNo} created and confirmed`, 'ok')
-      router.push(kind === 'assign' ? `/requests/${r.id}?assign=1` : `/requests/${r.id}`)
+      if (kind === 'confirm') await openConfirmLink(tab, r.id)
+      toast(kind === 'save' ? `${r.requestNo} created` : kind === 'confirm' ? `${r.requestNo} created and confirmed` : `${r.requestNo} created and assigned`, 'ok')
+      router.push(`/requests/${r.id}`)
     } catch (e: any) {
       tab?.close()
       if (e?.code === 'DUPLICATE') setDup({ message: e.message, requestNo: e.fields?.requestNo, kind })
@@ -278,7 +299,7 @@ export function RequestForm({
       {/* stepper */}
       <aside className="flex flex-none flex-col gap-1 lg:w-[240px]">
         <div className="flex gap-1 overflow-x-auto lg:flex-col">
-          {STEPS.map((s) => {
+          {steps.map((s) => {
             const on = s.n === step
             const done = s.n < step
             return (
@@ -308,9 +329,23 @@ export function RequestForm({
         {step === 1 && <StepPatient f={f} set={set} setIn={setIn} zones={zones} errors={errors} initialQuery={initialQuery} />}
         {step === 2 && <StepService f={f} set={set} services={services} slots={slots} booking={booking} today={today} errors={errors} autoDuration={autoDuration} />}
         {step === 3 && <StepClinical f={f} set={set} services={chosen} autoFee={autoFee} />}
-        {step === 3 && canConfirm && (
+        {step === 4 && (
+          <StepAssign
+            f={f}
+            set={set}
+            team={team}
+            setTeam={setTeam}
+            teamSize={teamSize}
+            setTeamSize={setTeamSize}
+            instructions={instructions}
+            setInstructions={setInstructions}
+            autoFee={autoFee}
+            duration={f.duration ? Number(f.duration) : autoDuration}
+          />
+        )}
+        {step >= 3 && (
           <div className="max-w-[720px]">
-            <PatientWhatsAppToggle on={notifyWa} onChange={setNotifyWa} wa={wa} label="Save & confirm: send the confirmation to the patient on WhatsApp" />
+            <NotifyPicker params={notifyParams} value={notify} onChange={setNotify} />
           </div>
         )}
 
@@ -354,12 +389,12 @@ export function RequestForm({
               Cancel
             </Link>
             {step > 1 && (
-              <button type="button" className={btnClass('o')} onClick={() => setStep((s) => (s - 1) as 1 | 2)}>
+              <button type="button" className={btnClass('o')} onClick={() => setStep((s) => (s - 1) as Step)}>
                 <ChevronLeft size={16} /> Back
               </button>
             )}
             {step < 3 ? (
-              <button type="button" className={btnClass('p')} onClick={() => goTo((step + 1) as 2 | 3)}>
+              <button type="button" className={btnClass('p')} onClick={() => goTo((step + 1) as Step)}>
                 <ChevronRight size={16} /> Next · {STEPS[step as 1 | 2].title}
               </button>
             ) : (
@@ -372,9 +407,14 @@ export function RequestForm({
                     {busy === 'confirm' && <Loader2 size={16} className="animate-spin" />} Save & confirm
                   </button>
                 )}
-                {canConfirm && canAssign && (
-                  <button type="button" disabled={!!busy} className={btnClass('p')} onClick={() => submit('assign')}>
-                    {busy === 'assign' && <Loader2 size={16} className="animate-spin" />} Save & assign
+                {canConfirm && canAssign && step === 3 && (
+                  <button type="button" className={btnClass('p')} onClick={() => goTo(4)}>
+                    <ChevronRight size={16} /> Next · Assign staff
+                  </button>
+                )}
+                {canConfirm && canAssign && step === lastStep && step === 4 && (
+                  <button type="button" disabled={!!busy || !team.length} className={btnClass('p')} onClick={() => submit('assign')}>
+                    {busy === 'assign' && <Loader2 size={16} className="animate-spin" />} Save & assign{team.length > 1 ? ` team of ${team.length}` : ''}
                   </button>
                 )}
               </>
@@ -836,6 +876,74 @@ function StepClinical({ f, set, services, autoFee }: { f: F; set: SetF; services
           <Row k="Estimated fee" v={taka(autoFee)} sub="Auto (services + tests) · fee and payment are set when confirming" />
         </dl>
       </aside>
+    </div>
+  )
+}
+
+/** Step 4 (optional): the care team, picked before the request exists — candidates ranked for the chosen services,
+ *  day and area. Save & assign confirms the visit with this fee and assigns the team in one call. */
+function StepAssign({
+  f,
+  set,
+  team,
+  setTeam,
+  teamSize,
+  setTeamSize,
+  instructions,
+  setInstructions,
+  autoFee,
+  duration,
+}: {
+  f: F
+  set: SetF
+  team: string[]
+  setTeam: (t: string[] | ((cur: string[]) => string[])) => void
+  teamSize: number
+  setTeamSize: (n: number | ((cur: number) => number)) => void
+  instructions: string
+  setInstructions: (v: string) => void
+  autoFee: number
+  duration: number
+}) {
+  const ask = {
+    serviceCodes: f.serviceCodes,
+    date: f.date || undefined,
+    time: f.timeMode === 'time' && f.time ? f.time : undefined,
+    slot: f.timeMode === 'slot' && f.slot ? f.slot : undefined,
+    durationMin: duration || undefined,
+    area: f.addr.area || undefined,
+  }
+  const key = JSON.stringify(ask)
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <SectionCard title="Care team" right={<span className="text-[12px] text-slate-500">Optional · or use Save & confirm and assign later</span>}>
+        <div className="mt-3 flex flex-col gap-3.5">
+          <TeamPicker team={team} setTeam={setTeam} teamSize={teamSize} setTeamSize={setTeamSize} load={() => api<{ items: Candidate[] }>('/requests/candidates', { body: JSON.parse(key) })} loadKey={key} area={f.addr.area} autoPick={false} />
+          <Field label="Instructions to staff">
+            <input className="hc-input" value={instructions} placeholder="e.g. Bring resistance bands. Family requests female staff." onChange={(e) => setInstructions(e.target.value)} />
+          </Field>
+        </div>
+      </SectionCard>
+      <SectionCard title="Fee & payment">
+        <div className="mt-3 flex flex-col gap-3">
+          <Field label="Estimated fee (৳)" hint={`Auto ${taka(autoFee)} (services + tests) if left empty`}>
+            <input type="number" min={0} className="hc-input" value={f.fee} placeholder={String(autoFee)} onChange={(e) => set('fee', e.target.value)} />
+          </Field>
+          <div>
+            <span className="hc-label">
+              Payment method <span className="font-normal text-slate-500">· optional</span>
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              {PAYMENT_METHODS.map((m) => (
+                <button key={m} type="button" onClick={() => set('payment', f.payment === m ? '' : m)} className={cx('h-10 rounded-lg border text-sm font-semibold', f.payment === m ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}>
+                  {PAYMENT_METHOD_LABEL[m]}
+                </button>
+              ))}
+            </div>
+          </div>
+          {f.transport && <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-[12.5px] text-slate-600">Unico car: the vehicle requisition goes to the security supervisor with this assignment, naming the team.</div>}
+        </div>
+      </SectionCard>
     </div>
   )
 }

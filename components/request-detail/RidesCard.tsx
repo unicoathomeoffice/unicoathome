@@ -10,13 +10,14 @@ import { usePasteFiles } from '@/components/client/paste'
 import { useConfirmSend } from '@/components/client/ConfirmSend'
 import { cx, taka } from '@/lib/format'
 
-export type Ride = { _id: string; userId: string; leg: 'OUT' | 'BACK' | 'OTHER'; mode: string; amount?: number; at?: string; attachmentIds: string[]; note?: string; claimLineId?: string; requisitionId?: string; sentAt?: string }
+export type Ride = { _id: string; userId: string; leg: 'OUT' | 'BACK' | 'BOTH' | 'OTHER'; mode: string; amount?: number; at?: string; attachmentIds: string[]; note?: string; claimLineId?: string; requisitionId?: string; sentAt?: string }
 type Person = { id: string; name: string }
 
 const MODES = ['Uber', 'Pathao', 'CNG', 'Rickshaw', 'Bus', 'Other']
 const LEGS: [Ride['leg'], string][] = [
   ['OUT', 'To patient'],
   ['BACK', 'Back to hospital'],
+  ['BOTH', 'Both ways'],
   ['OTHER', 'Other trip'],
 ]
 const when = (iso?: string) => (iso ? new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '')
@@ -167,13 +168,14 @@ function AddRide({ requestId, team, me, canPickPayer, onClose, onDone }: { reque
   return (
     <Sheet open onClose={onClose} title="Add ride" sub="Your own Uber / Pathao / CNG / rickshaw for this visit">
       <div className="flex flex-col gap-3 pb-3">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {LEGS.map(([k, l]) => (
             <button key={k} type="button" onClick={() => setV({ ...v, leg: k })} className={cx('h-11 rounded-xl border-[1.5px] text-[13.5px] font-semibold', v.leg === k ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-700')}>
               {l}
             </button>
           ))}
         </div>
+        {v.leg === 'BOTH' && <p className="-mt-1 text-[12.5px] text-slate-500">Hospital → patient → hospital on one fare. Enter the total for the round trip.</p>}
         <div className="flex flex-wrap gap-2">
           {MODES.map((m) => (
             <button key={m} type="button" onClick={() => setV({ ...v, mode: m })} className={chip(v.mode === m)}>
@@ -183,7 +185,7 @@ function AddRide({ requestId, team, me, canPickPayer, onClose, onDone }: { reque
         </div>
         <div className="grid grid-cols-2 gap-2.5">
           <label>
-            <span className="hc-label">Fare paid (৳)</span>
+            <span className="hc-label">{v.leg === 'BOTH' ? 'Total fare, both ways (৳)' : 'Fare paid (৳)'}</span>
             <input className="hc-input hc-input-lg !text-[18px] font-bold" inputMode="decimal" value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value.replace(/[^\d.]/g, '') })} placeholder="0" />
           </label>
           <label>

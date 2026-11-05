@@ -11,7 +11,8 @@ import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Status } from '@/lib/consta
 import { cx, taka, clock } from '@/lib/format'
 import { availableActions, type Perms } from './lib'
 import { AssignDrawer, type AssignProps } from '@/components/assign/AssignDrawer'
-import { openConfirmLink, PatientWhatsAppToggle, reserveTab, type WaInfo } from './PatientWhatsApp'
+import { openConfirmLink, reserveTab, type WaInfo } from './PatientWhatsApp'
+import { NotifyPicker } from '@/components/client/NotifyPicker'
 import { useConfirmSend } from '@/components/client/ConfirmSend'
 
 export type ReqLite = {
@@ -199,7 +200,8 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
     transportNeeded: r.transportNeeded,
     expectedDurationMin: String(r.expectedDurationMin || 45),
   })
-  const [sendWa, setSendWa] = useState(!r.wa.optOut && !!r.wa.phone)
+  const [notify, setNotify] = useState<string[] | null>(null)
+  const sendWa = !!notify?.includes('patient')
   const [lookup, setLookup] = useState<null | { busy?: boolean; text: string; tone: 'ok' | 'warn' }>(null)
   const set = (k: keyof typeof f, v: any) => setF((x) => ({ ...x, [k]: v }))
   async function findUhid() {
@@ -222,7 +224,7 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
       title="Confirm request"
       sub={`${r.requestNo} · ${r.patientName} · slot and fee agreed with the patient`}
       footer={
-        <Foot onClose={onClose} note={sendWa ? 'Patient gets WhatsApp + email (if they have an address)' : 'Patient is not messaged'}>
+        <Foot onClose={onClose} note={sendWa ? 'Patient gets WhatsApp + email (if they have an address)' : 'Patient gets no WhatsApp'}>
           <button
             className={btnClass('p')}
             disabled={busy || !f.date}
@@ -243,7 +245,7 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
                       priority: f.priority,
                       transportNeeded: f.transportNeeded,
                       expectedDurationMin: Number(f.expectedDurationMin) || undefined,
-                      notifyPatient: sendWa,
+                      notify: notify ?? undefined,
                     },
                   }),
                 sendWa && r.wa.paired ? 'Request confirmed · WhatsApp sent to the patient' : 'Request confirmed',
@@ -319,11 +321,11 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
         </div>
         <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
           <div className="text-[13px]">
-            <b>Transport needed</b> <span className="text-slate-500">· Unico @ Home car, notifies the car supervisor</span>
+            <b>Transport needed</b> <span className="text-slate-500">· Unico @ Home car · the requisition goes to the security supervisor once staff are assigned</span>
           </div>
           <Toggle on={f.transportNeeded} onChange={(v) => set('transportNeeded', v)} label="Transport needed" />
         </div>
-        <PatientWhatsAppToggle on={sendWa} onChange={setSendWa} wa={r.wa} requestId={r.id} date={f.date} slot={f.slot} />
+        <NotifyPicker params={{ events: ['CONFIRMED'], requestId: r.id }} value={notify} onChange={setNotify} preview={{ templateKey: 'patient_confirmed', date: f.date, slot: f.slot }} />
       </div>
     </Drawer>
   )
@@ -333,6 +335,7 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
 function RescheduleDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onClose: () => void }) {
   const { run, busy } = useAction()
   const [f, setF] = useState({ date: r.date, time: '', slot: r.slot, reason: '' })
+  const [notify, setNotify] = useState<string[] | null>(null)
   const set = (k: keyof typeof f, v: string) => setF((x) => ({ ...x, [k]: v }))
   return (
     <Drawer
@@ -346,7 +349,7 @@ function RescheduleDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; 
             className={btnClass('p')}
             disabled={busy || !f.date || f.reason.trim().length < 2}
             onClick={async () => {
-              const ok = await run(() => api(`/requests/${r.id}/reschedule`, { body: { date: f.date, time: f.time || undefined, slot: f.slot || undefined, reason: f.reason.trim() } }), 'Visit rescheduled')
+              const ok = await run(() => api(`/requests/${r.id}/reschedule`, { body: { date: f.date, time: f.time || undefined, slot: f.slot || undefined, reason: f.reason.trim(), notify: notify ?? undefined } }), 'Visit rescheduled')
               if (ok) onClose()
             }}
           >
@@ -375,6 +378,7 @@ function RescheduleDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; 
             <AlertTriangle size={16} className="mt-0.5 flex-none" /> {r.primaryStaffName} will be notified and the visit goes back to Confirmed for re-assignment.
           </div>
         )}
+        <NotifyPicker params={{ events: ['RESCHEDULED'], requestId: r.id }} value={notify} onChange={setNotify} />
       </div>
     </Drawer>
   )
@@ -386,6 +390,7 @@ function CancelDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
   const { run, busy } = useAction()
   const [reason, setReason] = useState('')
   const [note, setNote] = useState('')
+  const [notify, setNotify] = useState<string[] | null>(null)
   const text = [reason, note.trim()].filter(Boolean).join(' · ')
   return (
     <Drawer
@@ -399,7 +404,7 @@ function CancelDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
             className={btnClass('rf')}
             disabled={busy || text.length < 2 || (reason === 'Other' && !note.trim())}
             onClick={async () => {
-              const ok = await run(() => api(`/requests/${r.id}/cancel`, { body: { reason: text } }), 'Request cancelled')
+              const ok = await run(() => api(`/requests/${r.id}/cancel`, { body: { reason: text, notify: notify ?? undefined } }), 'Request cancelled')
               if (ok) onClose()
             }}
           >
@@ -418,7 +423,8 @@ function CancelDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
         <F label="Note">
           <textarea className="hc-input" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Details for the record" />
         </F>
-        <div className="text-[12.5px] text-slate-500">The care team, driver and patient are notified. This cannot be undone.</div>
+        <div className="text-[12.5px] text-slate-500">The care team and driver get an in-app notice. This cannot be undone.</div>
+        <NotifyPicker params={{ events: ['CANCELLED'], requestId: r.id }} value={notify} onChange={setNotify} />
       </div>
     </Drawer>
   )

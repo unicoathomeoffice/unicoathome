@@ -5,6 +5,7 @@ import { Check, Loader2, Plus, Settings2 } from 'lucide-react'
 import { api, useAction, Sheet, Segmented } from '@/components/client'
 import { cx } from '@/lib/format'
 import { abtn, bbtn } from '@/components/coord/ui'
+import { NotifyPicker } from '@/components/client/NotifyPicker'
 
 const OWN = [
   { value: 'RICKSHAW', label: 'Rickshaw' },
@@ -82,6 +83,7 @@ export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVe
   const [p, setP] = useState(pickup)
   const [r, setR] = useState(ret)
   const [own, setOwn] = useState<string>('UBER')
+  const [notify, setNotify] = useState<string[] | null>(null)
   const { run, busy } = useAction()
   const chosen = cars.find((c) => c.id === car)
   const driver = drivers.find((d) => d.id === driverId) ?? (chosen?.driver && chosen.driver.id === driverId ? chosen.driver : null)
@@ -161,11 +163,12 @@ export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVe
             <div className="flex items-center gap-2 rounded-[10px] bg-slate-50 px-3 py-2.5 text-[13px]">
               <Check size={16} className="flex-none text-[#16A34A]" strokeWidth={3} />
               <span>
-                <b>Notify</b> · driver and care team get “{chosen.name}
+                <b>In the app</b> · driver and care team get “{chosen.name}
                 {driver ? ` · ${driver.name.split(' ')[0]}` : ''} · {p}”
               </span>
             </div>
           )}
+          {chosen && <NotifyPicker params={{ events: ['CAR_ALLOTTED'], requestId: id, vehicleId: car, driverId: driver?.id }} value={notify} onChange={setNotify} />}
         </>
       ) : (
         <div className="grid grid-cols-2 gap-2">
@@ -187,7 +190,7 @@ export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVe
           className={bbtn('p', 'flex-[1.8]')}
           onClick={() =>
             run(
-              () => api(`/requests/${id}/transport`, { body: mode === 'own' ? { mode: own } : { mode: 'UNICO_CAR', vehicleId: car, driverId: driver?.id, pickupTime: p || undefined, returnTime: r || undefined } }),
+              () => api(`/requests/${id}/transport`, { body: mode === 'own' ? { mode: own } : { mode: 'UNICO_CAR', vehicleId: car, driverId: driver?.id, pickupTime: p || undefined, returnTime: r || undefined, notify: notify ?? undefined } }),
               mode === 'own' ? `${requestNo} · own transport` : `${chosen?.name} assigned · driver notified`,
               { redirect: '/m/trips' },
             )

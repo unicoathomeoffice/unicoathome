@@ -43,6 +43,7 @@ export default async function NewRequestPage({ searchParams }: { searchParams: P
           isDesk,
           isField: hasAnyRole(user, FIELD_ROLES),
           canConfirm: can(user, 'requests.manage'),
+          canAssign: can(user, 'requests.manage') && can(user, 'requests.assign'),
         }}
         services={plain(services)}
         initialPatient={patient ? plain(patient) : null}

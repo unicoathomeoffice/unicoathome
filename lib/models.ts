@@ -346,6 +346,17 @@ const RequestSchema = new Schema<any>(
     },
     cancellation: { reason: String, by: { type: ObjectId, ref: 'User' }, at: Date },
     reschedules: [{ _id: false, from: Date, to: Date, slot: String, reason: String, by: { type: ObjectId, ref: 'User' }, at: Date }],
+    // "Notify on WhatsApp" decisions (lib/services/notify.ts): who was ticked and who was offered but left out
+    notifyLog: [
+      {
+        _id: false,
+        event: String,
+        at: Date,
+        by: { type: ObjectId, ref: 'User' },
+        sent: [String],
+        left: [{ _id: false, key: String, name: String, role: String, kind: String, group: String, note: String }],
+      },
+    ],
     feedback: { rating: Number, comment: String, at: Date },
     carePlanId: { type: ObjectId, ref: 'CarePlan' },
     source: { type: String, enum: REQUEST_SOURCES, default: 'PHONE' },
@@ -375,7 +386,7 @@ const RequestSchema = new Schema<any>(
     rides: [
       {
         userId: { type: ObjectId, ref: 'User' }, // who paid
-        leg: { type: String, enum: ['OUT', 'BACK', 'OTHER'], default: 'OUT' },
+        leg: { type: String, enum: ['OUT', 'BACK', 'BOTH', 'OTHER'], default: 'OUT' }, // BOTH: one fare for the round trip
         mode: String,
         amount: Number,
         at: Date,
@@ -684,7 +695,7 @@ export const IntegrationSecret = model('IntegrationSecret', IntegrationSecretSch
 const ClaimLineSchema = new Schema<any>({
   kind: { type: String, enum: ['CONVEYANCE', 'FOOD', 'OTHER'], required: true },
   requestId: { type: ObjectId, ref: 'HomecareRequest' },
-  leg: { type: String, enum: ['OUT', 'BACK'] }, // conveyance suggested from a visit
+  leg: { type: String, enum: ['OUT', 'BACK', 'BOTH'] }, // conveyance suggested from a visit; BOTH = an own round-trip ride
   at: Date,
   uhid: String,
   patientName: String,

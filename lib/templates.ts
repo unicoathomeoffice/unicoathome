@@ -62,7 +62,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['EMAIL', 'WHATSAPP'],
     audience: 'Patient',
     subject: 'We received your home care request · {requestNo}',
-    body: 'Dear {patientName}, thank you — we received your home care request ({requestNo}).\nService: {serviceType}\nPreferred time: {date}, {slot}\nAddress: {address}\nOur Home Care coordinator will call you shortly to confirm. Need help sooner? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',
+    body: 'Dear {patientName}, thank you — we received your home care request.\nService: {serviceType}\nPreferred time: {date}, {slot}\nAddress: {address}\nOur Home Care coordinator will call you shortly to confirm. Need help sooner? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',
   },
   {
     key: 'staff_approved',
@@ -78,7 +78,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP', 'EMAIL'],
     audience: 'Patient',
     subject: 'Your home care visit is confirmed · {requestNo}',
-    body: 'Dear {patientName}, your home care request ({requestNo}) is confirmed.\nService: {serviceType}\nTime: {date}, {slot}\nOur team will arrive at the scheduled time. Need help? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',
+    body: 'Dear {patientName}, your home care request is confirmed.\nService: {serviceType}\nTime: {date}, {slot}\nOur team will arrive at the scheduled time. Need help? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',
   },
   {
     key: 'patient_assigned',
@@ -94,7 +94,23 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP', 'PUSH', 'EMAIL'],
     audience: 'Staff',
     subject: 'New home care assignment · {requestNo}',
-    body: 'Home care assignment — {requestNo}\nPatient: {patientName} ({age}/{gender})\nService: {serviceType}\nAddress: {address}\nTime: {date}, {slot}\nPhone: {patientPhone}\nNotes: {notes}\nPlease Accept in the app.',
+    body: 'New home care assignment\nPatient: {patientName} ({age}/{gender})\nService: {serviceType}\nAddress: {address}\nTime: {date}, {slot}\nPhone: {patientPhone}\nNotes: {notes}\nPlease Accept in the app.',
+  },
+  {
+    key: 'staff_rescheduled',
+    name: 'Visit rescheduled (staff)',
+    channel: ['WHATSAPP'],
+    audience: 'Staff',
+    subject: 'Visit rescheduled · {requestNo}',
+    body: 'Dear {staffName}, the home visit for {patientName} ({serviceType}) has moved to {date}, {slot}.\nReason: {reason}\nIt will be assigned again — watch the app.\n— Unico HomeCare',
+  },
+  {
+    key: 'staff_cancelled',
+    name: 'Visit cancelled (staff / driver)',
+    channel: ['WHATSAPP'],
+    audience: 'Staff',
+    subject: 'Visit cancelled · {requestNo}',
+    body: 'Dear {staffName}, the home visit for {patientName} on {date}, {slot} is cancelled.\nReason: {reason}\n— Unico HomeCare',
   },
   {
     key: 'patient_en_route',
@@ -118,7 +134,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP', 'EMAIL'],
     audience: 'Patient',
     subject: 'Thank you · your home care visit is complete',
-    body: 'Dear {patientName}, your home care visit ({requestNo}) is complete. Thank you for choosing Unico Hospitals.\nShare your feedback: {feedbackLink}',
+    body: 'Dear {patientName}, your home care visit is complete. Thank you for choosing Unico Hospitals.\nShare your feedback: {feedbackLink}',
   },
   {
     key: 'patient_rescheduled',
@@ -126,7 +142,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP', 'EMAIL'],
     audience: 'Patient',
     subject: 'Your visit has been rescheduled · {requestNo}',
-    body: 'Dear {patientName}, your home care visit ({requestNo}) has been rescheduled to {date}, {slot}. Call {hospitalPhone} if this time does not suit you.',
+    body: 'Dear {patientName}, your home care visit has been rescheduled to {date}, {slot}. Call {hospitalPhone} if this time does not suit you.',
   },
   {
     key: 'patient_cancelled',
@@ -134,7 +150,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP', 'EMAIL'],
     audience: 'Patient',
     subject: 'Your home care request was cancelled · {requestNo}',
-    body: 'Dear {patientName}, your home care request ({requestNo}) has been cancelled. Call {hospitalPhone} if you need help.',
+    body: 'Dear {patientName}, your home care request has been cancelled. Call {hospitalPhone} if you need help.',
   },
   {
     key: 'dept_visit_report',
@@ -166,7 +182,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: 'New home care request · {requestNo}',
-    body: 'Dear {staffName} ({designation}), a new home care request needs assignment.\nRequest: {requestNo} · {priority}\nService: {serviceType}\nPatient: {patientName} ({age}/{gender}) · {patientPhone}\nAddress: {address}\nPreferred: {date}, {slot}\nOpen: {requestLink}\n— Unico HomeCare',
+    body: 'Dear {staffName} ({designation}), a new home care request needs assignment.\nPriority: {priority}\nService: {serviceType}\nPatient: {patientName} ({age}/{gender}) · {patientPhone}\nAddress: {address}\nPreferred: {date}, {slot}\nOpen: {requestLink}\n— Unico HomeCare',
   },
   {
     key: 'car_requested',
@@ -174,7 +190,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: 'Unico car requested · {requestNo}',
-    body: 'Unico car requested · {requestNo}\nVisit: {date}, {slot}\nTo: {address}\nService: {serviceType}\nOpen: {requestLink}\n— Unico HomeCare',
+    body: 'Unico car requested · {patientName}\nVisit: {date}, {slot}\nTo: {address}\nService: {serviceType}\nOpen: {requestLink}\n— Unico HomeCare',
   },
   {
     key: 'car_allotted',
@@ -182,7 +198,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: 'Car allotted · {requestNo}',
-    body: 'Car allotted · {requestNo}\nVehicle: {vehicle}\nDriver: {driverName} {driverPhone}\nPick-up at hospital {pickupTime} · back about {returnTime}\nVisit: {date}, {slot}\nTo: {address}\n— Unico HomeCare',
+    body: 'Car allotted · {patientName}\nVehicle: {vehicle}\nDriver: {driverName} {driverPhone}\nPick-up at hospital {pickupTime} · back about {returnTime}\nVisit: {date}, {slot}\nTo: {address}\n— Unico HomeCare',
   },
   {
     key: 'car_changed',
@@ -190,7 +206,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: 'Trip time changed · {requestNo}',
-    body: 'UPDATED trip time · {requestNo}\nNew visit time: {date}, {slot}\nVehicle: {vehicle} · driver {driverName}\nTo: {address}\n— Unico HomeCare',
+    body: 'UPDATED trip time · {patientName}\nNew visit time: {date}, {slot}\nVehicle: {vehicle} · driver {driverName}\nTo: {address}\n— Unico HomeCare',
   },
   {
     key: 'car_cancelled',
@@ -198,7 +214,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: 'Trip cancelled · {requestNo}',
-    body: 'Trip CANCELLED · {requestNo}\nThe home visit on {date} ({slot}) is cancelled — the car is not needed.\nVehicle: {vehicle} · driver {driverName}\nReason: {reason}\n— Unico HomeCare',
+    body: 'Trip CANCELLED · {patientName}\nThe home visit on {date} ({slot}) is cancelled — the car is not needed.\nVehicle: {vehicle} · driver {driverName}\nReason: {reason}\n— Unico HomeCare',
   },
   {
     key: 'car_own',
@@ -206,7 +222,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: 'No hospital car · {requestNo}',
-    body: 'No hospital car for {requestNo} — the team goes by {transportMode}.\nVisit: {date}, {slot}\nTo: {address}\nPetty cash: {amount} given\n— Unico HomeCare',
+    body: 'No hospital car for the visit to {patientName} — the team goes by {transportMode}.\nVisit: {date}, {slot}\nTo: {address}\nPetty cash: {amount} given\n— Unico HomeCare',
   },
   {
     key: 'petty_cash',
@@ -222,7 +238,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: 'Car left the hospital · {requestNo}',
-    body: 'Car left the hospital at {eventTime} · {requestNo}\nVehicle: {vehicle} · driver {driverName}\nTo: {address}\nExpected back about {returnTime}\n— Unico HomeCare',
+    body: 'Car left the hospital at {eventTime} · {patientName}\nVehicle: {vehicle} · driver {driverName}\nTo: {address}\nExpected back about {returnTime}\n— Unico HomeCare',
   },
   {
     key: 'car_back',
@@ -230,7 +246,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: 'Car back at the hospital · {requestNo}',
-    body: 'Car back at the hospital at {eventTime} · {requestNo}\nVehicle: {vehicle} · driver {driverName}\n— Unico HomeCare',
+    body: 'Car back at the hospital at {eventTime} · {patientName}\nVehicle: {vehicle} · driver {driverName}\n— Unico HomeCare',
   },
   {
     key: 'visit_live',
@@ -270,7 +286,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Patient',
     subject: 'Your bill · {invoiceNo}',
-    body: 'Dear {patientName}, here is your bill for home care visit {requestNo} (invoice {invoiceNo}).\nTotal {total} · Paid {paid} · Due {due}\nQuestions? Call {hospitalPhone}.\n— Unico Hospitals',
+    body: 'Dear {patientName}, here is your bill for your home care visit (invoice {invoiceNo}).\nTotal {total} · Paid {paid} · Due {due}\nQuestions? Call {hospitalPhone}.\n— Unico Hospitals',
   },
   {
     key: 'staff_bill',
@@ -278,7 +294,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Staff',
     subject: 'Bill copy · {requestNo}',
-    body: 'Bill copy · {requestNo} · {patientName}\nInvoice {invoiceNo} · Total {total} · Paid {paid} · Due {due}\n— Unico HomeCare',
+    body: 'Bill copy · {patientName}\nInvoice {invoiceNo} · Total {total} · Paid {paid} · Due {due}\n— Unico HomeCare',
   },
   {
     key: 'auth_code',

@@ -1,7 +1,7 @@
 import 'server-only'
 import QRCode from 'qrcode'
 import { MessageLog, WaAuth } from '../models'
-import { background, waNumber } from '../messaging'
+import { background, stripRequestNo, waNumber } from '../messaging'
 import { acquireLock, connect, type Conn } from './client'
 import { isPaired, mongoAuthState, pairedPhone } from './auth-state'
 import { linkState } from './status'
@@ -29,6 +29,7 @@ export async function waStatus() {
 /** Log a WhatsApp message and deliver it in the background. With attachmentId the file is sent (PDF as a document,
  *  photo as an image) and `text` becomes its caption. Delivery follows the sending-safety rules (lib/wa/guard.ts). */
 export async function queueWhatsApp(input: { to: string; toName?: string; text: string; templateKey?: string; requestId?: unknown; patientId?: unknown; initiatedBy?: string; attachmentId?: unknown; fileName?: string; priority?: number }) {
+  input = { ...input, text: stripRequestNo(input.text ?? ''), fileName: input.fileName ? stripRequestNo(input.fileName).replace(/-+(?=\.)/, '') : undefined }
   const to = waNumber(input.to)
   const c = to ? await contactState(to) : null
   const blocked = !to ? 'No valid number' : c?.optOut ? 'Opted out (replied STOP)' : c?.exists === false && checkFresh(c) ? 'Not on WhatsApp' : null

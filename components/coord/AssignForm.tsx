@@ -2,6 +2,7 @@
 import { useMemo, useState } from 'react'
 import { Check, Loader2, ChevronDown } from 'lucide-react'
 import { api, useAction, useToast, Toggle } from '@/components/client'
+import { NotifyPicker } from '@/components/client/NotifyPicker'
 import { cx } from '@/lib/format'
 import { FLabel, SLabel, FixedBottom, bbtn, scoreColor } from './ui'
 
@@ -27,14 +28,9 @@ const GROUPS: { role: string; label: string }[] = [
   { role: 'ALLIED', label: 'Allied · phlebotomy · physio' },
 ]
 
-/** S3 / M18 — team number, ranked candidates grouped by role, primary + others, instructions. */
-export function AssignForm({ id, requestNo, candidates, need, initialTeam, initialSize, instructions: initialInstr, transport, canOverride = false }: { id: string; requestNo: string; candidates: Cand[]; need: Record<string, number>; initialTeam: string[]; initialSize: number; instructions?: string; transport: boolean; canOverride?: boolean }) {
-  const [acceptNow, setAcceptNow] = useState(canOverride)
-  const [size, setSize] = useState(Math.min(5, Math.max(1, initialSize)))
-  const [picked, setPicked] = useState<string[]>(initialTeam)
-  const [instructions, setInstructions] = useState(initialInstr ?? '')
+/** Team number + ranked candidates grouped by role; the first pick is primary. Used by S3 and the new request form. */
+export function MobileTeamPicker({ candidates, need = {}, picked, setPicked, size, setSize }: { candidates: Cand[]; need?: Record<string, number>; picked: string[]; setPicked: (v: string[]) => void; size: number; setSize: (n: number) => void }) {
   const [open, setOpen] = useState<Record<string, boolean>>({})
-  const { run, busy } = useAction()
   const toast = useToast()
   const byRole = useMemo(() => Object.fromEntries(GROUPS.map((g) => [g.role, candidates.filter((c) => c.role === g.role)])), [candidates])
 
@@ -52,7 +48,6 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
     setSize(n)
     if (picked.length > n) setPicked(picked.slice(0, n))
   }
-  const ready = picked.length === size
   return (
     <>
       <div>
@@ -123,6 +118,22 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
         )
       })}
       {!candidates.length && <div className="rounded-card bg-white p-5 text-center text-[14px] text-slate-500 shadow-card">No active field staff found. Try another slot or check staff availability.</div>}
+    </>
+  )
+}
+
+/** S3 / M18 — team number, ranked candidates grouped by role, primary + others, instructions, "Notify on WhatsApp". */
+export function AssignForm({ id, requestNo, candidates, need, initialTeam, initialSize, instructions: initialInstr, transport, canOverride = false }: { id: string; requestNo: string; candidates: Cand[]; need: Record<string, number>; initialTeam: string[]; initialSize: number; instructions?: string; transport: boolean; canOverride?: boolean }) {
+  const [acceptNow, setAcceptNow] = useState(canOverride)
+  const [size, setSize] = useState(Math.min(5, Math.max(1, initialSize)))
+  const [picked, setPicked] = useState<string[]>(initialTeam)
+  const [instructions, setInstructions] = useState(initialInstr ?? '')
+  const [notify, setNotify] = useState<string[] | null>(null)
+  const { run, busy } = useAction()
+  const ready = picked.length === size
+  return (
+    <>
+      <MobileTeamPicker candidates={candidates} need={need} picked={picked} setPicked={setPicked} size={size} setSize={setSize} />
 
       <div>
         <FLabel>Instructions to team</FLabel>
@@ -137,16 +148,17 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
           <Toggle on={acceptNow} onChange={setAcceptNow} label="Accept on their behalf" />
         </div>
       )}
+      <NotifyPicker params={picked.length ? { events: ['ASSIGNED'], requestId: id, staffIds: picked } : null} value={notify} onChange={setNotify} preview={{ templateKey: 'patient_assigned' }} />
       <div className="text-center text-[12px] text-slate-400">Score = skill 40 · availability 30 · zone 20 · workload 10. The first pick is primary{canOverride && acceptNow ? '.' : ' and must accept within the timeout.'}</div>
 
-      <FixedBottom note={!picked.length ? undefined : !ready ? `Pick ${size - picked.length} more or lower the team number` : transport ? 'The car supervisor already has the trip request' : undefined}>
+      <FixedBottom note={!picked.length ? undefined : !ready ? `Pick ${size - picked.length} more or lower the team number` : transport ? 'The car requisition goes with this assignment' : undefined}>
         <button
           type="button"
           disabled={busy || !ready}
           className={bbtn('p', 'flex-1')}
           onClick={() =>
             run(
-              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: canOverride && acceptNow ? true : undefined } }),
+              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: canOverride && acceptNow ? true : undefined, notify: notify ?? undefined } }),
               `${requestNo} assigned · team notified`,
               { redirect: `/m/admin/requests/${id}` },
             )

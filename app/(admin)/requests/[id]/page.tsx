@@ -21,6 +21,8 @@ import { LiveTrackingCard } from '@/components/request-detail/LiveTrackingCard'
 import { VisitUpdateCard } from '@/components/request-detail/VisitUpdateCard'
 import { InvoiceTab } from '@/components/request-detail/InvoiceTab'
 import { TransportDocsBox } from '@/components/request-detail/TransportDocsBox'
+import { NotifiedTab } from '@/components/request-detail/NotifiedTab'
+import { notifyTimeline, type NotifyStep } from '@/lib/services/notify-log'
 import { RidesCard } from '@/components/request-detail/RidesCard'
 import { liveView } from '@/lib/services/tracking'
 import { OverridePanel } from '@/components/request-detail/OverridePanel'
@@ -29,7 +31,7 @@ import { TimeoutBanner } from '@/components/request-detail/TimeoutBanner'
 
 export const metadata = { title: 'Request detail' }
 
-const TABS = ['overview', 'timeline', 'assignment', 'visit', 'invoice', 'messages', 'attachments', 'audit'] as const
+const TABS = ['overview', 'timeline', 'assignment', 'visit', 'invoice', 'messages', 'attachments', 'audit', 'notified'] as const
 type Tab = (typeof TABS)[number]
 const PHOTO_KINDS = ['WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'PHOTO']
 
@@ -67,6 +69,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   let chat: any[] = []
   let atts: any[] = []
   let audits: any[] = []
+  let notifySteps: NotifyStep[] = []
   let photos: any[] = []
   let signature: any = null
   let prescriptions: any[] = []
@@ -102,6 +105,8 @@ export default async function RequestDetailPage({ params, searchParams }: { para
       MessageLog.find({ requestId: r._id, channel: 'WHATSAPP', templateKey: { $in: ['patient_bill', 'staff_bill'] } }).sort({ at: -1 }).limit(50).select('at toName to status error fileName').lean<any[]>(),
       h360Status().then((s) => s.configured),
     ])
+  } else if (tab === 'notified') {
+    notifySteps = await notifyTimeline(r)
   } else if (tab === 'audit') {
     audits = await AuditLog.find({ entity: 'request', entityId: id }).sort({ serverAt: -1 }).limit(500).lean<any[]>()
   }
@@ -232,6 +237,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
     { key: 'messages', label: `Messages · ${msgCount}`, href: `${base}?tab=messages` },
     { key: 'attachments', label: `Attachments · ${attCount}`, href: `${base}?tab=attachments` },
     { key: 'audit', label: `Audit · ${auditCount}`, href: `${base}?tab=audit` },
+    { key: 'notified', label: 'Notified', href: `${base}?tab=notified` },
   ]
 
   const R = plain(r)
@@ -305,6 +311,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
             requestNo={r.requestNo}
             to={(settings.transportDocs?.supervisors ?? []).filter((x: any) => x.active !== false && x.phone).map((x: any) => ({ name: x.name, phone: x.phone }))}
             linked={waPaired}
+            assigned={!!r.assignment?.primaryStaffId}
           />
         )}
         {tab === 'overview' && r.transport?.mode !== 'UNICO_CAR' && ((r.rides ?? []).length > 0 || ['ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED', 'CLOSED'].includes(status)) && (
@@ -377,6 +384,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
         )}
         {tab === 'attachments' && <AttachmentsTab requestId={id} atts={plain(atts)} people={people} canUpload={perms.edit} me={{ id: user.id, admin: isCoordinator(user) }} />}
         {tab === 'audit' && <AuditTab rows={plain(audits)} />}
+        {tab === 'notified' && <NotifiedTab steps={notifySteps} ch={typeof sp.ch === 'string' && ['WHATSAPP', 'EMAIL', 'INAPP'].includes(sp.ch) ? sp.ch : ''} base={base} />}
       </div>
     </AdminPage>
   )

@@ -1,7 +1,7 @@
 import { route, body, clientMeta, qp } from '@/lib/api'
 import { HomecareRequest } from '@/lib/models'
 import { can, STATUSES, hasRole } from '@/lib/constants'
-import { createRequest, CreateRequestInput, withPeople, slaInfo } from '@/lib/services/requests'
+import { createAndAssign, CreateRequestInput, withPeople, slaInfo } from '@/lib/services/requests'
 import { dayRange } from '@/lib/format'
 import { getSettings } from '@/lib/settings'
 import { plain } from '@/lib/db'
@@ -43,8 +43,9 @@ export const GET = route(async ({ req, user }) => {
 export const POST = route(
   async ({ req, user }) => {
     const input = await body(req, CreateRequestInput)
-    const r = await createRequest(input, user, clientMeta(req, user))
-    return { id: String(r._id), requestNo: r.requestNo }
+    // then: 'confirm' | 'assign' — confirmed (and the care team assigned) in the same call
+    const r = await createAndAssign(input, user, clientMeta(req, user))
+    return { id: String(r._id), requestNo: r.requestNo, status: r.status }
   },
   { perm: 'requests.create' },
 )

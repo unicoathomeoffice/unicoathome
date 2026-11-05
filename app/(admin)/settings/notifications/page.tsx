@@ -22,6 +22,9 @@ export default async function NotificationRulesPage() {
   const [s, services, paired, phone] = await Promise.all([getSettings(), activeServices(), isPaired(), pairedPhone()])
   return (
     <AdminPage title="Notification rules" crumbs="Settings">
+      <div className="mb-4 max-w-[1200px] rounded-lg bg-[#F0FDF4] px-4 py-3 text-[13px] text-[#166534] ring-1 ring-[#BBF7D0]">
+        <b>WhatsApp: these are the default ticks.</b> Every action a person takes (new request, confirm, assign, reschedule, cancel, car allotted) shows a “Notify on WhatsApp” list with these people ticked — they can untick anyone before it sends. Steps nobody clicks (on the way, checked in, completed, visit and daily summaries, timeouts) follow these settings as they are. Staff and driver WhatsApp go only when ticked on the action. The request number is never shown in a WhatsApp message.
+      </div>
       <NotificationRules
         initial={JSON.parse(JSON.stringify(s.notificationRules))}
         quiet={JSON.parse(JSON.stringify(s.quietHours))}

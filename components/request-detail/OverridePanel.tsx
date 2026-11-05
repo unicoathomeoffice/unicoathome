@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Banknote, Car, CheckCircle2, Loader2, MapPin, Navigation, ShieldAlert, UserCheck } from 'lucide-react'
 import { api, Drawer, useToast } from '@/components/client'
+import { NotifyPicker } from '@/components/client/NotifyPicker'
 import { btnClass } from '@/components/ui'
 import { cx, taka } from '@/lib/format'
 
@@ -211,14 +212,15 @@ function CarDriver({ requestId, requestNo, transport, cars, drivers, team = [], 
   const [pickup, setPickup] = useState(transport.pickup)
   const [ret, setRet] = useState(transport.ret)
   const [busy, setBusy] = useState(false)
+  const [notify, setNotify] = useState<string[] | null>(null)
   const chosen = cars.find((c) => c.id === car)
   const drv = drivers.find((d) => d.id === driver)
   async function go() {
     if (!chosen || !drv) return toast('Pick a car and a driver', 'err')
-    if (!confirm(`Send ${chosen.name} (${chosen.plate}) with ${drv.name} for ${requestNo}?\n\nPick-up ${pickup || '—'} · return ${ret || '—'}.\nThe requisition (with the car) and the gate pass go to the security supervisor and the driver.`)) return
+    if (!confirm(`Send ${chosen.name} (${chosen.plate}) with ${drv.name} for ${requestNo}?\n\nPick-up ${pickup || '—'} · return ${ret || '—'}.\nWhatsApp goes only to the people ticked under "Notify on WhatsApp".`)) return
     setBusy(true)
     try {
-      await api(`/requests/${requestId}/transport`, { body: { mode: 'UNICO_CAR', vehicleId: car, driverId: driver, pickupTime: pickup || undefined, returnTime: ret || undefined } })
+      await api(`/requests/${requestId}/transport`, { body: { mode: 'UNICO_CAR', vehicleId: car, driverId: driver, pickupTime: pickup || undefined, returnTime: ret || undefined, notify: notify ?? undefined } })
       toast(`${chosen.name} · ${drv.name} assigned — gate pass on its way`, 'ok')
       router.refresh()
       onClose()
@@ -357,7 +359,8 @@ function CarDriver({ requestId, requestNo, transport, cars, drivers, team = [], 
             <input type="time" className="hc-input" value={ret} onChange={(e) => setRet(e.target.value)} />
           </label>
         </div>
-        <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-[12.5px] text-slate-600">The vehicle requisition is updated with the car (Section B) and the gate pass is made — both go to the on-call security supervisor, the gate pass also to the driver.</div>
+        <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-[12.5px] text-slate-600">The vehicle requisition is updated with the car (Section B) and the gate pass is made. Choose below who gets them on WhatsApp.</div>
+        <NotifyPicker params={car ? { events: ['CAR_ALLOTTED'], requestId, vehicleId: car, driverId: driver || undefined } : null} value={notify} onChange={setNotify} />
       </div>
       )}
     </Drawer>

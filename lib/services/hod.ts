@@ -2,7 +2,7 @@ import 'server-only'
 import { HomecareRequest, MessageLog, ServiceType, User, Vehicle } from '../models'
 import { getSettings, HOD_CATEGORIES, type HodContact, type HodGroup } from '../settings'
 import { CAR_EVENTS, TRANSPORT_MODE_LABEL, VISIT_EVENTS, type AlertEvent, type VisitEvent } from '../constants'
-import { getTemplate, renderTemplate, waNumber } from '../messaging'
+import { getTemplate, picked, renderTemplate, waNumber, type NotifyOnly } from '../messaging'
 import { canQueue } from '../wa/status'
 import { dur, time as fmtTime } from '../format'
 
@@ -76,13 +76,14 @@ const CAR_TEMPLATE: Record<CarEvent, string> = {
 /**
  * WhatsApp the Security / Transport (or any) groups about a Unico car event on a request. CAR_OUT / CAR_BACK go once
  * per request and number (the driver's leg stamp and the team's live tracking can both report them).
+ * `only`: the people ticked in "Notify on WhatsApp" (unset = the groups' settings).
  */
-export async function carAlert(event: CarEvent, requestId: unknown, extra: { reason?: string; at?: Date; amount?: string } = {}) {
+export async function carAlert(event: CarEvent, requestId: unknown, extra: { reason?: string; at?: Date; amount?: string } = {}, only?: NotifyOnly) {
   const key = CAR_TEMPLATE[event]
   const r = await HomecareRequest.findById(requestId).lean<any>()
   if (!r?.transport?.needed) return 0
   if (event !== 'CAR_OWN' && r.transport.mode && r.transport.mode !== 'UNICO_CAR') return 0 // own transport: no hospital car involved
-  const to = await groupRecipients(event)
+  const to = (await groupRecipients(event)).filter((c) => picked(only, waNumber(c.phone)))
   if (!to.length || !(await canQueue())) return 0
   if ((await getTemplate(key)).isActive === false) return 0
   const [vehicle, driver] = await Promise.all([
@@ -163,7 +164,7 @@ const VISIT_ICON: Record<VisitEvent, string> = {
 
 export type VisitAlertExtra = { by?: string; staffName?: string; reason?: string; minutes?: number; at?: Date; onBehalf?: boolean }
 
-/** One line saying what just happened, e.g. "📍 HC-261102-0002 · Checked in 2:05 PM (4 min late)". */
+/** One line saying what just happened, e.g. "📍 Checked in 2:05 PM (4 min late)". */
 function visitLine(event: VisitEvent, r: any, x: VisitAlertExtra, team: string, trackLink: string) {
   const t = (d?: Date | string | null) => (d ? fmtTime(d) : fmtTime(new Date()))
   const tl = r.timeline ?? {}
@@ -183,16 +184,16 @@ function visitLine(event: VisitEvent, r: any, x: VisitAlertExtra, team: string, 
     RESCHEDULED: `Rescheduled to ${when}${by}`,
     CANCELLED: `Cancelled${by}${x.reason ? ` — ${x.reason}` : ''}`,
   }
-  return `${VISIT_ICON[event]} ${r.requestNo} · ${what[event]}`
+  return `${VISIT_ICON[event]} ${what[event]}` // no request number on WhatsApp; the template names the patient
 }
 
 /**
  * WhatsApp the groups that follow `event` (the built-in "Live updates — coordinators" group by default) the moment a
  * visit moves on. One message per number; never throws.
  */
-export async function visitAlert(event: VisitEvent, requestId: unknown, extra: VisitAlertExtra = {}) {
+export async function visitAlert(event: VisitEvent, requestId: unknown, extra: VisitAlertExtra = {}, only?: NotifyOnly) {
   try {
-    const to = await groupRecipients(event)
+    const to = (await groupRecipients(event)).filter((c) => picked(only, waNumber(c.phone)))
     if (!to.length || !(await canQueue())) return 0
     if ((await getTemplate('visit_live')).isActive === false) return 0
     const r = await HomecareRequest.findById(requestId).select('+tracking.shareToken').lean<any>()

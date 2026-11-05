@@ -40,14 +40,14 @@ export function TransportDocsCard({ initial, approvers, waPaired, approverSigned
         <FileText size={18} className="text-primary-700" />
         <h2 className="text-base font-bold">Car requisition &amp; gate pass</h2>
       </div>
-      <p className="mt-1 text-[13px] text-slate-500">When a Unico car is requested, the Vehicle Requisition Form (Annex-3) is filled and sent to the on-call security supervisor on WhatsApp. When a car is allotted, the completed form and a gate pass follow (the gate pass also goes to the driver).</p>
+      <p className="mt-1 text-[13px] text-slate-500">When the care team of a Unico-car visit is assigned, the Vehicle Requisition Form (Annex-3) is filled with the team and sent to the on-call security supervisor on WhatsApp (not when the request is created). When a car is allotted, the completed form and a gate pass follow (the gate pass also goes to the driver).</p>
       {!waPaired && <div className="mt-3 rounded-lg bg-[#FEF3C7] px-3 py-2 text-[13px] text-[#92400E]">WhatsApp is not paired — forms are still made and kept on the request, but not sent.</div>}
 
       <div className="mt-4 flex flex-col divide-y divide-slate-100">
         {(
           [
-            ['sendRequisition', 'Send the requisition when a car is requested'],
-            ['sendGatePass', 'Send the gate pass when a car is allotted'],
+            ['sendRequisition', 'Send the requisition once staff are assigned (ticked by default)'],
+            ['sendGatePass', 'Send the gate pass when a car is allotted (ticked by default)'],
           ] as const
         ).map(([k, label]) => (
           <div key={k} className="flex items-center justify-between gap-3 py-2.5">

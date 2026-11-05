@@ -10,10 +10,12 @@ import { useScanner } from '@/components/scanner/useScanner'
 import { SLOTS, ZONES, STATUS_COLORS, STATUS_LABEL, type Status } from '@/lib/constants'
 import { cx, isoDay, day as fmtDay, taka } from '@/lib/format'
 import { FLabel, SLabel, FixedBottom, bbtn, chipClass, ageG } from './ui'
+import { MobileTeamPicker, type Cand } from './AssignForm'
+import { NotifyPicker, type NotifyParams } from '@/components/client/NotifyPicker'
 
 type Svc = { code: string; name: string; fee?: number; defaultDurationMin?: number; category?: string }
 type Pt = { _id: string; name: string; ageYears?: number; gender?: string; phone: string; uhid?: string; address?: { area?: string; full?: string }; latest?: { count?: number; status?: string } | null }
-type Me = { name: string; initials: string; designation?: string; employeeId: string; roleLabel: string; isDesk: boolean; isField: boolean; canConfirm: boolean }
+type Me = { name: string; initials: string; designation?: string; employeeId: string; roleLabel: string; isDesk: boolean; isField: boolean; canConfirm: boolean; canAssign?: boolean }
 type From = { id: string; requestNo: string; status: string; time?: string; slot?: string }
 
 const QUICK = ['DOCTOR_VISIT', 'SAMPLE_COLLECTION', 'ECG_HOME', 'INJECTION_IV']
@@ -56,22 +58,22 @@ function Header({ title, sub, onBack, backHref, right }: { title: string; sub?: 
   )
 }
 
-function Steps({ n }: { n: number }) {
+function Steps({ n, of = 3 }: { n: number; of?: number }) {
   return (
-    <div className="grid grid-cols-3 gap-1">
-      {[1, 2, 3].map((i) => (
+    <div className={cx('grid gap-1', of === 4 ? 'grid-cols-4' : 'grid-cols-3')}>
+      {Array.from({ length: of }, (_, i) => i + 1).map((i) => (
         <div key={i} className={cx('h-1 rounded-full', i <= n ? 'bg-primary' : 'bg-slate-300')} />
       ))}
     </div>
   )
 }
 
-/** S1 quick request (default) · M19 three-step form ("More details") · M24 follow-up from a visit (?from=). */
+/** S1 quick request (default) · M19 steps ("More details"; coordinators get a 4th: assign staff) · M24 follow-up (?from=). */
 export function NewRequestForm({ me, services, initialPatient, from, backHref }: { me: Me; services: Svc[]; initialPatient?: Pt | null; from?: From | null; backHref: string }) {
   const router = useRouter()
   const toast = useToast()
   const followUp = !!from
-  const [mode, setMode] = useState<'quick' | 1 | 2 | 3>('quick')
+  const [mode, setMode] = useState<'quick' | 1 | 2 | 3 | 4>('quick')
   // patient
   const [patient, setPatient] = useState<Pt | null>(initialPatient ?? null)
   const [q, setQ] = useState('')
@@ -122,7 +124,13 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
   // submit
   const [busy, setBusy] = useState(false)
   const [dup, setDup] = useState<string | null>(null)
-  const [done, setDone] = useState<{ id: string; requestNo: string } | null>(null)
+  const [done, setDone] = useState<{ id: string; requestNo: string; status?: string } | null>(null)
+  // step 4 (coordinators): the care team, [0] primary — saved, confirmed and assigned in one call
+  const [team, setTeam] = useState<string[]>([])
+  const [teamSize, setTeamSize] = useState(1)
+  const [cands, setCands] = useState<Cand[] | null>(null)
+  const [instructions, setInstructions] = useState('')
+  const [notify, setNotify] = useState<string[] | null>(null) // "Notify on WhatsApp" (null = Settings defaults)
   const [nowLabel] = useState(() => new Date().toLocaleTimeString('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit' }))
 
   // patient search (phone / UHID / name)
@@ -173,9 +181,30 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
     setRemarks('')
     setFiles([])
     setQ('')
+    setTeam([])
+    setInstructions('')
   }
 
-  async function submit(ignoreDuplicate = false) {
+  // ranked candidates for the chosen services, day and area (the request isn't saved yet)
+  const candKey = mode === 4 ? JSON.stringify({ serviceCodes: codes, date: date || undefined, time: time || undefined, slot: slot || undefined, durationMin: duration ? Number(duration) : undefined, area: patient?.address?.area || area || guessArea(address) || undefined }) : ''
+  useEffect(() => {
+    if (!candKey) return
+    let live = true
+    setCands(null)
+    api<{ items: Cand[] }>('/requests/candidates', { body: JSON.parse(candKey) })
+      .then((r) => live && setCands(r.items))
+      .catch((e) => live && (setCands([]), toast(e.message, 'err')))
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candKey])
+  const notifyParams: NotifyParams | null =
+    me.isDesk || me.canConfirm
+      ? { events: mode === 4 && team.length ? ['NEW_REQUEST', 'ASSIGNED'] : ['NEW_REQUEST'], serviceCodes: codes, patient: { name: patient?.name ?? name, phone: patient?.phone ?? phone }, staffIds: mode === 4 ? team : undefined }
+      : null
+
+  async function submit(ignoreDuplicate = false, assignTeam = false) {
     if (!patientOk) return toast('Choose the patient or fill in name, contact and address', 'err')
     if (!serviceOk) return toast('Pick at least one service', 'err')
     if (!scheduleOk) return toast('Set the preferred date' + (mode === 'quick' && !followUp ? ' and time' : ''), 'err')
@@ -207,8 +236,10 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
         source,
         remarks: [followUp ? `Follow-up of ${from!.requestNo}` : '', remarks.trim()].filter(Boolean).join(' · ') || undefined,
         ignoreDuplicate: ignoreDuplicate || undefined,
+        ...(assignTeam && team.length ? { then: 'assign', assign: { primaryStaffId: team[0], secondaryStaffIds: team.slice(1), instructions: instructions.trim() || undefined } } : {}),
+        notify: notifyParams ? notify ?? undefined : undefined,
       }
-      const r = await api<{ id: string; requestNo: string }>('/requests', { body })
+      const r = await api<{ id: string; requestNo: string; status?: string }>('/requests', { body })
       for (const f of files) {
         try {
           await uploadFile(f, { kind: 'PRESCRIPTION', requestId: r.id })
@@ -250,15 +281,15 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
           </div>
           <div className="mt-4 text-[22px] font-bold">{done.requestNo}</div>
           <div className="mt-1 max-w-[300px] text-[14px] text-slate-500">
-            {me.canConfirm ? 'Created as NEW. Confirm it now, or leave it in the inbox.' : me.isDesk ? 'Created as NEW — it is in the coordinator’s inbox.' : 'It is in the coordinator’s inbox as NEW. You will get a notification when it is confirmed.'}
+            {done.status === 'ASSIGNED' ? 'Created, confirmed and assigned. The team has to accept it in the app.' : me.canConfirm ? 'Created as NEW. Confirm it now, or leave it in the inbox.' : me.isDesk ? 'Created as NEW — it is in the coordinator’s inbox.' : 'It is in the coordinator’s inbox as NEW. You will get a notification when it is confirmed.'}
           </div>
         </div>
         <FixedBottom>
           <button type="button" className={bbtn('o', 'flex-1')} onClick={reset}>
             New request
           </button>
-          <Link href={me.canConfirm ? `/m/admin/requests/${done.id}/confirm` : me.isDesk ? `/m/admin/requests/${done.id}` : backHref} className={bbtn('p', 'flex-[1.4]')}>
-            {me.canConfirm ? 'Confirm now' : me.isDesk ? 'Open request' : 'Done'}
+          <Link href={done.status === 'ASSIGNED' ? `/m/admin/requests/${done.id}` : me.canConfirm ? `/m/admin/requests/${done.id}/confirm` : me.isDesk ? `/m/admin/requests/${done.id}` : backHref} className={bbtn('p', 'flex-[1.4]')}>
+            {done.status === 'ASSIGNED' ? 'Open request' : me.canConfirm ? 'Confirm now' : me.isDesk ? 'Open request' : 'Done'}
           </Link>
         </FixedBottom>
       </>
@@ -524,9 +555,10 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
           <textarea className="hc-input hc-input-lg h-[76px] py-2.5" placeholder="Optional" value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
         <button type="button" onClick={() => setMode(1)} className="flex h-11 items-center justify-center rounded-xl border-[1.5px] border-dashed border-slate-300 text-[14px] font-semibold text-primary-700">
-          More details · priority, slot, clinical & payment
+          More details · priority, slot, clinical{me.canAssign ? ', assign staff' : ''}
         </button>
         <div className="text-center text-[12px] leading-[18px] text-slate-400">UHID, tests, team, transport and billing are added later by the coordinator, car supervisor and visiting staff.</div>
+        {notifyParams && <NotifyPicker params={notifyParams} value={notify} onChange={setNotify} />}
         {dupCard}
         <FixedBottom>
           <button type="button" disabled={busy} className={bbtn('p', 'flex-1')} onClick={() => submit()}>
@@ -538,8 +570,9 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
     )
 
   // ---------------------------------------------------------------- M19 three steps
-  const stepSub = mode === 1 ? 'Step 1 of 3 · Patient & address' : mode === 2 ? 'Step 2 of 3 · Service & schedule' : 'Step 3 of 3 · Clinical & payment'
-  const back = () => setMode(mode === 1 ? 'quick' : ((Number(mode) - 1) as 1 | 2))
+  const of = me.canAssign ? 4 : 3
+  const stepSub = mode === 1 ? `Step 1 of ${of} · Patient & address` : mode === 2 ? `Step 2 of ${of} · Service & schedule` : mode === 3 ? `Step 3 of ${of} · Clinical & source` : `Step 4 of ${of} · Assign staff (optional)`
+  const back = () => setMode(mode === 1 ? 'quick' : ((Number(mode) - 1) as 1 | 2 | 3))
   const pName = patient?.name ?? name
   const pLine = patient ? [ageG(patient.ageYears, patient.gender), patient.address?.area].filter(Boolean).join(' · ') : [ageG(age ? Number(age) : null, gender), area || guessArea(address)].filter(Boolean).join(' · ')
   const miniCard = (sub?: string) => (
@@ -561,7 +594,7 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
   return (
     <>
       <Header title="New request" sub={stepSub} onBack={back} backHref={backHref} />
-      <Steps n={Number(mode)} />
+      <Steps n={Number(mode)} of={of} />
       {mode === 1 && (
         <>
           {requestedBy}
@@ -717,7 +750,7 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
               Back
             </button>
             <button type="button" className={bbtn('p', 'flex-[1.8]')} onClick={() => (!serviceOk ? toast('Pick at least one service', 'err') : !date ? toast('Pick the preferred date', 'err') : setMode(3))}>
-              Next · Clinical & payment
+              Next · Clinical & source
             </button>
           </FixedBottom>
         </>
@@ -780,14 +813,55 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
             <FLabel>Internal remarks</FLabel>
             <textarea className="hc-input hc-input-lg h-[76px] py-2.5" placeholder="Visible to coordinator only" value={remarks} onChange={(e) => setRemarks(e.target.value)} />
           </div>
+          {notifyParams && <NotifyPicker params={notifyParams} value={notify} onChange={setNotify} />}
           {dupCard}
           <FixedBottom>
             <button type="button" className={bbtn('o', 'flex-1')} onClick={back}>
               Back
             </button>
-            <button type="button" disabled={busy} className={bbtn('p', 'flex-[1.8]')} onClick={() => submit()}>
+            {me.canAssign ? (
+              <>
+                <button type="button" disabled={busy} className={bbtn('o', 'flex-[1.4]')} onClick={() => submit()}>
+                  {busy && <Loader2 size={18} className="animate-spin" />}
+                  Create
+                </button>
+                <button type="button" className={bbtn('p', 'flex-[1.8]')} onClick={() => setMode(4)}>
+                  Next · Assign
+                </button>
+              </>
+            ) : (
+              <button type="button" disabled={busy} className={bbtn('p', 'flex-[1.8]')} onClick={() => submit()}>
+                {busy && <Loader2 size={18} className="animate-spin" />}
+                {me.isDesk ? 'Create request' : 'Submit to coordinator'}
+              </button>
+            )}
+          </FixedBottom>
+        </>
+      )}
+
+      {mode === 4 && (
+        <>
+          {miniCard([codes.map((c) => svcByCode[c]?.name).join(', ') || other, date && dayLabel(date), slot || time].filter(Boolean).join(' · '))}
+          {!cands ? (
+            <div className="flex h-24 items-center justify-center text-slate-400">
+              <Loader2 size={20} className="animate-spin" />
+            </div>
+          ) : (
+            <MobileTeamPicker candidates={cands} picked={team} setPicked={setTeam} size={teamSize} setSize={setTeamSize} />
+          )}
+          <div>
+            <FLabel>Instructions to team</FLabel>
+            <textarea className="hc-input hc-input-lg h-20 py-2.5" placeholder="Optional" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
+          </div>
+          {notifyParams && <NotifyPicker params={notifyParams} value={notify} onChange={setNotify} />}
+          {dupCard}
+          <FixedBottom note={team.length && team.length !== teamSize ? `Pick ${teamSize - team.length} more or lower the team number` : undefined}>
+            <button type="button" className={bbtn('o', 'flex-1')} onClick={back}>
+              Back
+            </button>
+            <button type="button" disabled={busy || !team.length || team.length !== teamSize} className={bbtn('p', 'flex-[1.8]')} onClick={() => submit(false, true)}>
               {busy && <Loader2 size={18} className="animate-spin" />}
-              {me.isDesk ? 'Create request' : 'Submit to coordinator'}
+              {team.length ? `Create & assign ${team.length}` : 'Pick the care team'}
             </button>
           </FixedBottom>
         </>

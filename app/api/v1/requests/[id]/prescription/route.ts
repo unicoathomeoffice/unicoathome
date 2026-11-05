@@ -75,7 +75,7 @@ export const POST = route<{ id: string }>(async ({ req, user, params }) => {
   let wa: { url: string; logId: string } | null = null
   if (p?.phone && p.consent?.whatsapp !== false) {
     const link = await shortLink(`/print/report/${r._id}`, { kind: 'REPORT', requestId: r._id })
-    const text = `Dear ${p.name}, your prescription from Unico Hospitals Home Care (${r.requestNo}) is ready. Open it here: ${link}\n— ${user.name}, Family Medicine`
+    const text = `Dear ${p.name}, your prescription from Unico Hospitals Home Care is ready. Open it here: ${link}\n— ${user.name}, Family Medicine`
     wa = await prepareWhatsApp({ to: p.phone, toName: p.name, text, templateKey: 'prescription_ready', requestId: r._id, patientId: r.patientId, initiatedBy: user.id })
     rx.sentAt = new Date()
   }

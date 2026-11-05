@@ -33,7 +33,7 @@ export const POST = route<{ id: string }>(async ({ req, user, params }) => {
   const code = String(randomInt(0, 10000)).padStart(4, '0')
   const expiresAt = new Date(Date.now() + TTL_MIN * 60_000)
   await Setting.updateOne({ key: key(r._id) }, { value: { hash: hash(r._id, code), expiresAt, attempts: 0, by: user.id }, updatedBy: user.id }, { upsert: true })
-  const msg = (c: string) => `Unico HomeCare: your visit confirmation code is ${c}. Share it with ${user.name} only if the visit ${r.requestNo} took place today. Valid for ${TTL_MIN} minutes.`
+  const msg = (c: string) => `Unico HomeCare: your visit confirmation code is ${c}. Share it with ${user.name} only if the home visit took place today. Valid for ${TTL_MIN} minutes.`
   const wa = await prepareWhatsApp({ to: phone, toName: p?.name, text: msg('••••'), templateKey: 'visit_otp', requestId: r._id, patientId: r.patientId, initiatedBy: user.id })
   await audit(user, 'visit.otp_sent', 'request', r._id, { after: { to: wa.to, expiresAt }, label: r.requestNo }, clientMeta(req, user))
   return { url: waLink(phone, msg(code)), logId: wa.logId, expiresAt, to: mask(phone), ttlMin: TTL_MIN }
