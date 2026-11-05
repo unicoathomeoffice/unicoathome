@@ -107,11 +107,34 @@ export async function importH360Bill(r: any, invoiceNo: string, opts: { otherPat
   return { invoiceNo, status: r.billing.status }
 }
 
+export type RebillHint = { invoiceNo: string; at: Date | null; total: number; payable: number; paid: number; due: number; minutes: number }
+const REBILL_WINDOW_MIN = 180
+
+/**
+ * The counter sometimes re-bills a visit (wrong item, new discount): the first bill stays unpaid in H360 and the new one
+ * is paid. For a bill still due, find the same patient's bill made within ±3 h that is paid more — the likely re-bill.
+ */
+export async function findRebill(b: H360Bill, skip: string[]): Promise<RebillHint | null> {
+  if (!b.uhid || !b.at) return null
+  const at = new Date(b.at)
+  const bills = await searchBills({ uhid: b.uhid, from: new Date(at.getTime() - DAY), to: new Date(at.getTime() + DAY) })
+  const hits = bills
+    .filter((x) => x.invoiceNo !== b.invoiceNo && !skip.includes(x.invoiceNo) && x.at && x.paid > b.paid && (x.due <= 0 || x.paid > 0))
+    .map((x) => ({ x, minutes: Math.round((new Date(x.at!).getTime() - at.getTime()) / 60_000) }))
+    .filter((h) => Math.abs(h.minutes) <= REBILL_WINDOW_MIN)
+    .sort((a, c) => Math.abs(a.minutes) - Math.abs(c.minutes))
+  const h = hits[0]
+  return h ? { invoiceNo: h.x.invoiceNo, at: new Date(h.x.at!), total: h.x.total, payable: h.x.payable, paid: h.x.paid, due: h.x.due, minutes: h.minutes } : null
+}
+
 /** Refresh paid / due of every H360-numbered invoice on the request; a new payment brings the newer bill copy. */
 export async function syncH360Bills(r: any, user: SessionUser, meta: Meta) {
-  const list = (r.billing?.invoices ?? []).filter((x: any) => /^\d{4,7}$/.test(x.invoiceNo ?? ''))
+  const list = (r.billing?.invoices ?? []).filter((x: any) => /^\d{4,7}$/.test(x.invoiceNo ?? '') && !x.replacedBy)
+  const onRequest = (r.billing?.invoices ?? []).map((x: any) => x.invoiceNo).filter(Boolean)
   let changed = 0
   const errors: string[] = []
+  const hints: { invoiceNo: string; hint: RebillHint }[] = []
+  const kept: string[] = []
   for (const inv of list) {
     try {
       const [b] = (await searchBills({ invoiceNo: inv.invoiceNo })).filter((x) => x.invoiceNo === inv.invoiceNo)
@@ -119,7 +142,12 @@ export async function syncH360Bills(r: any, user: SessionUser, meta: Meta) {
         errors.push(`${inv.invoiceNo}: not found in H360`)
         continue
       }
-      const next = amounts({ total: b.total, discount: b.discount, payable: b.payable, paid: b.paid, due: b.due })
+      let next = amounts({ total: b.total, discount: b.discount, payable: b.payable, paid: b.paid, due: b.due })
+      // marked paid by hand (receipt / MR no): H360 showing less never undoes it
+      if (inv.manualPayment && next.paid < (inv.paid ?? 0)) {
+        next = { ...next, paid: inv.paid, due: Math.max(0, next.payable - inv.paid) }
+        kept.push(inv.invoiceNo)
+      }
       const moved = next.paid !== inv.paid || next.due !== inv.due || next.total !== inv.total
       const newTrx = b.trx[b.trx.length - 1]
       if (moved || (inv.source === 'H360' && newTrx && newTrx !== inv.trxId)) {
@@ -133,6 +161,12 @@ export async function syncH360Bills(r: any, user: SessionUser, meta: Meta) {
         await audit(user, 'request.bill_update', 'request', r._id, { before, after: { invoiceNo: inv.invoiceNo, ...next, source: 'H360 refresh' }, label: r.requestNo }, meta)
       }
       inv.h360SyncedAt = new Date()
+      // still due: look for the paid re-bill of the same patient (shown on the Invoice tab to replace it)
+      if ((inv.due ?? 0) > 0 && !inv.manualPayment) {
+        const hint = await findRebill(b, onRequest).catch(() => null)
+        inv.h360Hint = hint ?? undefined
+        if (hint) hints.push({ invoiceNo: inv.invoiceNo, hint })
+      } else inv.h360Hint = undefined
     } catch (e) {
       if (e instanceof H360Error && (e.code === 'AUTH' || e.code === 'NOT_CONFIGURED' || e.code === 'DOWN')) throw e
       errors.push(`${inv.invoiceNo}: ${(e as Error).message}`)
@@ -140,5 +174,32 @@ export async function syncH360Bills(r: any, user: SessionUser, meta: Meta) {
   }
   recompute(r)
   await r.save()
-  return { checked: list.length, changed, errors, status: r.billing.status }
+  return { checked: list.length, changed, errors, status: r.billing.status, hints, kept }
+}
+
+/**
+ * Act on a re-bill hint: `replace` adds the new H360 bill and keeps the old one only for history (out of the totals),
+ * `add` adds it next to the old one, `dismiss` forgets the hint.
+ */
+export async function applyRebill(r: any, invoiceId: string, input: { invoiceNo: string; mode: 'replace' | 'add' | 'dismiss' }, user: SessionUser, meta: Meta) {
+  const old = r.billing?.invoices?.id(invoiceId)
+  if (!old) throw notFound('Invoice')
+  if (input.mode === 'dismiss') {
+    old.h360Hint = undefined
+    await r.save()
+    await audit(user, 'request.bill_hint_dismiss', 'request', r._id, { after: { invoiceNo: old.invoiceNo, hint: input.invoiceNo }, label: r.requestNo }, meta)
+    return { status: r.billing.status }
+  }
+  await importH360Bill(r, input.invoiceNo, { otherPatient: true }, user, meta) // saves + audits the new bill
+  const again = r.billing.invoices.id(invoiceId)
+  again.h360Hint = undefined
+  if (input.mode === 'replace') {
+    again.replacedBy = input.invoiceNo
+    again.replacedAt = new Date()
+    again.replacedByUser = user.id
+  }
+  recompute(r)
+  await r.save()
+  if (input.mode === 'replace') await audit(user, 'request.bill_replace', 'request', r._id, { before: { invoiceNo: old.invoiceNo, payable: old.payable, due: old.due }, after: { replacedBy: input.invoiceNo }, label: r.requestNo }, meta)
+  return { status: r.billing.status }
 }

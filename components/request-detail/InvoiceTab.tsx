@@ -3,7 +3,7 @@
 // (Paid / Partially paid / Due / Waived) and sending the bill files on WhatsApp to the patient and care team.
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Building2, Check, ClipboardPaste, Download, Eye, FileText, Loader2, MessageCircle, Pencil, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react'
+import { Banknote, Building2, Check, CheckCircle2, ClipboardPaste, Download, Eye, FileText, Loader2, MessageCircle, Pencil, Plus, RefreshCw, Replace, Search, Trash2, Upload } from 'lucide-react'
 import { api, Drawer, useToast, compressImage } from '@/components/client'
 import { readBill } from '@/components/client/bill-reader'
 import { useConfirmSend } from '@/components/client/ConfirmSend'
@@ -11,9 +11,32 @@ import { usePasteFiles, readClipboardFiles } from '@/components/client/paste'
 import type { BillItem, ParsedBill } from '@/lib/bill-parse'
 import { btnClass } from '@/components/ui'
 import { useScanner } from '@/components/scanner/useScanner'
-import { cx, taka } from '@/lib/format'
+import { cx, taka, time, day as dayOf } from '@/lib/format'
 
-type Invoice = { _id: string; invoiceNo: string; date?: string; total: number; discount?: number; payable: number; paid: number; due: number; attachmentId?: string; source?: 'UPLOAD' | 'H360'; note?: string; trxId?: string; items?: BillItem[]; needsDetails?: boolean; h360SyncedAt?: string }
+type Invoice = {
+  _id: string
+  invoiceNo: string
+  date?: string
+  total: number
+  discount?: number
+  payable: number
+  paid: number
+  due: number
+  attachmentId?: string
+  source?: 'UPLOAD' | 'H360'
+  note?: string
+  trxId?: string
+  items?: BillItem[]
+  needsDetails?: boolean
+  h360SyncedAt?: string
+  /** the counter re-billed in H360: replaced by this invoice (left out of the totals) */
+  replacedBy?: string
+  replacedAt?: string
+  /** marked paid by hand at the counter */
+  manualPayment?: { amount: number; receiptNo?: string; note?: string; at?: string; byName?: string }
+  /** still due in H360, but the same patient has a paid bill made close to it — likely the re-bill */
+  h360Hint?: { invoiceNo: string; at?: string; total: number; payable: number; paid: number; due: number; minutes: number }
+}
 type Person = { id: string; name: string; role: string; phone?: string }
 type Sent = { _id: string; at: string; toName?: string; to: string; status: string; error?: string; fileName?: string }
 
@@ -57,6 +80,22 @@ export function InvoiceTab({
   const [sending, setSending] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null) // invoice whose items are shown
+  const [pay, setPay] = useState<null | { inv: Invoice; full: boolean }>(null) // mark paid / record payment
+  async function rebill(inv: Invoice, mode: 'replace' | 'add' | 'dismiss') {
+    const h = inv.h360Hint
+    if (!h) return
+    if (mode !== 'dismiss' && !confirm(mode === 'replace' ? `Replace ${inv.invoiceNo} with ${h.invoiceNo}?\n\n${h.invoiceNo} (${taka(h.payable)}, paid ${taka(h.paid)}) is added from H360; ${inv.invoiceNo} stays listed as "replaced" and no longer counts.` : `Add ${h.invoiceNo} from H360 as well (both count)?`)) return
+    setBusy(`rebill-${inv._id}`)
+    try {
+      await api(`/requests/${requestId}/bills/${inv._id}/rebill`, { body: { invoiceNo: h.invoiceNo, mode } })
+      toast(mode === 'replace' ? `${inv.invoiceNo} replaced by ${h.invoiceNo}` : mode === 'add' ? `${h.invoiceNo} added` : 'Hint dismissed', 'ok')
+      router.refresh()
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setBusy(null)
+    }
+  }
   const st = billing.status ? STATUS[billing.status] : null
 
   async function remove(inv: Invoice) {
@@ -165,13 +204,14 @@ export function InvoiceTab({
               </thead>
               <tbody>
                 {billing.invoices.map((inv) => {
-                  const s = inv.needsDetails ? { label: 'Needs details', cls: 'bg-[#FEF3C7] text-[#B45309]' } : inv.due <= 0 ? STATUS.PAID : inv.paid <= 0 ? STATUS.DUE : STATUS.PARTIAL
+                  const s = inv.replacedBy ? { label: 'Replaced', cls: 'bg-slate-100 text-slate-500' } : inv.needsDetails ? { label: 'Needs details', cls: 'bg-[#FEF3C7] text-[#B45309]' } : inv.due <= 0 ? STATUS.PAID : inv.paid <= 0 ? STATUS.DUE : STATUS.PARTIAL
                   return (
                     <Fragment key={inv._id}>
-                    <tr className="border-t border-slate-100">
+                    <tr className={cx('border-t border-slate-100', inv.replacedBy && 'text-slate-400 [&_td:nth-child(n+3):nth-child(-n+7)]:line-through')}>
                       <td className="px-3 py-2.5 font-semibold">
                         {inv.invoiceNo || <span className="text-[#B45309]">—</span>}
                         {inv.source === 'H360' && <span className="ml-1.5 rounded bg-slate-100 px-1.5 py-0.5 text-[10.5px] font-bold text-slate-500">H360</span>}
+                        {inv.replacedBy && <span className="block text-[11.5px] font-semibold text-slate-500">replaced by {inv.replacedBy}</span>}
                         {!!inv.items?.length && (
                           <button type="button" onClick={() => setOpen(open === inv._id ? null : inv._id)} className="block text-[11.5px] font-semibold text-primary-700 hover:underline">
                             {inv.items.length} items {open === inv._id ? '▴' : '▾'}
@@ -186,6 +226,12 @@ export function InvoiceTab({
                       <td className={cx('px-3 py-2.5', inv.due > 0 && 'font-semibold text-[#B91C1C]')}>{taka(inv.due)}</td>
                       <td className="px-3 py-2.5">
                         <span className={cx('rounded-full px-2 py-0.5 text-[11.5px] font-bold', s.cls)}>{s.label}</span>
+                        {inv.manualPayment && !inv.replacedBy && (
+                          <span className="mt-0.5 block text-[11px] leading-[14px] text-slate-500" title={inv.manualPayment.note}>
+                            by hand{inv.manualPayment.receiptNo ? ` · MR ${inv.manualPayment.receiptNo}` : ''}
+                            {inv.manualPayment.at ? ` · ${dayOf(inv.manualPayment.at)} ${time(inv.manualPayment.at)}` : ''}
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex justify-end gap-1">
@@ -195,6 +241,16 @@ export function InvoiceTab({
                             </a>
                           ) : (
                             <span className="flex h-8 items-center px-1 text-[11.5px] text-[#B45309]">no file</span>
+                          )}
+                          {canEdit && !inv.replacedBy && inv.due > 0 && !inv.needsDetails && (
+                            <>
+                              <button type="button" onClick={() => setPay({ inv, full: true })} className="flex h-8 items-center gap-1 rounded-lg px-2 text-[12px] font-semibold text-[#15803D] hover:bg-[#F0FDF4]" title="Paid in full at the counter">
+                                <CheckCircle2 size={15} /> Mark paid
+                              </button>
+                              <button type="button" onClick={() => setPay({ inv, full: false })} className="flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-50 hover:text-primary-700" title="Record a payment (amount + receipt no)">
+                                <Banknote size={15} />
+                              </button>
+                            </>
                           )}
                           {canEdit && (
                             <>
@@ -209,6 +265,33 @@ export function InvoiceTab({
                         </div>
                       </td>
                     </tr>
+                    {inv.h360Hint && !inv.replacedBy && (
+                      <tr>
+                        <td colSpan={9} className="px-3 pb-3">
+                          <div className="flex flex-wrap items-center gap-2.5 rounded-lg bg-[#FFFBEB] px-3 py-2.5 text-[13px] text-[#92400E] ring-1 ring-[#FDE68A]">
+                            <Replace size={16} className="flex-none" />
+                            <span className="min-w-0 flex-1">
+                              Still due in H360. <b>{inv.h360Hint.invoiceNo}</b>
+                              {inv.h360Hint.at ? ` · ${dayOf(inv.h360Hint.at)} ${time(inv.h360Hint.at)}` : ''} ({Math.abs(inv.h360Hint.minutes)} min {inv.h360Hint.minutes >= 0 ? 'later' : 'earlier'}) · {taka(inv.h360Hint.total)} · paid {taka(inv.h360Hint.paid)}
+                              {inv.h360Hint.due > 0 ? ` · due ${taka(inv.h360Hint.due)}` : ''} — looks like the re-billed copy.
+                            </span>
+                            {canEdit && (
+                              <span className="flex flex-wrap gap-1.5">
+                                <button type="button" disabled={busy === `rebill-${inv._id}`} onClick={() => rebill(inv, 'replace')} className={btnClass('p', 'sm')}>
+                                  {busy === `rebill-${inv._id}` ? <Loader2 size={14} className="animate-spin" /> : <Replace size={14} />} Replace with {inv.h360Hint.invoiceNo}
+                                </button>
+                                <button type="button" disabled={busy === `rebill-${inv._id}`} onClick={() => rebill(inv, 'add')} className={btnClass('o', 'sm', 'bg-white')}>
+                                  Add {inv.h360Hint.invoiceNo} too
+                                </button>
+                                <button type="button" disabled={busy === `rebill-${inv._id}`} onClick={() => rebill(inv, 'dismiss')} className={btnClass('ghost', 'sm')}>
+                                  Dismiss
+                                </button>
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
                     {open === inv._id && !!inv.items?.length && (
                       <tr>
                         <td colSpan={9} className="px-3 pb-3">
@@ -247,6 +330,7 @@ export function InvoiceTab({
       )}
 
       {form && <InvoiceForm requestId={requestId} edit={form.edit} h360={h360} patientUhid={patientUhid} onClose={() => setForm(null)} />}
+      {pay && <PaymentForm requestId={requestId} inv={pay.inv} full={pay.full} onClose={() => setPay(null)} />}
       {sending && <SendDrawer requestId={requestId} invoices={billing.invoices} team={team} patient={patient} waPaired={waPaired} onClose={() => setSending(false)} />}
     </div>
   )
@@ -650,8 +734,16 @@ function H360Bills({ requestId, canEdit, hasNumbered }: { requestId: string; can
   async function refresh() {
     setBusy('sync')
     try {
-      const r = await api<{ checked: number; changed: number; errors: string[] }>(`/requests/${requestId}/bills/h360/sync`, { method: 'POST' })
-      toast(r.changed ? `${r.changed} invoice${r.changed === 1 ? '' : 's'} updated from H360` : `Up to date with H360 (${r.checked} checked)`, r.errors.length ? 'err' : 'ok')
+      const r = await api<{ checked: number; changed: number; errors: string[]; hints?: { invoiceNo: string; hint: { invoiceNo: string } }[]; kept?: string[] }>(`/requests/${requestId}/bills/h360/sync`, { method: 'POST' })
+      const hint = r.hints?.[0]
+      toast(
+        hint
+          ? `${hint.invoiceNo} is still due in H360 — ${hint.hint.invoiceNo} looks like its paid re-bill (see below)`
+          : r.changed
+            ? `${r.changed} invoice${r.changed === 1 ? '' : 's'} updated from H360`
+            : `Up to date with H360 (${r.checked} checked)${r.kept?.length ? ` · kept the payment marked by hand on ${r.kept.join(', ')}` : ''}`,
+        r.errors.length ? 'err' : 'ok',
+      )
       router.refresh()
       load(q.trim())
     } catch (e: any) {
@@ -820,6 +912,83 @@ function SendDrawer({ requestId, invoices, team, patient, waPaired, onClose }: {
           <span className="hc-label">Send to</span>
           {check(toPatient, () => setToPatient(!toPatient), <span>Patient · {patient.name} {patient.optOut ? '(opted out of WhatsApp)' : patient.phone ? `· ${patient.phone}` : '(no phone)'}</span>, patient.optOut || !patient.phone)}
           {team.map((p) => check(staff.includes(p.id), () => setStaff(toggle(staff, p.id)), <span>{p.name} · {p.role === 'DRIVER' ? 'Driver' : 'Care team'}</span>, !p.phone))}
+        </div>
+      </div>
+    </Drawer>
+  )
+}
+
+/** Paid at the counter, marked by hand: in full or an amount, with the receipt / MR no. A later H360 refresh keeps it. */
+function PaymentForm({ requestId, inv, full: fullStart, onClose }: { requestId: string; inv: Invoice; full: boolean; onClose: () => void }) {
+  const router = useRouter()
+  const toast = useToast()
+  const [full, setFull] = useState(fullStart)
+  const [amount, setAmount] = useState(String(inv.payable ?? 0))
+  const [receiptNo, setReceiptNo] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState(false)
+  const amt = full ? inv.payable : Number(amount) || 0
+  async function save() {
+    if (!full && !(amt > 0)) return toast('Enter the amount paid', 'err')
+    setBusy(true)
+    try {
+      await api(`/requests/${requestId}/bills/${inv._id}/payment`, { body: { amount: full ? undefined : amt, receiptNo: receiptNo.trim() || undefined, note: note.trim() || undefined } })
+      toast(`${inv.invoiceNo || 'Invoice'} · ${amt >= inv.payable ? 'paid in full' : `${taka(amt)} paid`}`, 'ok')
+      router.refresh()
+      onClose()
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title={full ? `Mark ${inv.invoiceNo || 'invoice'} paid` : `Record payment · ${inv.invoiceNo || 'invoice'}`}
+      sub={`Payable ${taka(inv.payable)} · paid so far ${taka(inv.paid)} · due ${taka(inv.due)}`}
+      width={440}
+      footer={
+        <div className="flex w-full justify-end gap-2.5">
+          <button type="button" className={btnClass('o')} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className={btnClass('g')} disabled={busy} onClick={save}>
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} {full ? `Mark paid · ${taka(inv.payable)}` : `Save · ${taka(amt)}`}
+          </button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-3.5">
+        <div className="flex gap-[3px] rounded-[10px] bg-slate-200 p-[3px]">
+          {(
+            [
+              [true, 'Paid in full'],
+              [false, 'Part / other amount'],
+            ] as const
+          ).map(([v, l]) => (
+            <button key={l} type="button" onClick={() => setFull(v)} className={cx('h-9 flex-1 rounded-lg text-sm font-semibold', full === v ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,.1)]' : 'text-slate-500')}>
+              {l}
+            </button>
+          ))}
+        </div>
+        {!full && (
+          <label>
+            <span className="hc-label">Amount paid (total so far, ৳)</span>
+            <input className="hc-input" inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))} />
+          </label>
+        )}
+        <label>
+          <span className="hc-label">Receipt / MR no (optional)</span>
+          <input className="hc-input" value={receiptNo} onChange={(e) => setReceiptNo(e.target.value)} placeholder="e.g. 202610117" />
+        </label>
+        <label>
+          <span className="hc-label">Note (optional)</span>
+          <input className="hc-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. paid at cash counter, bKash" />
+        </label>
+        <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-[12.5px] text-slate-600">
+          Recorded with your name and the time. “Refresh paid / due” from H360 won’t lower it — if H360 later shows the payment, the numbers simply match.
         </div>
       </div>
     </Drawer>

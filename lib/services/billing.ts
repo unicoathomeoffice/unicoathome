@@ -71,7 +71,7 @@ export function amounts(i: { total: number; discount?: number; payable?: number;
 
 /** Request totals + status from its invoices; billing.invoiceNo / invoiceAmount stay in step for close-out and reports. */
 export function recompute(r: any) {
-  const list = r.billing?.invoices ?? []
+  const list = (r.billing?.invoices ?? []).filter((x: any) => !x.replacedBy) // a re-billed (replaced) invoice no longer counts
   const payable = list.reduce((a: number, x: any) => a + (x.payable ?? 0), 0)
   const paid = list.reduce((a: number, x: any) => a + (x.paid ?? 0), 0)
   const due = list.reduce((a: number, x: any) => a + (x.due ?? 0), 0)
@@ -142,6 +142,29 @@ export async function removeInvoice(r: any, invoiceId: string, user: SessionUser
   recompute(r)
   await r.save()
   await audit(user, 'request.bill_unlink', 'request', r._id, { before, label: r.requestNo }, meta)
+}
+
+/** Paid at the counter, marked by hand: in full (no amount) or a given amount, with the receipt / MR no. */
+export const PaymentInput = z.object({
+  amount: z.coerce.number().min(0).max(10_000_000).optional(),
+  receiptNo: z.string().trim().max(40).optional(),
+  note: z.string().trim().max(300).optional(),
+})
+export async function markInvoicePaid(r: any, invoiceId: string, input: z.infer<typeof PaymentInput>, user: SessionUser, meta: Meta) {
+  needBilling(user)
+  const inv = r.billing?.invoices?.id(invoiceId)
+  if (!inv) throw notFound('Invoice')
+  if (inv.replacedBy) throw bad(`Invoice ${inv.invoiceNo} was replaced by ${inv.replacedBy}`)
+  const before = { paid: inv.paid, due: inv.due }
+  const payable = inv.payable ?? 0
+  const paid = Math.min(payable, input.amount ?? payable)
+  Object.assign(inv, { paid, due: Math.max(0, payable - paid), updatedAt: new Date() })
+  inv.manualPayment = { amount: paid, receiptNo: input.receiptNo || undefined, note: input.note || undefined, by: user.id, at: new Date() }
+  inv.h360Hint = undefined
+  recompute(r)
+  await r.save()
+  await audit(user, 'request.bill_paid_manual', 'request', r._id, { before, after: { invoiceNo: inv.invoiceNo, paid, due: inv.due, receiptNo: input.receiptNo, note: input.note }, label: r.requestNo }, meta)
+  return { status: r.billing.status }
 }
 
 export async function setBillingStatus(r: any, status: 'PAID' | 'PARTIAL' | 'DUE' | 'WAIVED' | null, user: SessionUser, meta: Meta) {

@@ -321,6 +321,14 @@ const RequestSchema = new Schema<any>(
           needsDetails: Boolean,
           /** last time paid / due were refreshed from H360 */
           h360SyncedAt: Date,
+          /** the counter re-billed: replaced by another H360 bill (kept for history, left out of totals) */
+          replacedBy: String,
+          replacedAt: Date,
+          replacedByUser: { type: ObjectId, ref: 'User' },
+          /** paid at the counter, marked by hand (receipt / MR no) — a later H360 refresh never lowers it */
+          manualPayment: { amount: Number, receiptNo: String, note: String, by: { type: ObjectId, ref: 'User' }, at: Date },
+          /** still due in H360, but this patient has a paid bill billed close to it — most likely the re-bill */
+          h360Hint: { invoiceNo: String, at: Date, total: Number, payable: Number, paid: Number, due: Number, minutes: Number },
           addedBy: { type: ObjectId, ref: 'User' },
           addedAt: Date,
           updatedAt: Date,
