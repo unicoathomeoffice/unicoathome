@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Check, Loader2, ChevronDown } from 'lucide-react'
 import { api, useAction, useToast, Toggle } from '@/components/client'
 import { NotifyPicker } from '@/components/client/NotifyPicker'
+import { HisStaffSearch, type AddedStaff } from '@/components/assign/HisStaffSearch'
 import { cx } from '@/lib/format'
 import { FLabel, SLabel, FixedBottom, bbtn, scoreColor } from './ui'
 
@@ -20,6 +21,8 @@ export type Cand = {
   visitsToday: number
   availability: string
   badges: string[]
+  /** outside staff from the HIS (no app) */
+  external?: boolean
 }
 
 const GROUPS: { role: string; label: string }[] = [
@@ -29,9 +32,21 @@ const GROUPS: { role: string; label: string }[] = [
 ]
 
 /** Team number + ranked candidates grouped by role; the first pick is primary. Used by S3 and the new request form. */
-export function MobileTeamPicker({ candidates, need = {}, picked, setPicked, size, setSize }: { candidates: Cand[]; need?: Record<string, number>; picked: string[]; setPicked: (v: string[]) => void; size: number; setSize: (n: number) => void }) {
+export function MobileTeamPicker({ candidates: ranked, need = {}, picked, setPicked, size, setSize, onOutside }: { candidates: Cand[]; need?: Record<string, number>; picked: string[]; setPicked: (v: string[]) => void; size: number; setSize: (n: number) => void; onOutside?: (id: string) => void }) {
   const [open, setOpen] = useState<Record<string, boolean>>({})
+  const [extra, setExtra] = useState<Cand[]>([]) // picked from the HIS search
+  const candidates = useMemo(() => [...extra.filter((e) => !ranked.some((c) => c.id === e.id)), ...ranked], [extra, ranked])
   const toast = useToast()
+  function addOutside(s: AddedStaff) {
+    const c: Cand = { id: s.id, name: s.name, initials: s.name.split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase(), role: s.role, designation: s.designation, employeeId: s.employeeId, score: 0, free: true, zoneMatch: false, skillMatch: false, visitsToday: 0, availability: 'ON_DUTY', badges: s.external ? ['Outside · HIS'] : [], external: s.external }
+    setExtra((x) => [c, ...x.filter((e) => e.id !== c.id)])
+    if (s.external) onOutside?.(c.id)
+    if (picked.includes(c.id)) return
+    const next = [...picked, c.id]
+    if (next.length > 5) return toast('A care team has at most 5 people', 'err')
+    if (next.length > size) setSize(next.length)
+    setPicked(next)
+  }
   const byRole = useMemo(() => Object.fromEntries(GROUPS.map((g) => [g.role, candidates.filter((c) => c.role === g.role)])), [candidates])
 
   function toggle(c: Cand) {
@@ -118,38 +133,43 @@ export function MobileTeamPicker({ candidates, need = {}, picked, setPicked, siz
         )
       })}
       {!candidates.length && <div className="rounded-card bg-white p-5 text-center text-[14px] text-slate-500 shadow-card">No active field staff found. Try another slot or check staff availability.</div>}
+      <HisStaffSearch big taken={picked} onAdd={addOutside} />
     </>
   )
 }
 
 /** S3 / M18 — team number, ranked candidates grouped by role, primary + others, instructions, "Notify on WhatsApp". */
-export function AssignForm({ id, requestNo, candidates, need, initialTeam, initialSize, instructions: initialInstr, transport, canOverride = false }: { id: string; requestNo: string; candidates: Cand[]; need: Record<string, number>; initialTeam: string[]; initialSize: number; instructions?: string; transport: boolean; canOverride?: boolean }) {
-  const [acceptNow, setAcceptNow] = useState(canOverride)
+export function AssignForm({ id, requestNo, candidates, need, initialTeam, initialSize, instructions: initialInstr, transport, canOverride = false, canActForExternal = false }: { id: string; requestNo: string; candidates: Cand[]; need: Record<string, number>; initialTeam: string[]; initialSize: number; instructions?: string; transport: boolean; canOverride?: boolean; canActForExternal?: boolean }) {
+  const [acceptNow, setAcceptNow] = useState(true)
   const [size, setSize] = useState(Math.min(5, Math.max(1, initialSize)))
   const [picked, setPicked] = useState<string[]>(initialTeam)
+  const [outside, setOutside] = useState<string[]>(candidates.filter((c) => c.external).map((c) => c.id))
+  // outside staff have no app: a coordinator accepts for them (override users may do it for anyone)
+  const canAccept = canOverride || (canActForExternal && outside.includes(picked[0]))
+  const accepting = canAccept && acceptNow
   const [instructions, setInstructions] = useState(initialInstr ?? '')
   const [notify, setNotify] = useState<string[] | null>(null)
   const { run, busy } = useAction()
   const ready = picked.length === size
   return (
     <>
-      <MobileTeamPicker candidates={candidates} need={need} picked={picked} setPicked={setPicked} size={size} setSize={setSize} />
+      <MobileTeamPicker candidates={candidates} need={need} picked={picked} setPicked={setPicked} size={size} setSize={setSize} onOutside={(x) => setOutside((o) => [...o, x])} />
 
       <div>
         <FLabel>Instructions to team</FLabel>
         <textarea className="hc-input hc-input-lg h-20 py-2.5" placeholder="Optional" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
       </div>
-      {canOverride && (
+      {canAccept && (
         <div className="flex items-center justify-between gap-3 rounded-card bg-[#FFFBEB] px-3.5 py-3 ring-1 ring-[#FDE68A]">
           <div className="text-[13.5px]">
             <b>Accept on their behalf</b>
-            <div className="text-[12px] text-slate-600">No waiting for the staff to tap Accept (override, audited)</div>
+            <div className="text-[12px] text-slate-600">{outside.includes(picked[0]) ? 'Outside staff have no app — you do the visit steps for them (audited)' : 'No waiting for the staff to tap Accept (override, audited)'}</div>
           </div>
           <Toggle on={acceptNow} onChange={setAcceptNow} label="Accept on their behalf" />
         </div>
       )}
       <NotifyPicker params={picked.length ? { events: ['ASSIGNED'], requestId: id, staffIds: picked } : null} value={notify} onChange={setNotify} preview={{ templateKey: 'patient_assigned' }} />
-      <div className="text-center text-[12px] text-slate-400">Score = skill 40 · availability 30 · zone 20 · workload 10. The first pick is primary{canOverride && acceptNow ? '.' : ' and must accept within the timeout.'}</div>
+      <div className="text-center text-[12px] text-slate-400">Score = skill 40 · availability 30 · zone 20 · workload 10. The first pick is primary{accepting ? '.' : ' and must accept within the timeout.'}</div>
 
       <FixedBottom note={!picked.length ? undefined : !ready ? `Pick ${size - picked.length} more or lower the team number` : transport ? 'The car requisition goes with this assignment' : undefined}>
         <button
@@ -158,7 +178,7 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
           className={bbtn('p', 'flex-1')}
           onClick={() =>
             run(
-              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: canOverride && acceptNow ? true : undefined, notify: notify ?? undefined } }),
+              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: accepting ? true : undefined, notify: notify ?? undefined } }),
               `${requestNo} assigned · team notified`,
               { redirect: `/m/admin/requests/${id}` },
             )

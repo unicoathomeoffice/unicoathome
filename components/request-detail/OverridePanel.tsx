@@ -18,7 +18,12 @@ type Props = {
   requestNo: string
   status: string
   staffName: string | null
+  /** may do the team's visit steps for them (override, or a coordinator when outside staff are on the team) */
   canOverride: boolean
+  /** "Complete visit now" (skips the steps) stays an override-only shortcut */
+  canCompleteNow?: boolean
+  /** outside staff from the HIS (no app) are on the team */
+  external?: boolean
   /** may put a car + driver on the trip (car supervisor or override) */
   canCar: boolean
   transport: { needed: boolean; mode?: string | null; vehicleId?: string | null; driverId?: string | null; pickup: string; ret: string }
@@ -79,14 +84,14 @@ export function OverridePanel(p: Props) {
     <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#FFFBEB] px-3.5 py-2.5 ring-1 ring-[#FDE68A]">
       <ShieldAlert size={16} className="flex-none text-[#B45309]" />
       <span className="text-[13px] font-semibold text-[#92400E]">{p.canOverride && active ? `Act for ${who}` : 'Transport'}</span>
-      <span className="hidden text-[12px] text-[#92400E]/80 sm:inline">{p.canOverride && active ? '· override, recorded as done on their behalf' : '· put a car and driver on this trip'}</span>
+      <span className="hidden text-[12px] text-[#92400E]/80 sm:inline">{p.canOverride && active ? (p.external ? '· outside staff (no app), recorded as done on their behalf' : '· override, recorded as done on their behalf') : '· put a car and driver on this trip'}</span>
       <div className="ml-auto flex flex-wrap gap-2">
         {p.canOverride && step && (
           <button type="button" disabled={!!busy} onClick={doStep} className={btnClass('o', 'sm', 'bg-white')}>
             {busy === step.action ? <Loader2 size={14} className="animate-spin" /> : <step.icon size={14} />} {step.label} {who.split(' ').slice(0, 2).join(' ')}
           </button>
         )}
-        {p.canOverride && active && (
+        {p.canCompleteNow && active && (
           <button type="button" disabled={!!busy} onClick={() => setDlg('complete')} className={btnClass('o', 'sm', 'bg-white')}>
             <CheckCircle2 size={14} /> Complete visit now
           </button>

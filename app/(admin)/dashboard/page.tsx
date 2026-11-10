@@ -68,7 +68,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     {
       label: 'Maps API',
       n: `${maps.used.today}/${maps.dailyCap}`,
-      sub: maps.reason === 'ok' ? `Google today · ${maps.remainingToday} left` : maps.reason === 'daily-cap' ? 'cap reached · free maps' : maps.reason === 'monthly-cap' ? 'month used · free maps' : 'free OpenStreetMap',
+      sub: maps.reason === 'ok' ? `Google today · ${maps.remainingToday} left` : maps.reason === 'daily-cap' ? 'cap reached · free maps' : maps.reason === 'monthly-cap' ? 'month used · free maps' : maps.reason === 'refused' ? 'Google refused the key · free maps' : 'free OpenStreetMap',
       color: maps.reason === 'ok' ? '#0072A3' : maps.reason === 'daily-cap' || maps.reason === 'monthly-cap' ? '#B45309' : '#64748B',
       href: '/settings/maps',
     },

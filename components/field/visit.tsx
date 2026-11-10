@@ -184,6 +184,7 @@ export function VisitActionBar({
   canFollowUp,
   liveTracking = false,
   autoOnTheWay = false,
+  bagBlock = null,
 }: {
   r: any
   team: boolean
@@ -198,6 +199,8 @@ export function VisitActionBar({
   liveTracking?: boolean
   /** the patient already got "on the way" + tracking link automatically: skip the WhatsApp prompt */
   autoOnTheWay?: boolean
+  /** must-take bag items not packed yet ("Pack first: …") — Start journey waits */
+  bagBlock?: string | null
 }) {
   const router = useRouter()
   const [sheet, setSheet] = useState(false)
@@ -221,6 +224,12 @@ export function VisitActionBar({
       main = (
         <button type="button" onClick={() => setSheet(true)} className={cx(big, 'bg-primary')}>
           Respond · accept or decline
+        </button>
+      )
+    else if (r.status === 'ACCEPTED' && bagBlock)
+      main = (
+        <button type="button" className={cx(big, 'bg-slate-400')} onClick={() => document.getElementById('bag')?.scrollIntoView({ behavior: 'smooth' })}>
+          <Navigation size={18} /> <span className="truncate">{bagBlock}</span>
         </button>
       )
     else if (r.status === 'ACCEPTED')
@@ -271,7 +280,8 @@ export function VisitActionBar({
           <LogOut size={18} /> Check out
         </Link>
       )
-    else if (['COMPLETED', 'CLOSED'].includes(r.status) && r.tracking?.active && r.tracking?.phase === 'RETURN')
+    // the way back is open (with or without live GPS): one tap records "Back at hospital"
+    else if (['COMPLETED', 'CLOSED'].includes(r.status) && r.returnTrip?.startedAt && !r.returnTrip?.reachedAt && !r.returnTrip?.reachedBy)
       main = (
         <button
           type="button"

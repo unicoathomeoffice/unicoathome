@@ -8,7 +8,8 @@ import { forget, memo } from './memo'
 // create, update or delete anything in H360 — billing there stays a person's action. readOnlyPost() refuses every
 // path that isn't a known search endpoint, so a mistake can't turn into an H360 invoice.
 
-const READ_ONLY_POSTS = new Set(['/get-item-name-v1', '/patient-info-autocomplete', '/hospital-patient-search'])
+// '/doctor-info-autocomplete' is the Roster page's "Employee Search" (employee_ind=1): lib/h360-staff.ts
+const READ_ONLY_POSTS = new Set(['/get-item-name-v1', '/patient-info-autocomplete', '/hospital-patient-search', '/doctor-info-autocomplete'])
 
 /** POST to an H360 *search* endpoint only (form-encoded, AJAX headers, CSRF). Anything else throws. */
 export async function readOnlyPost(path: string, fields: Record<string, string>, retry = true): Promise<Response> {

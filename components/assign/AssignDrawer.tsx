@@ -34,6 +34,8 @@ export type AssignProps = {
   slots: string[]
   /** override access: may put the team on as already accepted (no waiting for Accept) */
   canOverride?: boolean
+  /** coordinator: may accept for outside staff from the HIS (they have no app) */
+  canActForExternal?: boolean
 }
 
 export function AssignDrawer(p: AssignProps) {
@@ -55,6 +57,14 @@ export function AssignDrawer(p: AssignProps) {
   const [acceptNow, setAcceptNow] = useState(!!p.canOverride)
   const [done, setDone] = useState<null | { id: string; name: string; others: { id: string; name: string }[] }>(null)
   const [names, setNames] = useState<Record<string, string>>({})
+  const [outside, setOutside] = useState<Set<string>>(new Set())
+  const primaryOutside = !!primary && outside.has(primary)
+  // outside staff can't tap Accept themselves: a coordinator may accept for them (ticked by default)
+  const canAccept = !!p.canOverride || (!!p.canActForExternal && primaryOutside)
+  const accepting = canAccept && acceptNow
+  useEffect(() => {
+    if (primaryOutside) setAcceptNow(true)
+  }, [primaryOutside])
 
   // every time it opens: start again from the request's current team
   useEffect(() => {
@@ -69,7 +79,11 @@ export function AssignDrawer(p: AssignProps) {
 
   const dirtySchedule = date !== p.date || slot !== p.slot
   const nameOf = (id: string) => names[id] ?? 'Current team member'
-  const onLoaded = (items: Candidate[]) => setNames((x) => ({ ...x, ...Object.fromEntries(items.map((c) => [c.id, c.name])) }))
+  const onLoaded = (items: Candidate[]) => {
+    setNames((x) => ({ ...x, ...Object.fromEntries(items.map((c) => [c.id, c.name])) }))
+    const ext = items.filter((c) => c.external).map((c) => c.id)
+    if (ext.length) setOutside((s) => new Set([...s, ...ext]))
+  }
 
   async function submit() {
     if (!primary) return
@@ -85,11 +99,11 @@ export function AssignDrawer(p: AssignProps) {
             expectedDurationMin: Number(duration) || undefined,
             instructions: instructions.trim() || undefined,
             fee: fee === '' ? undefined : Number(fee),
-            acceptNow: p.canOverride && acceptNow ? true : undefined,
+            acceptNow: accepting ? true : undefined,
             notify: notify ?? undefined,
           },
         }),
-      `${p.reassign ? 'Reassigned' : 'Assigned'} to ${nameOf(primary)}${sec.length ? ` + ${sec.length}` : ''}${p.canOverride && acceptNow ? ' · accepted' : ''}`,
+      `${p.reassign ? 'Reassigned' : 'Assigned'} to ${nameOf(primary)}${sec.length ? ` + ${sec.length}` : ''}${accepting ? ' · accepted' : ''}`,
     )
     if (r === undefined) return
     // hospital WhatsApp not paired: nothing went out by itself — offer the wa.me buttons for the team
@@ -110,7 +124,7 @@ export function AssignDrawer(p: AssignProps) {
             {done.name} has been assigned{done.others.length ? ` with ${done.others.map((o) => o.name).join(', ')}` : ''}
           </div>
           <div className="max-w-sm text-[13px] text-slate-500">
-            {p.canOverride && acceptNow ? 'Accepted on their behalf — they got a push and in-app card, no need to wait.' : `They got a push and in-app card and must accept within ${p.acceptTimeoutMin} min.`} The hospital WhatsApp is not paired — send the assignment from your phone.
+            {accepting ? 'Accepted on their behalf — no need to wait.' : `They got a push and in-app card and must accept within ${p.acceptTimeoutMin} min.`} The hospital WhatsApp is not paired — send the assignment from your phone.
           </div>
           <WhatsAppButton requestId={p.requestId} templateKey="staff_assigned" to="staff" staffId={done.id} kind="g" size="lg" className="mt-2 w-full max-w-xs">
             Notify {firstName(done.name)} via WhatsApp
@@ -136,7 +150,7 @@ export function AssignDrawer(p: AssignProps) {
       width={560}
       footer={
         <>
-          <span className="mr-auto text-[12px] text-slate-500">{p.canOverride && acceptNow ? 'Goes straight to Accepted' : `Staff must accept within ${p.acceptTimeoutMin} min`}</span>
+          <span className="mr-auto text-[12px] text-slate-500">{accepting ? 'Goes straight to Accepted' : `Staff must accept within ${p.acceptTimeoutMin} min`}</span>
           <button className={btnClass('o', 'md', 'h-10 px-[18px]')} onClick={p.onClose}>
             Cancel
           </button>
@@ -193,10 +207,11 @@ export function AssignDrawer(p: AssignProps) {
           <span className="hc-label">Instructions to staff</span>
           <input className="hc-input" value={instructions} placeholder="e.g. Bring resistance bands. Family requests female staff." onChange={(e) => setInstructions(e.target.value)} />
         </label>
-        {p.canOverride && (
+        {canAccept && (
           <div className="flex items-center justify-between gap-3 rounded-lg bg-[#FFFBEB] px-3 py-2.5 ring-1 ring-[#FDE68A]">
             <div className="text-[13px]">
-              <b>Accept on their behalf</b> <span className="text-slate-600">· no waiting for the staff to tap Accept (override, audited)</span>
+              <b>Accept on their behalf</b>{' '}
+              <span className="text-slate-600">{primaryOutside ? '· outside staff have no app — you do Accept, On the way and the visit steps for them (audited)' : '· no waiting for the staff to tap Accept (override, audited)'}</span>
             </div>
             <Toggle on={acceptNow} onChange={setAcceptNow} label="Accept on their behalf" />
           </div>

@@ -8,13 +8,13 @@ import 'leaflet/dist/leaflet.css'
 import { MAPS_KEY, DHAKA } from '@/lib/maps'
 import { cx } from '@/lib/format'
 
-const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID' // Google advanced markers need a map id
+export const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || 'DEMO_MAP_ID' // Google advanced markers need a map id
 const BD_BBOX = '88.0,20.5,92.7,26.7' // Bangladesh, for Photon
 
 // Google is used only while it works: any refusal (key, billing, quota) switches this page to OpenStreetMap.
 let googleOff = !MAPS_KEY
 const FALLBACK_EVENT = 'hc:maps-fallback'
-function dropGoogle() {
+export function dropGoogle() {
   if (googleOff) return
   googleOff = true
   window.dispatchEvent(new Event(FALLBACK_EVENT))
@@ -28,19 +28,20 @@ export function reportUsage(provider: 'google' | 'osm' | 'device', kind: 'places
   } catch {}
 }
 
-/** Ask the server (cached) whether Google may be used right now (key, billing, daily budget); false → OpenStreetMap. */
-let status: Promise<boolean> | null = null
-export function googleUsable(): Promise<boolean> {
+/** Ask the server (cached per page) whether Google may be used right now for this API (key accepted, that API's own
+ *  monthly / daily allowance left); false → the free provider (OpenStreetMap / Photon). */
+type GoogleKind = 'maps_js' | 'places_autocomplete' | 'places_details'
+let status: Promise<{ google: boolean; kinds?: Partial<Record<GoogleKind, boolean>> }> | null = null
+export function googleUsable(kind: GoogleKind = 'maps_js'): Promise<boolean> {
   if (googleOff) return Promise.resolve(false)
   status ??= fetch('/api/v1/public/maps-status')
     .then((r) => r.json())
-    .then((j) => !!j.google)
-    .catch(() => false)
-    .then((ok) => {
-      if (!ok) googleOff = true
-      return ok
+    .catch(() => ({ google: false }))
+    .then((j) => {
+      if (!j.google) googleOff = true
+      return j
     })
-  return status
+  return status.then((j) => !!j.google && j.kinds?.[kind] !== false)
 }
 
 let loading: Promise<any> | null = null
@@ -137,15 +138,18 @@ export function AddressSearchInput({ value, onChange, onPlace, className, placeh
     const t = setTimeout(async () => {
       try {
         let found: Suggestion[]
-        if (!(await googleUsable())) found = await photonSuggest(value, ctrl.signal)
+        let via: 'google' | 'osm' = 'osm'
+        // address suggestions and place details each need their own Google allowance
+        if (!(await googleUsable('places_autocomplete')) || !(await googleUsable('places_details'))) found = await photonSuggest(value, ctrl.signal)
         else
           try {
             found = await googleSuggest(value)
+            via = 'google'
           } catch {
             dropGoogle()
             found = await photonSuggest(value, ctrl.signal)
           }
-        setProvider(googleOff ? 'osm' : 'google')
+        setProvider(via)
         if (ctrl.signal.aborted) return
         setItems(found)
         setActive(-1)

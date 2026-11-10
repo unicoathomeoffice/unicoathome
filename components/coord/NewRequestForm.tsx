@@ -127,6 +127,7 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
   const [done, setDone] = useState<{ id: string; requestNo: string; status?: string } | null>(null)
   // step 4 (coordinators): the care team, [0] primary — saved, confirmed and assigned in one call
   const [team, setTeam] = useState<string[]>([])
+  const [outside, setOutside] = useState<string[]>([]) // outside staff from the HIS: accepted for them on save
   const [teamSize, setTeamSize] = useState(1)
   const [cands, setCands] = useState<Cand[] | null>(null)
   const [instructions, setInstructions] = useState('')
@@ -236,7 +237,7 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
         source,
         remarks: [followUp ? `Follow-up of ${from!.requestNo}` : '', remarks.trim()].filter(Boolean).join(' · ') || undefined,
         ignoreDuplicate: ignoreDuplicate || undefined,
-        ...(assignTeam && team.length ? { then: 'assign', assign: { primaryStaffId: team[0], secondaryStaffIds: team.slice(1), instructions: instructions.trim() || undefined } } : {}),
+        ...(assignTeam && team.length ? { then: 'assign', assign: { primaryStaffId: team[0], secondaryStaffIds: team.slice(1), instructions: instructions.trim() || undefined, acceptNow: outside.includes(team[0]) || undefined } } : {}),
         notify: notifyParams ? notify ?? undefined : undefined,
       }
       const r = await api<{ id: string; requestNo: string; status?: string }>('/requests', { body })
@@ -847,7 +848,7 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
               <Loader2 size={20} className="animate-spin" />
             </div>
           ) : (
-            <MobileTeamPicker candidates={cands} picked={team} setPicked={setTeam} size={teamSize} setSize={setTeamSize} />
+            <MobileTeamPicker candidates={cands} picked={team} setPicked={setTeam} size={teamSize} setSize={setTeamSize} onOutside={(x) => setOutside((o) => [...o, x])} />
           )}
           <div>
             <FLabel>Instructions to team</FLabel>

@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Car, ChevronRight, ClipboardCheck, FileText, HeartPulse, Camera, PenLine, LogOut, Phone, UsersRound } from 'lucide-react'
+import { Car, ChevronRight, ClipboardCheck, FileText, HeartPulse, Camera, PenLine, LogOut, Package, Phone, UsersRound } from 'lucide-react'
 import { MScreen } from '@/components/mobile'
 import { Col } from '@/components/field/bar'
 import { AutoRefresh } from '@/components/client'
@@ -15,6 +15,11 @@ import { can, TRANSPORT_MODE_LABEL, PAYMENT_METHOD_LABEL, STATUS_LABEL } from '@
 import { getSettings } from '@/lib/settings'
 import { cx, time, relDay, dur, taka, dateTime } from '@/lib/format'
 import { plain } from '@/lib/db'
+import { AfterReturnCard } from '@/components/request-detail/AfterReturnCard'
+import { afterRows } from '@/lib/services/after-checklist'
+import { kitBlock, kitRows } from '@/lib/services/kit'
+import { KitCard } from '@/components/field/KitCard'
+import { actsForTeam } from '@/lib/services/requests'
 
 export const metadata = { title: 'Visit' }
 
@@ -53,6 +58,10 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
   const inProgress = r.status === 'IN_PROGRESS'
   const checkedIn = !!t.checkInAt
   const shortName = (n?: string) => (n ? n.replace(/^(Dr\.?|Md\.?)\s+/i, '').split(' ').slice(0, 2).join(' ') : '')
+  // the bag: packed before Start journey (must-take items), shown read-only once on the way
+  const bagOpen = ['ASSIGNED', 'ACCEPTED'].includes(r.status)
+  // visits that never had a bag (before this existed) don't get one built after the journey
+  const bag = bagOpen || (r.visit?.kitSet && !['CANCELLED', 'CLOSED'].includes(r.status)) ? await kitRows(r) : []
 
   return (
     <MScreen
@@ -70,6 +79,7 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
           canFollowUp={canFollowUp}
           liveTracking={!!settings.features.liveTracking}
           autoOnTheWay={!!settings.features.liveTracking && !!settings.features.shareTrackingWithPatient && waPaired}
+          bagBlock={bagOpen ? kitBlock(r) : null}
         />
       }
     >
@@ -97,6 +107,20 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
       </div>
 
       {!team && <ReadOnlyNote />}
+
+      {bag.length > 0 && (bagOpen || !t.checkOutAt) && <KitCard requestId={id} rows={bag} canPack={team || actsForTeam(user, r)} big locked={!bagOpen} />}
+
+      {/* back at the hospital: hand over samples, return medicine… (required ones before the visit is closed) */}
+      {t.checkOutAt && r.status !== 'CANCELLED' && (
+        <AfterReturnCard
+          requestId={id}
+          items={await afterRows(r)}
+          canTick={team || can(user, 'requests.manage')}
+          canReopen={can(user, 'requests.manage')}
+          big
+          hint={r.returnTrip?.startedAt && !r.returnTrip?.reachedAt && !r.returnTrip?.reachedBy ? 'Back at the hospital? Tap Reached hospital below, then finish these.' : undefined}
+        />
+      )}
 
       <PatientCard r={r} patient={patient} />
 
@@ -133,6 +157,13 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
               title="Notes & medications"
               sub={[v.notes?.nursing || v.notes?.clinical ? `Notes saved ${time(v.notes?.updatedAt)}` : 'No notes yet', v.medications?.length ? `${v.medications.length} medication${v.medications.length === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ')}
               done={!!(v.notes?.nursing || v.notes?.clinical || v.medications?.length)}
+            />
+            <StepRow
+              href={vHref(id, 'consumables')}
+              icon={Package}
+              title="Consumables used"
+              sub={(v.consumables ?? []).length ? `${(v.consumables ?? []).length} item${(v.consumables ?? []).length === 1 ? '' : 's'} · ${(v.consumables ?? []).slice(0, 2).map((c: any) => `${c.item} × ${c.qty}`).join(', ')}` : 'Not recorded yet · cannula, gloves, syringes…'}
+              done={(v.consumables ?? []).length > 0}
             />
             <StepRow
               href={vHref(id, 'confirm')}

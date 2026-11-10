@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2, Save } from 'lucide-react'
+import { Loader2, RefreshCw, Save } from 'lucide-react'
 import { api, Toggle, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 
@@ -79,5 +79,33 @@ export function MapsSettings({ initial, suggested }: { initial: MapsCfg; suggest
         {busy ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
       </button>
     </section>
+  )
+}
+
+/** Ask Google again now (after enabling the APIs / billing in Google Cloud) instead of waiting for the next check. */
+export function MapsCheckButton() {
+  const router = useRouter()
+  const toast = useToast()
+  const [busy, setBusy] = useState(false)
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      className={btnClass('o', 'sm')}
+      onClick={async () => {
+        setBusy(true)
+        try {
+          const r = await api<{ ok: boolean; message?: string }>('/settings/maps-check', { body: {} })
+          toast(r.ok ? 'Google accepts the key — Google Maps is on' : (r.message ?? 'Google still refuses the key'), r.ok ? 'ok' : 'err')
+          router.refresh()
+        } catch (e: any) {
+          toast(e.message, 'err')
+        } finally {
+          setBusy(false)
+        }
+      }}
+    >
+      {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Check again
+    </button>
   )
 }

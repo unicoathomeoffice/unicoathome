@@ -291,6 +291,8 @@ export function TimelineTab({ r, people, sla }: { r: any; people: People; sla: S
     tone: 'g',
   })
   for (const c of r.visit?.checklist ?? []) if (c.done && c.doneAt) push(c.doneAt, { label: `Ticked · ${c.label}`, sub: [who(people, c.doneBy), c.note].filter(Boolean).join(' · '), tone: 's' })
+  push(r.returnTrip?.reachedAt, { label: 'Back at hospital', sub: r.returnTrip?.reachedBy === 'manual' ? 'set by coordinator' : r.returnTrip?.reachedBy === 'button' ? 'Reached hospital button' : r.returnTrip?.reachedBy === 'geofence' ? 'arrived (GPS)' : undefined, tone: 'g' })
+  for (const c of r.visit?.afterChecklist ?? []) if (c.done && c.doneAt) push(c.doneAt, { label: `After return · ${c.label}`, sub: [who(people, c.doneBy), c.note].filter(Boolean).join(' · '), tone: 'g' })
   if (r.visit?.vitals?.recordedAt)
     push(r.visit.vitals.recordedAt, {
       label: r.visit.vitals.abnormal?.length ? 'Vitals recorded · abnormal' : 'Vitals recorded',

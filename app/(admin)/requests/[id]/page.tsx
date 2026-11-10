@@ -21,6 +21,12 @@ import { LiveTrackingCard } from '@/components/request-detail/LiveTrackingCard'
 import { VisitUpdateCard } from '@/components/request-detail/VisitUpdateCard'
 import { InvoiceTab } from '@/components/request-detail/InvoiceTab'
 import { TransportDocsBox } from '@/components/request-detail/TransportDocsBox'
+import { AfterReturnCard } from '@/components/request-detail/AfterReturnCard'
+import { afterRows } from '@/lib/services/after-checklist'
+import { ensureKit, kitRows } from '@/lib/services/kit'
+import { KitCard } from '@/components/field/KitCard'
+import { ConsumablesEditor } from '@/components/field/consumables'
+import { Equipment } from '@/lib/models'
 import { NotifiedTab } from '@/components/request-detail/NotifiedTab'
 import { notifyTimeline, type NotifyStep } from '@/lib/services/notify-log'
 import { RidesCard } from '@/components/request-detail/RidesCard'
@@ -151,11 +157,13 @@ export default async function RequestDetailPage({ params, searchParams }: { para
       acceptTimeoutMin: sla.acceptTimeoutMin,
       slots: settings.general.slots,
       canOverride: can(user, 'requests.override'),
+      canActForExternal: perms.assign,
     }
   }
 
-  // ---- "Act for the team" (override) + car & any driver
+  // ---- "Act for the team" (override, or a coordinator when outside staff from the HIS are on the team) + car & any driver
   const canOverride = can(user, 'requests.override')
+  const actForTeam = canOverride || (!!r.assignment?.hasExternal && perms.assign)
   const canCar = canOverride || can(user, 'transport.manage')
   const carRelevant = canCar && r.transport?.needed // own transport can switch back to a car, so load cars either way
   const [carList, driverList] =
@@ -279,7 +287,9 @@ export default async function RequestDetailPage({ params, searchParams }: { para
           requestNo={r.requestNo}
           status={status}
           staffName={r.primaryStaff?.name ?? null}
-          canOverride={canOverride}
+          canOverride={actForTeam}
+          canCompleteNow={canOverride}
+          external={!!r.assignment?.hasExternal}
           canCar={canCar}
           transport={{
             needed: !!r.transport?.needed,
@@ -329,10 +339,37 @@ export default async function RequestDetailPage({ params, searchParams }: { para
             initial={plain(await liveView(r))}
             staffName={people[String(r.tracking.userId)]?.name ?? r.primaryStaff?.name ?? 'Staff'}
             times={plain({ left: t.enRouteAt ?? null, arrived: t.checkInAt ?? null, out: t.checkOutAt ?? null, back: r.returnTrip?.reachedAt ?? null, backBy: r.returnTrip?.reachedBy ?? null, returnKm: r.returnTrip?.distanceKm ?? null })}
+            canSetBack={perms.manage}
+            noHospitalPin={settings.general.hospitalLocation?.lat == null}
           />
         )}
         {tab === 'overview' && t.checkInAt && (
           <VisitUpdateCard requestId={id} waPaired={waPaired} canSend={can(user, 'messages.send')} autoSentAt={r.visit?.updateSentAt ? new Date(r.visit.updateSentAt).toISOString() : null} />
+        )}
+        {tab === 'overview' && (['CONFIRMED', 'ASSIGNED', 'ACCEPTED'].includes(status) || r.visit?.kitSet) && (await kitRows(r)).length > 0 && (
+          <KitCard requestId={id} rows={await kitRows(r)} canPack={actForTeam} locked={!['ASSIGNED', 'ACCEPTED'].includes(status)} />
+        )}
+        {tab === 'overview' && t.checkInAt && status !== 'CANCELLED' && (
+          <section className="rounded-card bg-white p-4 shadow-card">
+            <h2 className="mb-2 text-base font-bold">Consumables used</h2>
+            <ConsumablesEditor
+              requestId={id}
+              catalog={plain(await Equipment.find({ type: 'CONSUMABLE' }).sort({ sortOrder: 1, name: 1 }).select('name unit imageId').lean<any[]>())}
+              initial={(r.visit?.consumables ?? []).filter((c: any) => c.itemId).map((c: any) => ({ itemId: String(c.itemId), qty: c.qty }))}
+              editable={perms.manage}
+              big={false}
+            />
+            {(r.visit?.consumables ?? []).some((c: any) => !c.itemId) && <div className="mt-2 text-[12.5px] text-slate-500">Also noted: {(r.visit?.consumables ?? []).filter((c: any) => !c.itemId).map((c: any) => `${c.item} × ${c.qty}`).join(' · ')}</div>}
+          </section>
+        )}
+        {tab === 'overview' && t.checkOutAt && status !== 'CANCELLED' && (
+          <AfterReturnCard
+            requestId={id}
+            items={await afterRows(r)}
+            canTick={perms.manage || [r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])].map(String).includes(user.id)}
+            canReopen={perms.manage}
+            hint={status === 'CLOSED' ? undefined : 'Required items must be ticked before the visit can be closed. Staff tick them on the app once back at the hospital.'}
+          />
         )}
         <Tabs items={tabItems} active={tab} />
         {tab === 'overview' && (

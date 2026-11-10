@@ -98,12 +98,24 @@ export async function sweep(force = false) {
   for (const r of silent) {
     await HomecareRequest.updateOne({ _id: r._id }, { $set: { 'tracking.lostNotifiedAt': now } })
     const who = r.tracking?.userId ? await User.findById(r.tracking.userId).select('name').lean<any>() : null
-    await notifyRoles(['HC_ADMIN'], { type: 'OVERDUE', title: `Live location lost · ${r.requestNo}`, body: `${who?.name ?? 'Staff'} ${r.tracking?.phase === 'RETURN' ? 'returning to the hospital' : `on the way to ${r.patientSnapshot?.name}`} — no location for 3+ min`, requestId: r._id, url: `/requests/${r._id}` })
+    // the phone said its app left the screen (locked / another app): location pauses until it is opened again
+    const paused = r.tracking?.pausedAt && (!r.tracking?.at || +new Date(r.tracking.pausedAt) >= +new Date(r.tracking.at))
+    const where = r.tracking?.phase === 'RETURN' ? 'returning to the hospital' : `on the way to ${r.patientSnapshot?.name}`
+    await notifyRoles(['HC_ADMIN'], {
+      type: 'OVERDUE',
+      title: `${paused ? 'Live location paused' : 'Live location lost'} · ${r.requestNo}`,
+      body: paused ? `${who?.name ?? 'Staff'} ${where} — left the app (screen locked or another app open), no location for 3+ min` : `${who?.name ?? 'Staff'} ${where} — no location for 3+ min`,
+      requestId: r._id,
+      url: `/requests/${r._id}`,
+    })
+    // and remind the travelling staff member: the browser only shares location while the app is on screen
+    if (r.tracking?.userId)
+      await notifyUsers([r.tracking.userId], { type: 'OVERDUE', as: 'STAFF', title: 'Open Unico HomeCare to keep sharing your location', body: 'Your live location stopped. Keep the app open on screen while travelling.', requestId: r._id, url: `/m/visits/${r._id}`, priority: 'high' })
     lost++
   }
   // ways back still open after 4 h: closed without an arrival time
   const { finishReturn } = await import('./tracking')
-  const stale = await HomecareRequest.find({ 'tracking.active': true, 'tracking.phase': 'RETURN', 'returnTrip.startedAt': { $lt: new Date(now.getTime() - 4 * 3600_000) } }).select('_id').lean<any[]>()
+  const stale = await HomecareRequest.find({ 'returnTrip.startedAt': { $lt: new Date(now.getTime() - 4 * 3600_000) }, 'returnTrip.reachedAt': null, 'returnTrip.reachedBy': null }).select('_id').lean<any[]>()
   for (const r of stale) await finishReturn(r._id, 'timeout')
   // WhatsApp heartbeat: messages held back by the sending limits or quiet hours go out on a later sweep
   // (only for messages waiting 2+ min — fresh ones are already being sent by their own trigger)

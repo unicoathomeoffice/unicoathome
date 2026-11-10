@@ -162,6 +162,7 @@ export function collectUserIds(r: any): string[] {
   for (const s of r.assignment?.secondaryStaffIds ?? []) add(s)
   for (const d of r.assignment?.declines ?? []) add(d.staffId)
   for (const c of r.visit?.checklist ?? []) add(c.doneBy)
+  for (const c of r.visit?.afterChecklist ?? []) add(c.doneBy)
   add(r.visit?.vitals?.recordedBy)
   for (const m of r.visit?.medications ?? []) add(m.by)
   for (const p of r.pettyCash ?? []) {

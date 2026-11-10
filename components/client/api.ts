@@ -15,12 +15,13 @@ export class ApiClientError extends Error {
 }
 
 /** fetch wrapper for /api/v1. Throws ApiClientError with the server's message. */
-export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; form?: FormData } = {}): Promise<T> {
+export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; form?: FormData; signal?: AbortSignal } = {}): Promise<T> {
   const res = await fetch(path.startsWith('/api') ? path : `/api/v1${path}`, {
     method: opts.method ?? (opts.body || opts.form ? 'POST' : 'GET'),
     headers: opts.form ? undefined : { 'content-type': 'application/json' },
     body: opts.form ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
     credentials: 'same-origin',
+    signal: opts.signal,
   })
   const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null
   if (!res.ok) {

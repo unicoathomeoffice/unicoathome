@@ -47,6 +47,7 @@ export default async function Checkout({ params }: { params: Promise<{ id: strin
         vitals={{ at: vit.recordedAt, parts }}
         photos={photos}
         meds={(v.medications ?? []).length}
+        consumables={(v.consumables ?? []).length}
         notes={!!(v.notes?.nursing || v.notes?.clinical)}
         confirmation={v.confirmation?.at ? v.confirmation : null}
         estimatedFee={r.billing?.estimatedFee ?? null}

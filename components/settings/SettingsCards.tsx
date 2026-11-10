@@ -105,6 +105,11 @@ export function GeneralCard({ initial }: { initial: General }) {
         </Link>
       </div>
       <div className="hc-label mt-3">Hospital location · return trips end here</div>
+      {v.hospitalLocation?.lat == null && (
+        <div className="mb-2 rounded-lg bg-[#FEF3C7] px-3 py-2 text-[12.5px] text-[#92400E]">
+          Not set yet — drop the pin on the hospital and save, so &ldquo;Back at hospital&rdquo; is recorded automatically when the team arrives. Until then staff tap <b>Reached hospital</b> on the app.
+        </div>
+      )}
       <PinPicker
         height={180}
         lat={v.hospitalLocation?.lat ?? null}

@@ -48,6 +48,15 @@ const ServiceTypeSchema = new Schema<any>(
     fee: { type: Number, default: 0 },
     requiresPrescription: { type: Boolean, default: false }, // public booking must attach a prescription (e.g. injections)
     checklist: [{ _id: false, key: String, label: String, mandatory: { type: Boolean, default: true }, sortOrder: Number }],
+    // after the team is back at the hospital (e.g. samples handed to the lab). Left unset until an admin saves it,
+    // so the built-in defaults apply (lib/services/after-checklist.ts); an empty list means "none".
+    afterChecklist: {
+      type: [{ _id: false, key: String, label: String, mandatory: { type: Boolean, default: true }, sortOrder: Number, withNote: Boolean, notePrompt: String }],
+      default: undefined,
+    },
+    // bag for this service (Settings → Services): recommended to take, the minimum that must be packed before the
+    // journey (0 = optional), and the usual consumption per visit (pre-fills "Consumables used")
+    kit: [{ _id: false, itemId: { type: ObjectId, ref: 'Equipment' }, recommendedQty: { type: Number, default: 1 }, minQty: { type: Number, default: 0 }, usualUse: Number }],
     vitalsRequired: [String],
     staffMix: [{ _id: false, role: String, count: Number }],
     isActive: { type: Boolean, default: true },
@@ -56,6 +65,22 @@ const ServiceTypeSchema = new Schema<any>(
   opts,
 )
 export const ServiceType = model('ServiceType', ServiceTypeSchema, 'service_types')
+
+/** Instruments and consumables a home visit can take (Settings → Equipment & consumables). */
+const EquipmentSchema = new Schema<any>(
+  {
+    name: { type: String, required: true },
+    type: { type: String, enum: ['EQUIPMENT', 'CONSUMABLE'], default: 'CONSUMABLE' }, // equipment comes back · consumables are used up
+    unit: { type: String, default: 'pcs' },
+    imageId: { type: ObjectId, ref: 'Attachment' },
+    notes: String,
+    isActive: { type: Boolean, default: true },
+    sortOrder: { type: Number, default: 0 },
+    createdBy: { type: ObjectId, ref: 'User' },
+  },
+  opts,
+)
+export const Equipment = model('Equipment', EquipmentSchema, 'equipment_items')
 
 // ---------------------------------------------------------------- users
 const UserSchema = new Schema<any>(
@@ -99,6 +124,11 @@ const UserSchema = new Schema<any>(
     lastLoginAt: Date,
     createdBy: { type: ObjectId, ref: 'User' },
     deletedAt: Date,
+    // outside staff: hospital employees picked from the HIS roster (lib/h360-staff.ts) — on a care team, no login
+    external: Boolean,
+    source: String, // 'H360'
+    hisDesignation: String,
+    hisDepartment: String,
   },
   opts,
 )
@@ -195,6 +225,8 @@ const RequestSchema = new Schema<any>(
       teamSize: { type: Number, default: 1 },
       primaryStaffId: { type: ObjectId, ref: 'User' },
       secondaryStaffIds: [{ type: ObjectId, ref: 'User' }],
+      /** someone on the team is outside staff from the HIS (no app): coordinators do their visit steps */
+      hasExternal: Boolean,
       assignedBy: { type: ObjectId, ref: 'User' },
       assignedAt: Date,
       acceptedAt: Date,
@@ -236,6 +268,41 @@ const RequestSchema = new Schema<any>(
           untickReason: String,
         },
       ],
+      /** after-return checklist, copied from the services (afterSet: built — older visits are built on first use) */
+      /** the bag: what to take (from the services) and what was packed before the journey */
+      kitSet: Boolean,
+      kit: [
+        {
+          _id: false,
+          itemId: { type: ObjectId, ref: 'Equipment' },
+          name: String,
+          type: String,
+          unit: String,
+          imageId: { type: ObjectId, ref: 'Attachment' },
+          recommendedQty: Number,
+          minQty: Number,
+          usualUse: Number,
+          packedQty: { type: Number, default: 0 },
+          packedAt: Date,
+          packedBy: { type: ObjectId, ref: 'User' },
+        },
+      ],
+      afterSet: Boolean,
+      afterChecklist: [
+        {
+          _id: false,
+          key: String,
+          label: String,
+          mandatory: Boolean,
+          withNote: Boolean,
+          notePrompt: String,
+          done: { type: Boolean, default: false },
+          doneAt: Date,
+          doneBy: { type: ObjectId, ref: 'User' },
+          note: String,
+          reopenReason: String,
+        },
+      ],
       vitals: {
         bpSys: Number,
         bpDia: Number,
@@ -251,7 +318,8 @@ const RequestSchema = new Schema<any>(
         flagged: Boolean,
       },
       medications: [{ drug: String, dose: String, route: String, time: String, by: { type: ObjectId, ref: 'User' }, at: Date }],
-      consumables: [{ _id: false, item: String, qty: Number }],
+      // consumables used on the visit: catalog items (itemId, Settings → Equipment & consumables) or free text (item only)
+      consumables: [{ _id: false, item: String, qty: Number, itemId: { type: ObjectId, ref: 'Equipment' }, unit: String, at: Date, by: { type: ObjectId, ref: 'User' } }],
       notes: { clinical: String, nursing: String, updatedAt: Date },
       photoIds: [{ type: ObjectId, ref: 'Attachment' }],
       confirmation: { type: { type: String, enum: ['PAD', 'OTP', 'VERBAL'] }, at: Date, relation: String, name: String, attachmentId: { type: ObjectId, ref: 'Attachment' } },
@@ -378,9 +446,15 @@ const RequestSchema = new Schema<any>(
       startedAt: Date,
       shareToken: { type: String, select: false }, // public tracking link /t/:token (patient)
       lostNotifiedAt: Date,
+      /** the phone's app left the screen (locked / another app): location pauses until it is back */
+      pausedAt: Date,
+      /** last ping too rough to place (> 500 m): the phone is alive, the pin isn't moved */
+      roughAt: Date,
+      /** cached road route + drive time to the destination (lib/services/routes.ts) */
+      route: Mixed,
     },
     // the way back after check-out (Settings → General → hospital location)
-    returnTrip: { _id: false, startedAt: Date, reachedAt: Date, reachedBy: { type: String, enum: ['geofence', 'button', 'next_visit', 'timeout'] }, distanceKm: Number, durationMin: Number },
+    returnTrip: { _id: false, startedAt: Date, reachedAt: Date, reachedBy: { type: String, enum: ['geofence', 'button', 'next_visit', 'timeout', 'manual'] }, recordedBy: { type: ObjectId, ref: 'User' }, distanceKm: Number, durationMin: Number },
     // own rides (Uber / Pathao / CNG / rickshaw…) with screenshots — sent to security with the requisition form and
     // added to the payer's conveyance claim (lib/services/rides.ts); can be added any time after the visit
     rides: [
@@ -448,7 +522,7 @@ const AttachmentSchema = new Schema<any>(
     ownerType: { type: String, enum: ['REQUEST', 'PATIENT', 'USER', 'CHAT'] },
     ownerId: { type: ObjectId, index: true },
     requestId: { type: ObjectId, ref: 'HomecareRequest', index: true },
-    kind: { type: String, enum: ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'INVOICE', 'REQUISITION', 'GATE_PASS', 'CLAIM', 'RECEIPT', 'AVATAR', 'VOUCHER', 'OTHER'] },
+    kind: { type: String, enum: ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'INVOICE', 'REQUISITION', 'GATE_PASS', 'CLAIM', 'RECEIPT', 'AVATAR', 'VOUCHER', 'EQUIPMENT', 'OTHER'] },
     filename: String,
     mime: String,
     size: Number,

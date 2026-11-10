@@ -190,7 +190,7 @@ export function PatientCard({ r, patient, compact }: { r: any; patient: any; com
         </a>
       )}
       <div className="mt-3">
-        <ContactBar phone={ps.phone} address={address} lat={patient?.address?.lat} lng={patient?.address?.lng} />
+        <ContactBar phone={ps.phone} address={address} lat={patient?.address?.lat} lng={patient?.address?.lng} mapHref={r.tracking?.active && r.tracking?.phase === 'OUT' ? vHref(String(r._id), 'directions') : undefined} />
       </div>
     </div>
   )

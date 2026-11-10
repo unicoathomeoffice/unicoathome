@@ -6,6 +6,7 @@ import { Check, Star, UserX, X } from 'lucide-react'
 import { useToast } from '@/components/client'
 import { Avatar } from '@/components/ui'
 import { ROLE_LABEL, type Role } from '@/lib/constants'
+import { HisStaffSearch, type AddedStaff } from './HisStaffSearch'
 import { cx } from '@/lib/format'
 
 export type Candidate = {
@@ -23,6 +24,8 @@ export type Candidate = {
   visitsToday: number
   availability: string
   badges: string[]
+  /** outside staff from the HIS (no app): coordinators do their visit steps */
+  external?: boolean
 }
 
 const ROLE_CHIPS = [
@@ -53,6 +56,7 @@ function Badge({ text, area }: { text: string; area: string }) {
   else if (text === 'On leave') tone = red
   else if (text === 'Zone ✓') [tone, label, tick] = [green, area ? `Zone · ${area}` : 'Zone match', true]
   else if (text === 'Out of zone') tone = red
+  else if (text === 'Outside · HIS') tone = 'bg-[#EDE9FE] text-[#6D28D9]'
   return (
     <span className={cx('inline-flex h-[22px] items-center gap-1 whitespace-nowrap rounded-full px-2 text-[11px] font-semibold', tone)}>
       {tick && <Check size={12} strokeWidth={3} />}
@@ -161,6 +165,32 @@ export function TeamPicker({
     setTeam([...team, id])
   }
   const makePrimary = (id: string) => setTeam([id, ...team.filter((x) => x !== id)])
+  /** someone picked from the HIS: known to the picker from now on, and on the team (grows the team when full) */
+  function addOutside(s: AddedStaff) {
+    const c: Candidate = {
+      id: s.id,
+      name: s.name,
+      initials: s.name.replace(/^(Dr\.?|Md\.?|Mst\.?)\s+/i, '').split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase(),
+      role: s.role,
+      designation: s.designation,
+      employeeId: s.employeeId,
+      score: 0,
+      skillMatch: false,
+      zoneMatch: false,
+      free: true,
+      visitsToday: 0,
+      availability: 'ON_DUTY',
+      badges: s.external ? ['Outside · HIS', ...(s.department ? [s.department] : [])] : [],
+      external: s.external,
+    }
+    setAll((x) => ({ ...x, [c.id]: c }))
+    onLoaded?.([c])
+    if (team.includes(c.id)) return
+    if (team.length >= 5) return toast('A care team has at most 5 people', 'err')
+    if (teamSize === 1 && team.length === 1) return setTeam([c.id]) // one-person visit: the new person takes the place
+    setTeam([...team, c.id])
+    setTeamSize((t) => Math.max(t, team.length + 1))
+  }
   function changeSize(n: number) {
     if (team.length > n) {
       const drop = team.slice(n).map(nameOf)
@@ -334,10 +364,12 @@ export function TeamPicker({
           {secondaryOptions.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name} · {ROLE_LABEL[c.role as Role] ?? c.role}
+              {c.external ? ' · outside' : ''}
             </option>
           ))}
         </select>
       </div>
+      <HisStaffSearch taken={team} onAdd={addOutside} />
     </>
   )
 }

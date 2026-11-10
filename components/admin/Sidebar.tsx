@@ -30,6 +30,7 @@ const SETTINGS_SUB: { href: string; label: string; perm: Perm }[] = [
   { href: '/settings', label: 'General & integrations', perm: SETTINGS_HUB },
   { href: '/settings/designations', label: 'Designations & departments', perm: 'master.manage' },
   { href: '/settings/services', label: 'Service types', perm: 'requests.manage' },
+  { href: '/settings/equipment', label: 'Equipment & consumables', perm: 'requests.manage' },
   { href: '/settings/roles', label: 'Roles & permissions', perm: 'users.manage' },
   { href: '/settings/fleet', label: 'Fleet & drivers', perm: 'transport.manage' },
   { href: '/settings/zones', label: 'Zones, slots & rules', perm: 'requests.manage' },

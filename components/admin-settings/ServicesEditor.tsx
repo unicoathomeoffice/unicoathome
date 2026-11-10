@@ -7,6 +7,7 @@ import { btnClass, Tag } from '@/components/ui'
 import { Field, FormError, Tick, useFieldErrors } from '@/components/people/form'
 import { ROLES, ROLE_LABEL, SKILLS, VITALS } from '@/lib/constants'
 import { cx, taka } from '@/lib/format'
+import { ItemPicture } from './EquipmentEditor'
 
 export type ServiceDoc = {
   _id: string
@@ -18,6 +19,12 @@ export type ServiceDoc = {
   fee?: number
   requiresPrescription?: boolean
   checklist?: { key: string; label: string; mandatory?: boolean; sortOrder?: number }[]
+  /** after return to the hospital (lab handover…); the page fills the defaults when never saved */
+  afterChecklist?: { key: string; label: string; mandatory?: boolean; sortOrder?: number; withNote?: boolean; notePrompt?: string }[]
+  /** afterChecklist above is the built-in default (the admin never saved one) */
+  afterIsDefault?: boolean
+  /** the bag: catalog items with recommended / must-take / usual use */
+  kit?: { itemId: string; recommendedQty?: number; minQty?: number; usualUse?: number }[]
   vitalsRequired?: string[]
   staffMix?: { role: string; count: number }[]
   isActive?: boolean
@@ -25,7 +32,9 @@ export type ServiceDoc = {
   inUse?: number
 }
 
-type Item = { uid: number; key?: string; label: string; mandatory: boolean }
+type Item = { uid: number; key?: string; label: string; mandatory: boolean; withNote?: boolean; notePrompt?: string }
+type KitRow = { uid: number; itemId: string; recommendedQty: number; minQty: number; usualUse: number | '' }
+export type CatalogItem = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; isActive: boolean }
 type Form = {
   id?: string
   code: string
@@ -37,6 +46,10 @@ type Form = {
   vitals: string[]
   mix: { role: string; count: string }[]
   items: Item[]
+  /** after return to the hospital */
+  after: Item[]
+  afterDefault: boolean
+  kit: KitRow[]
   isActive: boolean
   requiresPrescription: boolean
 }
@@ -64,13 +77,16 @@ function toForm(s?: ServiceDoc): Form {
     vitals: s?.vitalsRequired ?? [],
     mix: (s?.staffMix ?? [{ role: 'NURSE', count: 1 }]).map((m) => ({ role: m.role, count: String(m.count) })),
     items: [...(s?.checklist ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)).map((c) => ({ uid: uidSeq++, key: c.key, label: c.label, mandatory: c.mandatory !== false })),
+    after: [...(s?.afterChecklist ?? [])].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0)).map((c) => ({ uid: uidSeq++, key: c.key, label: c.label, mandatory: c.mandatory !== false, withNote: !!c.withNote, notePrompt: c.notePrompt ?? '' })),
+    afterDefault: !!s?.afterIsDefault,
+    kit: (s?.kit ?? []).map((k) => ({ uid: uidSeq++, itemId: String(k.itemId), recommendedQty: k.recommendedQty ?? 1, minQty: k.minQty ?? 0, usualUse: k.usualUse ?? '' })),
     isActive: s?.isActive !== false,
     requiresPrescription: s?.requiresPrescription === true,
   }
 }
 
 /** W11 / A3: service list on the left, full editor on the right (SUPER_ADMIN edits; others view). */
-export function ServicesEditor({ services, canEdit }: { services: ServiceDoc[]; canEdit: boolean }) {
+export function ServicesEditor({ services, canEdit, catalog = [] }: { services: ServiceDoc[]; canEdit: boolean; catalog?: CatalogItem[] }) {
   const router = useRouter()
   const toast = useToast()
   const fe = useFieldErrors()
@@ -79,7 +95,8 @@ export function ServicesEditor({ services, canEdit }: { services: ServiceDoc[]; 
   const [base, setBase] = useState(() => JSON.stringify(toForm(services[0])))
   const [busy, setBusy] = useState(false)
   const [q, setQ] = useState('')
-  const dirty = useMemo(() => JSON.stringify({ ...f, items: f.items.map(({ uid, ...r }) => r) }) !== JSON.stringify({ ...JSON.parse(base), items: JSON.parse(base).items.map(({ uid, ...r }: Item) => r) }), [f, base])
+  const strip = (x: Form) => ({ ...x, items: x.items.map(({ uid, ...r }) => r), after: x.after.map(({ uid, ...r }) => r), kit: x.kit.map(({ uid, ...r }) => r) })
+  const dirty = useMemo(() => JSON.stringify(strip(f)) !== JSON.stringify(strip(JSON.parse(base))), [f, base])
   const current = services.find((s) => s._id === selected)
 
   function load(form: Form, id: string | 'new') {
@@ -100,6 +117,27 @@ export function ServicesEditor({ services, canEdit }: { services: ServiceDoc[]; 
     const next = [...f.items]
     ;[next[i], next[j]] = [next[j], next[i]]
     upd({ items: next })
+  }
+  const setAfter = (uid: number, patch: Partial<Item>) => upd({ after: f.after.map((i) => (i.uid === uid ? { ...i, ...patch } : i)), afterDefault: false })
+  function moveAfter(i: number, d: -1 | 1) {
+    const j = i + d
+    if (j < 0 || j >= f.after.length) return
+    const next = [...f.after]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    upd({ after: next, afterDefault: false })
+  }
+  /** unique keys (kept when an item already had one), in display order */
+  function keyed(list: Item[]) {
+    const seen = new Set<string>()
+    return list
+      .filter((i) => i.label.trim())
+      .map((i, k) => {
+        let key = i.key || slug(i.label)
+        let n = 2
+        while (seen.has(key)) key = `${slug(i.label)}_${n++}`
+        seen.add(key)
+        return { key, label: i.label.trim(), mandatory: i.mandatory, sortOrder: k, withNote: !!i.withNote, notePrompt: i.withNote ? i.notePrompt?.trim() || undefined : undefined }
+      })
   }
 
   async function save() {
@@ -123,6 +161,8 @@ export function ServicesEditor({ services, canEdit }: { services: ServiceDoc[]; 
       vitalsRequired: f.vitals,
       staffMix: f.mix.filter((m) => m.role).map((m) => ({ role: m.role, count: Number(m.count || 1) })),
       checklist,
+      afterChecklist: keyed(f.after),
+      kit: f.kit.map((k) => ({ itemId: k.itemId, recommendedQty: k.recommendedQty, minQty: Math.min(k.minQty, k.recommendedQty), usualUse: k.usualUse === '' ? undefined : Number(k.usualUse) })),
       isActive: f.isActive,
       requiresPrescription: f.requiresPrescription,
       ...(f.id ? {} : { sortOrder: services.length }),
@@ -132,12 +172,12 @@ export function ServicesEditor({ services, canEdit }: { services: ServiceDoc[]; 
       if (f.id) {
         await api(`/master/service-types/${f.id}`, { method: 'PATCH', body })
         toast('Service saved')
-        const saved = { ...f, code: body.code, items: checklist.map((c) => ({ uid: uidSeq++, key: c.key, label: c.label, mandatory: c.mandatory })) }
+        const saved = { ...f, code: body.code, items: checklist.map((c) => ({ uid: uidSeq++, key: c.key, label: c.label, mandatory: c.mandatory })), after: body.afterChecklist.map((c) => ({ uid: uidSeq++, key: c.key, label: c.label, mandatory: c.mandatory, withNote: c.withNote, notePrompt: c.notePrompt ?? '' })), afterDefault: false }
         load(saved, f.id)
       } else {
         const r = await api<{ id: string }>('/master/service-types', { body })
         toast('Service created')
-        const saved = { ...f, id: r.id, code: body.code, items: checklist.map((c) => ({ uid: uidSeq++, key: c.key, label: c.label, mandatory: c.mandatory })) }
+        const saved = { ...f, id: r.id, code: body.code, items: checklist.map((c) => ({ uid: uidSeq++, key: c.key, label: c.label, mandatory: c.mandatory })), after: body.afterChecklist.map((c) => ({ uid: uidSeq++, key: c.key, label: c.label, mandatory: c.mandatory, withNote: c.withNote, notePrompt: c.notePrompt ?? '' })), afterDefault: false }
         load(saved, r.id)
       }
       router.refresh()
@@ -348,8 +388,168 @@ export function ServicesEditor({ services, canEdit }: { services: ServiceDoc[]; 
             </button>
           )}
           {f.id && current?.inUse ? <p className="mt-3 text-[12px] text-slate-500">Changes apply to new requests. Visits already created keep the checklist they were created with.</p> : null}
+
+          <div className="mb-2 mt-7 flex flex-wrap items-baseline gap-3">
+            <div className="flex-1 text-[15px] font-bold">
+              After return to hospital · {f.after.length} item{f.after.length === 1 ? '' : 's'}
+              {f.afterDefault && <span className="ml-2 rounded-full bg-[#FEF3C7] px-2 py-0.5 align-middle text-[11px] font-bold text-[#B45309]">DEFAULTS — save to keep or change</span>}
+            </div>
+            <div className="text-[12px] text-slate-500">{f.after.filter((i) => i.mandatory).length} required · required items must be ticked before the visit is closed</div>
+          </div>
+          <div className="overflow-hidden rounded-card border border-slate-200">
+            <div className="grid h-10 items-center border-b border-slate-200 bg-slate-50 px-3 text-[11.5px] font-bold uppercase tracking-[.05em] text-slate-500" style={{ gridTemplateColumns: '28px minmax(0,1fr) 96px 150px 40px' }}>
+              <span />
+              <span>Item (e.g. Samples handed over to lab)</span>
+              <span>Required</span>
+              <span>Asks for a note</span>
+              <span />
+            </div>
+            {f.after.length === 0 && <div className="px-4 py-6 text-center text-[13px] text-slate-400">Nothing to do after returning for this service.</div>}
+            {f.after.map((it, i) => (
+              <div key={it.uid} className="grid min-h-12 items-center border-t border-slate-100 px-3 first:border-t-0" style={{ gridTemplateColumns: '28px minmax(0,1fr) 96px 150px 40px' }}>
+                <span className="flex flex-col items-center">
+                  <button type="button" disabled={i === 0} onClick={() => moveAfter(i, -1)} className="text-slate-400 hover:text-primary disabled:opacity-30" aria-label="Move up">
+                    <ArrowUp size={13} />
+                  </button>
+                  <button type="button" disabled={i === f.after.length - 1} onClick={() => moveAfter(i, 1)} className="text-slate-400 hover:text-primary disabled:opacity-30" aria-label="Move down">
+                    <ArrowDown size={13} />
+                  </button>
+                </span>
+                <span className="min-w-0 pr-3">
+                  <input className="h-9 w-full rounded-md border border-transparent bg-transparent px-2 text-sm font-medium outline-none hover:border-slate-200 focus:border-primary focus:bg-white disabled:hover:border-transparent" value={it.label} placeholder="After-return item" onChange={(e) => setAfter(it.uid, { label: e.target.value })} />
+                  <span className="block truncate px-2 font-mono text-[10.5px] text-slate-400">{it.key || slug(it.label)}</span>
+                </span>
+                <span className="flex items-center gap-2 text-[12px] text-slate-500">
+                  <Tick on={it.mandatory} onChange={(m) => canEdit && setAfter(it.uid, { mandatory: m })} label="Required" />
+                  {it.mandatory ? 'yes' : 'no'}
+                </span>
+                <span className="flex items-center gap-2 pr-2 text-[12px] text-slate-500">
+                  <Tick on={!!it.withNote} onChange={(m) => canEdit && setAfter(it.uid, { withNote: m })} label="Asks for a note" />
+                  {it.withNote ? <input className="h-8 min-w-0 flex-1 rounded-md border border-slate-200 px-2 text-[12px]" placeholder="e.g. Receipt no." value={it.notePrompt ?? ''} onChange={(e) => setAfter(it.uid, { notePrompt: e.target.value })} /> : 'no'}
+                </span>
+                <span>
+                  {canEdit && (
+                    <button type="button" onClick={() => upd({ after: f.after.filter((x) => x.uid !== it.uid), afterDefault: false })} className="flex size-8 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-[#B91C1C]" aria-label="Remove item">
+                      <X size={14} />
+                    </button>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+          {canEdit && (
+            <button type="button" className="mt-2 inline-flex h-9 items-center gap-1.5 px-1 text-sm font-semibold text-primary-700" onClick={() => upd({ after: [...f.after, { uid: uidSeq++, label: '', mandatory: true, withNote: false, notePrompt: '' }], afterDefault: false })}>
+              <Plus size={15} /> Add after-return item
+            </button>
+          )}
+
+          <KitSection kit={f.kit} setKit={(kit) => upd({ kit })} catalog={catalog} canEdit={canEdit} />
         </fieldset>
       </div>
     </div>
+  )
+}
+
+/** "Bag & consumables": catalog items this service takes — recommended, the minimum that must be packed before the
+ *  journey (0 = optional), and the usual use per visit (pre-fills "Consumables used" on the app). */
+function KitSection({ kit, setKit, catalog, canEdit }: { kit: KitRow[]; setKit: (k: KitRow[]) => void; catalog: CatalogItem[]; canEdit: boolean }) {
+  const [q, setQ] = useState('')
+  const byId = (id: string) => catalog.find((c) => c._id === id)
+  const hits = q.trim() ? catalog.filter((c) => c.isActive && !kit.some((k) => k.itemId === c._id) && c.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8) : []
+  const set = (uid: number, patch: Partial<KitRow>) => setKit(kit.map((k) => (k.uid === uid ? { ...k, ...patch } : k)))
+  const move = (i: number, d: -1 | 1) => {
+    const j = i + d
+    if (j < 0 || j >= kit.length) return
+    const next = [...kit]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    setKit(next)
+  }
+  const num = (v: string, max = 99) => Math.max(0, Math.min(max, Math.round(Number(v) || 0)))
+  const COLS = '28px 44px minmax(0,1fr) 92px 92px 92px 40px'
+  return (
+    <>
+      <div className="mb-2 mt-7 flex flex-wrap items-baseline gap-3">
+        <div className="flex-1 text-[15px] font-bold">
+          Bag &amp; consumables · {kit.length} item{kit.length === 1 ? '' : 's'}
+        </div>
+        <div className="text-[12px] text-slate-500">
+          Staff pack these before the journey · <b>Must take</b> blocks Start journey until packed ·{' '}
+          <a href="/settings/equipment" className="font-semibold text-primary-700 hover:underline">
+            Manage items
+          </a>
+        </div>
+      </div>
+      <div className="overflow-hidden rounded-card border border-slate-200">
+        <div className="grid h-10 items-center border-b border-slate-200 bg-slate-50 px-3 text-[11.5px] font-bold uppercase tracking-[.05em] text-slate-500" style={{ gridTemplateColumns: COLS }}>
+          <span />
+          <span />
+          <span>Item</span>
+          <span>Recommend</span>
+          <span>Must take</span>
+          <span>Usual use</span>
+          <span />
+        </div>
+        {kit.length === 0 && <div className="px-4 py-6 text-center text-[13px] text-slate-400">Nothing to pack for this service yet.</div>}
+        {kit.map((k, i) => {
+          const c = byId(k.itemId)
+          const equip = c?.type === 'EQUIPMENT'
+          return (
+            <div key={k.uid} className="grid min-h-14 items-center gap-1 border-t border-slate-100 px-3 first:border-t-0" style={{ gridTemplateColumns: COLS }}>
+              <span className="flex flex-col items-center">
+                <button type="button" disabled={i === 0} onClick={() => move(i, -1)} className="text-slate-400 hover:text-primary disabled:opacity-30" aria-label="Move up">
+                  <ArrowUp size={13} />
+                </button>
+                <button type="button" disabled={i === kit.length - 1} onClick={() => move(i, 1)} className="text-slate-400 hover:text-primary disabled:opacity-30" aria-label="Move down">
+                  <ArrowDown size={13} />
+                </button>
+              </span>
+              <ItemPicture item={{ _id: k.itemId, imageId: c?.imageId, name: c?.name ?? '' }} size={38} />
+              <span className="min-w-0 pl-1">
+                <span className="block truncate text-[13.5px] font-semibold">{c?.name ?? 'Removed item'}</span>
+                <span className="text-[11.5px] text-slate-500">
+                  {c ? `${equip ? 'Equipment' : 'Consumable'} · per ${c.unit}` : ''}
+                  {c && !c.isActive ? ' · hidden' : ''}
+                </span>
+              </span>
+              <input type="number" min={0} max={99} className="hc-input h-9 w-[80px]" value={k.recommendedQty} onChange={(e) => set(k.uid, { recommendedQty: num(e.target.value) })} aria-label="Recommended" />
+              <input type="number" min={0} max={99} className={cx('hc-input h-9 w-[80px]', k.minQty > k.recommendedQty && 'border-[#DC2626]')} value={k.minQty} onChange={(e) => set(k.uid, { minQty: num(e.target.value) })} aria-label="Must take" title="0 = optional" />
+              <input type="number" min={0} max={999} disabled={equip} className="hc-input h-9 w-[80px] disabled:opacity-40" value={equip ? '' : k.usualUse} placeholder={equip ? '—' : '0'} onChange={(e) => set(k.uid, { usualUse: e.target.value === '' ? '' : num(e.target.value, 999) })} aria-label="Usual use per visit" />
+              <span>
+                {canEdit && (
+                  <button type="button" onClick={() => setKit(kit.filter((x) => x.uid !== k.uid))} className="flex size-8 items-center justify-center rounded-md border border-slate-200 text-slate-400 hover:text-[#B91C1C]" aria-label="Remove item">
+                    <X size={14} />
+                  </button>
+                )}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      {canEdit && (
+        <div className="relative mt-2 max-w-md">
+          <input className="hc-input" placeholder={catalog.length ? '+ Add an item — type to search the catalog' : 'No items yet — add them in Equipment & consumables'} value={q} onChange={(e) => setQ(e.target.value)} disabled={!catalog.length} />
+          {!!hits.length && (
+            <ul className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
+              {hits.map((c) => (
+                <li key={c._id}>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13.5px] hover:bg-slate-50"
+                    onClick={() => {
+                      setKit([...kit, { uid: uidSeq++, itemId: c._id, recommendedQty: 1, minQty: c.type === 'EQUIPMENT' ? 1 : 0, usualUse: c.type === 'EQUIPMENT' ? '' : 1 }])
+                      setQ('')
+                    }}
+                  >
+                    <ItemPicture item={c} size={32} />
+                    <span className="min-w-0 flex-1 truncate font-semibold">{c.name}</span>
+                    <span className="text-[11.5px] text-slate-500">{c.type === 'EQUIPMENT' ? 'Equipment' : 'Consumable'}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </>
   )
 }

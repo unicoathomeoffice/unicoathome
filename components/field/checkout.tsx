@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, Camera, Check, CheckCircle2, ChevronRight, ClipboardCheck, FileText, HeartPulse, Loader2, PenLine, Repeat2 } from 'lucide-react'
+import { AlertTriangle, Camera, Check, CheckCircle2, ChevronRight, ClipboardCheck, FileText, HeartPulse, Loader2, Package, PenLine, Repeat2 } from 'lucide-react'
 import { api, stamp, useToast, Segmented, Toggle, WhatsAppButton } from '@/components/client'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, TRANSPORT_MODES, TRANSPORT_MODE_LABEL } from '@/lib/constants'
 import { cx, time, taka, dur } from '@/lib/format'
@@ -28,6 +28,8 @@ export type CheckoutProps = {
   vitals: { at?: string; parts: { label: string; value: string; bad?: boolean }[] }
   photos: number
   meds: number
+  /** consumables recorded on the visit (a reminder only — never blocks check-out) */
+  consumables?: number
   notes: boolean
   confirmation?: { type?: string; at?: string; name?: string; relation?: string } | null
   estimatedFee?: number | null
@@ -150,6 +152,13 @@ export function CheckoutScreen(p: CheckoutProps) {
       tone: p.photos || p.meds ? 'b' : 's',
       title: `${p.photos} photo${p.photos === 1 ? '' : 's'} · ${p.meds} medication${p.meds === 1 ? '' : 's'}`,
       sub: p.notes ? 'Notes saved' : 'No notes yet',
+    },
+    {
+      href: 'consumables',
+      icon: Package,
+      tone: p.consumables ? 'g' : 'a',
+      title: p.consumables ? `Consumables · ${p.consumables} item${p.consumables === 1 ? '' : 's'}` : 'No consumables recorded',
+      sub: p.consumables ? 'Tap to check the quantities' : 'Add what you used — cannula, gloves, syringes… (optional)',
     },
     {
       href: 'confirm',

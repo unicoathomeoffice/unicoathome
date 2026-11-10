@@ -5,7 +5,7 @@ import { audit } from '@/lib/audit'
 import { ATTACHMENT_KINDS } from '@/lib/files'
 import { blobEnabled, blobPath, storeBlob, MAX_UPLOAD_BYTES } from '@/lib/storage'
 
-const KINDS: string[] = [...ATTACHMENT_KINDS].filter((k) => !['REQUISITION', 'GATE_PASS', 'CLAIM', 'AVATAR'].includes(k)) // generated on the server; profile photos via the photo routes
+const KINDS: string[] = [...ATTACHMENT_KINDS].filter((k) => !['REQUISITION', 'GATE_PASS', 'CLAIM', 'AVATAR', 'EQUIPMENT'].includes(k)) // generated on the server; profile + equipment photos via their own routes
 
 /**
  * POST /api/v1/attachments (multipart/form-data): file, kind, requestId? | patientId?, caption?

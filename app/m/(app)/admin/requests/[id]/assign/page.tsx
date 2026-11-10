@@ -62,6 +62,7 @@ export default async function AssignPage({ params }: { params: Promise<{ id: str
         instructions={r.assignment?.instructions}
         transport={!!r.transport?.needed}
         canOverride={can(user, 'requests.override')}
+        canActForExternal={can(user, 'requests.assign')}
       />
       </div>
     </MScreen>

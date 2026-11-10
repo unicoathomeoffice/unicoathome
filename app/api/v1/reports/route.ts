@@ -1,6 +1,7 @@
 import { route, qp, clientMeta, forbidden } from '@/lib/api'
 import { can, canViewMessages } from '@/lib/constants'
 import { getReport, requestsCsv, messagesCsv, normaliseFilter } from '@/lib/services/reports'
+import { moreCsv } from '@/lib/services/reports-more'
 import { audit } from '@/lib/audit'
 
 /**
@@ -20,7 +21,9 @@ export const GET = route(
       const out =
         isMessages
           ? await messagesCsv({ channel: p.get('channel'), status: p.get('status'), q: p.get('q'), from: p.get('from'), to: p.get('to') })
-          : await requestsCsv(filter)
+          : type === 'services' || type === 'consumables' || type === 'staff'
+            ? await moreCsv(type, filter)
+            : await requestsCsv(filter)
       await audit(user, 'report.export', 'report', type, { after: { type, format: 'csv', from: p.get('from') ?? filter.from, to: p.get('to') ?? filter.to, rows: out.count }, label: out.filename }, clientMeta(req, user))
       return new Response(out.csv, {
         headers: { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="${out.filename}"`, 'cache-control': 'no-store' },

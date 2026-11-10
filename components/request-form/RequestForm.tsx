@@ -110,6 +110,7 @@ export function RequestForm({
   const [savedAt, setSavedAt] = useState<Date | null>(null)
   // step 4: the care team ([0] primary) and what the visit is confirmed with
   const [team, setTeam] = useState<string[]>([])
+  const [outside, setOutside] = useState<string[]>([]) // outside staff from the HIS (no app): accepted for them on save
   const [teamSize, setTeamSize] = useState(1)
   const [instructions, setInstructions] = useState('')
   const [notify, setNotify] = useState<string[] | null>(null) // "Notify on WhatsApp" (null = Settings defaults)
@@ -269,7 +270,7 @@ export function RequestForm({
         ignoreDuplicate: ignoreDuplicate || undefined,
         // one call: created, confirmed and (Save & assign) the care team put on it — each step audited
         then: kind === 'save' ? undefined : kind,
-        assign: kind === 'assign' ? { primaryStaffId: team[0], secondaryStaffIds: team.slice(1), instructions: instructions.trim() || undefined } : undefined,
+        assign: kind === 'assign' ? { primaryStaffId: team[0], secondaryStaffIds: team.slice(1), instructions: instructions.trim() || undefined, acceptNow: outside.includes(team[0]) || undefined } : undefined,
         estimatedFee: kind === 'assign' && f.fee !== '' ? Number(f.fee) : undefined,
         paymentMethod: kind === 'assign' ? f.payment || undefined : undefined,
         notify: notify ?? undefined,
@@ -341,6 +342,7 @@ export function RequestForm({
             setInstructions={setInstructions}
             autoFee={autoFee}
             duration={f.duration ? Number(f.duration) : autoDuration}
+            onOutside={(ids) => setOutside((x) => [...new Set([...x, ...ids])])}
           />
         )}
         {step >= 3 && (
@@ -893,6 +895,7 @@ function StepAssign({
   setInstructions,
   autoFee,
   duration,
+  onOutside,
 }: {
   f: F
   set: SetF
@@ -904,6 +907,7 @@ function StepAssign({
   setInstructions: (v: string) => void
   autoFee: number
   duration: number
+  onOutside: (ids: string[]) => void
 }) {
   const ask = {
     serviceCodes: f.serviceCodes,
@@ -918,7 +922,7 @@ function StepAssign({
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <SectionCard title="Care team" right={<span className="text-[12px] text-slate-500">Optional · or use Save & confirm and assign later</span>}>
         <div className="mt-3 flex flex-col gap-3.5">
-          <TeamPicker team={team} setTeam={setTeam} teamSize={teamSize} setTeamSize={setTeamSize} load={() => api<{ items: Candidate[] }>('/requests/candidates', { body: JSON.parse(key) })} loadKey={key} area={f.addr.area} autoPick={false} />
+          <TeamPicker team={team} setTeam={setTeam} teamSize={teamSize} setTeamSize={setTeamSize} load={() => api<{ items: Candidate[] }>('/requests/candidates', { body: JSON.parse(key) })} loadKey={key} area={f.addr.area} autoPick={false} onLoaded={(items) => onOutside(items.filter((c) => c.external).map((c) => c.id))} />
           <Field label="Instructions to staff">
             <input className="hc-input" value={instructions} placeholder="e.g. Bring resistance bands. Family requests female staff." onChange={(e) => setInstructions(e.target.value)} />
           </Field>

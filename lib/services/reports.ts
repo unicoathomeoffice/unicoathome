@@ -27,7 +27,7 @@ export function normaliseFilter(p: { from?: string | null; to?: string | null; g
   return { from, to, groupBy, service: p.service || undefined, zone: p.zone || undefined }
 }
 
-function match(f: ReportFilter) {
+export function match(f: ReportFilter) {
   const m: Record<string, any> = { deletedAt: null, 'timeline.requestedAt': { $gte: dayRange(f.from).start, $lt: dayRange(f.to).end } }
   if (f.service) m['services.code'] = f.service
   if (f.zone) m['patientSnapshot.area'] = f.zone

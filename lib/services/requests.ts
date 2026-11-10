@@ -60,15 +60,20 @@ export async function loadRequest(id: string, user: SessionUser) {
   return r
 }
 
-/** Someone with override access doing a care-team step for the team (not a member themselves). */
-export function onBehalf(user: SessionUser, r: any) {
-  return !isTeamMember(user, r) && can(user, 'requests.override')
+/** May do the care team's steps for them: override users always; coordinators when outside staff (no app) are on the team. */
+export function actsForTeam(user: SessionUser, r: any) {
+  return can(user, 'requests.override') || (!!r.assignment?.hasExternal && can(user, 'requests.assign'))
 }
 
-/** The care team — or an override user acting for them (each such step gets an extra "on behalf" audit row). */
+/** Someone acting for the team (not a member themselves): override access, or a coordinator for outside staff. */
+export function onBehalf(user: SessionUser, r: any) {
+  return !isTeamMember(user, r) && actsForTeam(user, r)
+}
+
+/** The care team — or someone acting for them (each such step gets an extra "on behalf" audit row). */
 function requireTeam(user: SessionUser, r: any) {
   if (isTeamMember(user, r)) return
-  if (!can(user, 'requests.override')) throw forbidden('Only the assigned care team can do this')
+  if (!actsForTeam(user, r)) throw forbidden('Only the assigned care team can do this')
   const staffId = r.assignment?.primaryStaffId
   background(async () => {
     const staff = staffId ? await User.findById(staffId).select('name').lean<any>() : null
@@ -399,7 +404,13 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
     expectedDurationMin: duration,
     clinical: { complaint: input.complaint, notes: input.clinicalNotes, referringDoctor: input.referringDoctor, allergies: input.allergies ?? patient.allergies },
     timeline: { requestedAt: now },
-    visit: { checklist: await buildChecklist(types.map((t) => t._id)) },
+    visit: {
+      checklist: await buildChecklist(types.map((t) => t._id)),
+      afterSet: true,
+      afterChecklist: await (await import('./after-checklist')).buildAfterChecklist(types.map((t) => t._id)),
+      kitSet: true,
+      kit: await (await import('./kit')).buildKit(types.map((t) => t._id)),
+    },
     transport: { needed: !!input.transportNeeded, status: input.transportNeeded ? 'REQUESTED' : undefined },
     billing: { estimatedFee: input.estimatedFee ?? types.reduce((a, t) => a + (t.fee ?? 0), 0) + testsTotal(input.testItems), method: input.paymentMethod },
     source: input.source ?? (user.client === 'app' ? 'APP' : 'PHONE'),
@@ -542,11 +553,12 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   const ids = [input.primaryStaffId, ...input.secondaryStaffIds]
   if (!ids.every(isOid)) throw bad('Invalid staff')
   if (new Set(ids).size !== ids.length) throw bad('The same person is on the care team twice', { secondaryStaffIds: 'Duplicate team member' })
-  const staff = await User.find({ _id: { $in: ids }, status: 'ACTIVE' }).select('name role availability').lean<any[]>()
+  const staff = await User.find({ _id: { $in: ids }, status: 'ACTIVE' }).select('name role availability external').lean<any[]>()
   if (staff.length !== new Set(ids).size) throw bad('One or more staff members are not active')
   const prevPrimary = r.assignment?.primaryStaffId ? String(r.assignment.primaryStaffId) : null
   const isReassign = ['ASSIGNED', 'ACCEPTED'].includes(r.status)
   if (r.status === 'ACCEPTED' || r.status === 'ASSIGNED') r.status = 'CONFIRMED' // re-assign resets acceptance
+  if (r.status === 'RESCHEDULED') move(r, 'CONFIRMED', 'confirmedAt') // the new time was agreed: confirm, then assign
   move(r, 'ASSIGNED', 'assignedAt')
   const s = await getSettings()
   if (input.date) r.scheduledAt = dhakaDate(input.date, input.time || slotStart(input.slot))
@@ -562,7 +574,8 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   r.set('assignment.respondBy', new Date(Date.now() + s.sla.acceptTimeoutMin * 60_000))
   r.set('assignment.timedOutAt', undefined)
   r.set('assignment.instructions', input.instructions)
-  const forced = !!input.acceptNow && can(user, 'requests.override')
+  r.set('assignment.hasExternal', staff.some((x) => x.external))
+  const forced = !!input.acceptNow && actsForTeam(user, r)
   if (forced) {
     move(r, 'ACCEPTED', 'acceptedAt')
     r.set('assignment.acceptedAt', new Date())
@@ -657,6 +670,11 @@ export const CloseInput = z.object({
 })
 export async function close(r: any, input: z.infer<typeof CloseInput>, user: SessionUser, meta: Meta) {
   if (r.pettyCash?.some((p: any) => p.status === 'PENDING')) throw bad('Approve or reject the pending petty cash request first')
+  // after-return items marked required (Settings → Services) must be done first, e.g. samples handed to the lab
+  const after = await import('./after-checklist')
+  await after.ensureAfterChecklist(r)
+  const open = after.openRequiredAfter(r)
+  if (open.length) throw new ApiError(409, 'AFTER_RETURN_OPEN', `Finish the after-return items first: ${open.map((c: any) => c.label).join(', ')}`)
   move(r, 'CLOSED', 'closedAt')
   r.set('billing.invoiceNo', input.invoiceNo)
   r.set('billing.invoiceAmount', input.invoiceAmount)
@@ -751,6 +769,11 @@ export const StampInput = Stamp
 
 export async function enRoute(r: any, input: z.infer<typeof Stamp>, user: SessionUser, meta: Meta) {
   requireTeam(user, r)
+  // the bag first: every must-take item packed (Settings → Services → Bag & consumables)
+  const kit = await import('./kit')
+  await kit.ensureKit(r)
+  const block = kit.kitBlock(r)
+  if (block) throw new ApiError(409, 'BAG_NOT_READY', block)
   move(r, 'EN_ROUTE', 'enRouteAt')
   deviceStamp(r, user, 'en_route', input.deviceAt, input.offline)
   const s = await getSettings()
@@ -857,7 +880,17 @@ export async function saveNotes(r: any, input: z.infer<typeof NotesInput>, user:
   if (input.clinical != null) r.set('visit.notes.clinical', input.clinical)
   if (input.nursing != null) r.set('visit.notes.nursing', input.nursing)
   if (input.remarks != null) r.set('visit.remarks', input.remarks)
-  if (input.consumables) r.set('visit.consumables', input.consumables)
+  if (input.consumables) {
+    // the Notes screen sends name + qty only: keep the catalog link / who / when of rows it already knew
+    const prev: any[] = r.visit?.consumables ?? []
+    r.set(
+      'visit.consumables',
+      input.consumables.map((c) => {
+        const old = prev.find((p) => p.item === c.item)
+        return old ? { item: c.item, qty: c.qty, itemId: old.itemId, unit: old.unit, at: old.qty === c.qty ? old.at : new Date(), by: old.qty === c.qty ? old.by : user.id } : { item: c.item, qty: c.qty, at: new Date(), by: user.id }
+      }),
+    )
+  }
   r.set('visit.notes.updatedAt', new Date())
   await r.save()
   await audit(user, 'visit.notes', 'request', r._id, { after: { notesUpdated: true }, label: r.requestNo }, meta)
@@ -913,7 +946,8 @@ export async function checkOut(r: any, input: z.infer<typeof CheckOutInput>, use
   if (input.transportMode) r.set('transport.mode', input.transportMode)
   if (input.remarks != null) r.set('visit.remarks', input.remarks)
   deviceStamp(r, user, 'check_out', input.deviceAt, input.offline)
-  const returning = onBehalf(user, r) ? false : await startReturn(r, user.id) // way back to the hospital (live tracking + hospital pin set)
+  // the way back always opens ("Back at hospital" is recorded); live GPS only from the team's own phone
+  const returning = await startReturn(r, user.id, { gps: !onBehalf(user, r) })
   await audit(user, 'visit.check_out', 'request', r._id, { after: { at: now, durationMin: duration, billAmount: input.billAmount, billingStatus: input.billingStatus, returnTracking: returning }, label: r.requestNo }, meta)
   if (input.complete !== false) await completeVisit(r, user, meta)
   else {
@@ -922,12 +956,28 @@ export async function checkOut(r: any, input: z.infer<typeof CheckOutInput>, use
   }
 }
 
-/** "Reached hospital" button on the field app (the geofence usually does this on its own). */
+/** "Reached hospital" button on the field app (the geofence does this on its own when the hospital pin is set). */
 export async function reachedHospital(r: any, user: SessionUser, meta: Meta) {
   requireTeam(user, r)
   const { finishReturn } = await import('./tracking')
-  if (!(await finishReturn(r._id, 'button'))) throw conflict('NO_RETURN_TRIP', 'This visit has no open way back')
+  if (!(await finishReturn(r._id, 'button', new Date(), user.id))) throw conflict('NO_RETURN_TRIP', 'This visit has no open way back')
   await audit(user, 'visit.returned', 'request', r._id, { after: { by: 'button' }, label: r.requestNo }, meta)
+}
+
+/** Coordinator sets "Back at hospital" by hand (missed tap, no hospital pin, or older visits that never opened a way back). */
+export const BackAtHospitalInput = z.object({ time: z.string().regex(/^\d{2}:\d{2}$/, 'Use HH:mm'), date: z.string().optional() })
+export async function recordBack(r: any, input: z.infer<typeof BackAtHospitalInput>, user: SessionUser, meta: Meta) {
+  const out = r.timeline?.checkOutAt ? new Date(r.timeline.checkOutAt) : null
+  if (!out) throw conflict('NOT_CHECKED_OUT', 'The team has not checked out yet')
+  if (r.returnTrip?.reachedAt) throw conflict('ALREADY_BACK', `Back at hospital is already recorded (${fmtTime(r.returnTrip.reachedAt)})`)
+  const at = dhakaDate(input.date ?? isoDay(out), input.time)
+  if (at < out) throw bad('Back at hospital must be after check-out', { time: `After ${fmtTime(out)}` })
+  if (at > new Date()) throw bad('That time is in the future', { time: 'Not later than now' })
+  // a way back that was never opened (before this was recorded for every visit): open it at check-out
+  if (!r.returnTrip?.startedAt || r.returnTrip?.reachedBy) await HomecareRequest.updateOne({ _id: r._id }, { $set: { returnTrip: { startedAt: out } } })
+  const { finishReturn } = await import('./tracking')
+  if (!(await finishReturn(r._id, 'manual', at, user.id))) throw conflict('NO_RETURN_TRIP', 'Could not record the way back')
+  await audit(user, 'visit.back_manual', 'request', r._id, { after: { reachedAt: at }, label: r.requestNo }, meta)
 }
 
 export async function completeVisit(r: any, user: SessionUser, meta: Meta) {
@@ -1151,6 +1201,7 @@ export type Candidate = {
   visitsToday: number
   availability: string
   badges: string[]
+  external?: boolean
 }
 
 export async function rankCandidates(r: any, limit = 20, roleFilter?: string[]): Promise<Candidate[]> {
@@ -1161,7 +1212,7 @@ export async function rankCandidates(r: any, limit = 20, roleFilter?: string[]):
   const [types, staff, todays] = await Promise.all([
     serviceIds.length ? ServiceType.find({ _id: { $in: serviceIds } }).select('requiredSkills').lean<any[]>() : [],
     User.find({ $or: [{ role: { $in: roleFilter ?? ['DOCTOR', 'NURSE', 'ALLIED'] } }, { roles: { $in: roleFilter ?? ['DOCTOR', 'NURSE', 'ALLIED'] } }], status: 'ACTIVE', deletedAt: null })
-      .select('name role designationId employeeId availability skills zones photoUrl').lean<any[]>(),
+      .select('name role designationId employeeId availability skills zones photoUrl external hisDesignation hisDepartment').lean<any[]>(),
     HomecareRequest.find({
       ...(r._id && { _id: { $ne: r._id } }), // a request not saved yet has no id
       scheduledAt: { $gte: start, $lt: end },
@@ -1191,6 +1242,7 @@ export async function rankCandidates(r: any, limit = 20, roleFilter?: string[]):
         u.availability === 'ON_LEAVE' ? 'On leave' : u.availability === 'OFF_DUTY' ? 'Off duty' : free ? `Free ${fmtTime(at)}–${fmtTime(new Date(at.getTime() + dur * 60_000))}` : 'Busy',
         zoneMatch ? 'Zone ✓' : 'Out of zone',
         `${mine.length} visit${mine.length === 1 ? '' : 's'} today`,
+        ...(u.external ? ['Outside · HIS'] : []),
       ]
       return {
         id: String(u._id),
@@ -1198,7 +1250,7 @@ export async function rankCandidates(r: any, limit = 20, roleFilter?: string[]):
         initials: (u.name ?? '').replace(/^(Dr\.?|Md\.?|Mst\.?)\s+/i, '').split(/\s+/).map((x: string) => x[0]).slice(0, 2).join('').toUpperCase(),
         photoUrl: u.photoUrl,
         role: u.role,
-        designation: desigs.find((d) => String(d._id) === String(u.designationId))?.title,
+        designation: desigs.find((d) => String(d._id) === String(u.designationId))?.title ?? u.hisDesignation,
         employeeId: u.employeeId,
         score,
         skillMatch,
@@ -1207,6 +1259,7 @@ export async function rankCandidates(r: any, limit = 20, roleFilter?: string[]):
         visitsToday: mine.length,
         availability: u.availability,
         badges,
+        external: !!u.external,
       }
     })
     .sort((a, b) => b.score - a.score)

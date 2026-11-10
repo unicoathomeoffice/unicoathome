@@ -1,5 +1,5 @@
 import 'server-only'
-import { ApiUsage } from './models'
+import { ApiUsage, Setting } from './models'
 import { isoDay } from './format'
 import type { getSettings } from './settings'
 
@@ -8,11 +8,13 @@ import type { getSettings } from './settings'
 
 export type MapsCfg = Awaited<ReturnType<typeof getSettings>>['maps']
 export const PROVIDERS = ['google', 'osm', 'device'] as const
-export const KINDS = ['places_autocomplete', 'places_details', 'maps_js', 'photon_search', 'photon_reverse', 'osm_map', 'embed', 'gps'] as const
+export const KINDS = ['places_autocomplete', 'places_details', 'maps_js', 'routes', 'photon_search', 'photon_reverse', 'osm_map', 'osrm_route', 'embed', 'gps'] as const
 export const KIND_LABEL: Record<(typeof KINDS)[number], string> = {
   places_autocomplete: 'Google · address suggestions',
   places_details: 'Google · place details',
   maps_js: 'Google · map loads',
+  routes: 'Google · road route + ETA (live tracking)',
+  osrm_route: 'OpenStreetMap · road route (free)',
   photon_search: 'OpenStreetMap · address search',
   photon_reverse: 'OpenStreetMap · location → address',
   osm_map: 'OpenStreetMap · map loads',
@@ -27,29 +29,103 @@ export async function recordUsage(provider: string, kind: string, n = 1) {
 const monthStart = (day: string) => `${day.slice(0, 7)}-01`
 const daysInMonth = (day: string) => new Date(Number(day.slice(0, 4)), Number(day.slice(5, 7)), 0).getDate()
 
-/** Google calls so far today and this month (only the billable kinds count against the free tier). */
+/** The billable Google APIs. Google's free tier is per API (SKU): each gets `monthlyFree` calls a month on its own. */
+export const GOOGLE_KINDS = ['maps_js', 'places_autocomplete', 'places_details', 'routes'] as const
+export type GoogleKind = (typeof GOOGLE_KINDS)[number]
+
+/** Google calls so far today and this month, per billable API. */
 export async function googleUsage() {
   const today = isoDay()
-  const rows = await ApiUsage.find({ provider: 'google', kind: { $ne: 'embed' }, day: { $gte: monthStart(today) } }).lean<any[]>()
+  const rows = await ApiUsage.find({ provider: 'google', kind: { $in: GOOGLE_KINDS }, day: { $gte: monthStart(today) } }).lean<any[]>()
   const sum = (f: (r: any) => boolean) => rows.filter(f).reduce((a, r) => a + (r.n ?? 0), 0)
-  return { today: sum((r) => r.day === today), month: sum(() => true), day: today }
+  const kinds = Object.fromEntries(GOOGLE_KINDS.map((k) => [k, { today: sum((r) => r.kind === k && r.day === today), month: sum((r) => r.kind === k) }])) as Record<GoogleKind, { today: number; month: number }>
+  return { today: sum((r) => r.day === today), month: sum(() => true), day: today, kinds }
 }
 
-/** Suggested daily cap: the monthly free calls spread evenly over the month, less a safety margin. */
-export const suggestedDailyCap = (cfg: MapsCfg, day = isoDay()) => Math.max(10, Math.floor(((Number(cfg.monthlyFree) || 10000) * (1 - (Number(cfg.reservePct) || 0) / 100)) / daysInMonth(day)))
+const monthlyCapOf = (cfg: MapsCfg) => Math.floor((Number(cfg.monthlyFree) || 10000) * (1 - (Number(cfg.reservePct) || 0) / 100))
+/** Suggested daily cap per API: the monthly free calls spread evenly over the month, less a safety margin. */
+export const suggestedDailyCap = (cfg: MapsCfg, day = isoDay()) => Math.max(10, Math.floor(monthlyCapOf(cfg) / daysInMonth(day)))
 
-/** May the public pages use Google right now? */
-export async function googleBudget(cfg: MapsCfg): Promise<{ allowed: boolean; reason: 'ok' | 'off' | 'no-key' | 'daily-cap' | 'monthly-cap'; remainingToday: number; dailyCap: number; used: { today: number; month: number } }> {
-  const used = await googleUsage()
+type Reason = 'ok' | 'off' | 'no-key' | 'daily-cap' | 'monthly-cap' | 'refused'
+export type KindBudget = { ok: boolean; reason: Reason; today: number; month: number; dailyCap: number; monthlyCap: number; remainingToday: number }
+
+/**
+ * May the pages use Google right now — overall and per API? Each API has its own monthly allowance and an even daily
+ * share; when one runs out only that API falls back to the free provider (e.g. address search → Photon while maps stay
+ * on Google). `refused`: the last check found the key or project refused by Google (see probeGoogle).
+ */
+export async function googleBudget(cfg: MapsCfg): Promise<{ allowed: boolean; reason: Reason; message?: string; checkedAt?: string; remainingToday: number; dailyCap: number; monthlyCap: number; used: { today: number; month: number }; kinds: Record<GoogleKind, KindBudget> }> {
+  const [used, probe] = await Promise.all([googleUsage(), lastProbe()])
   const dailyCap = cfg.dailyCap === 'auto' || !cfg.dailyCap ? suggestedDailyCap(cfg, used.day) : Number(cfg.dailyCap)
-  const monthlyCap = Math.floor((Number(cfg.monthlyFree) || 10000) * (1 - (Number(cfg.reservePct) || 0) / 100))
-  const remainingToday = Math.max(0, dailyCap - used.today)
-  const base = { remainingToday, dailyCap, used: { today: used.today, month: used.month } }
-  if (!cfg.useGoogle) return { allowed: false, reason: 'off', ...base }
-  if (!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY) return { allowed: false, reason: 'no-key', ...base }
-  if (used.month >= monthlyCap) return { allowed: false, reason: 'monthly-cap', ...base }
-  if (used.today >= dailyCap) return { allowed: false, reason: 'daily-cap', ...base }
-  return { allowed: true, reason: 'ok', ...base }
+  const monthlyCap = monthlyCapOf(cfg)
+  const global: Reason | null = !cfg.useGoogle ? 'off' : !process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? 'no-key' : probe && !probe.ok ? 'refused' : null
+  const kinds = Object.fromEntries(
+    GOOGLE_KINDS.map((k) => {
+      const u = used.kinds[k]
+      const reason: Reason = global ?? (u.month >= monthlyCap ? 'monthly-cap' : u.today >= dailyCap ? 'daily-cap' : 'ok')
+      return [k, { ok: reason === 'ok', reason, today: u.today, month: u.month, dailyCap, monthlyCap, remainingToday: Math.max(0, dailyCap - u.today) }]
+    }),
+  ) as Record<GoogleKind, KindBudget>
+  const list = Object.values(kinds)
+  const allowed = list.some((k) => k.ok)
+  const reason: Reason = allowed ? 'ok' : (global ?? (list.some((k) => k.reason === 'daily-cap') ? 'daily-cap' : 'monthly-cap'))
+  return {
+    allowed,
+    reason,
+    message: probe && !probe.ok ? probe.message : undefined,
+    checkedAt: probe?.at ? new Date(probe.at).toISOString() : undefined,
+    remainingToday: kinds.maps_js.remainingToday,
+    dailyCap,
+    monthlyCap,
+    used: { today: used.today, month: used.month },
+    kinds,
+  }
+}
+
+// ---------------------------------------------------------------- does Google accept the key? (one tiny call)
+// Google's JS map shows its own "can't load" dialog instead of failing detectably, so the server checks first.
+// The result is kept in Mongo (shared by all server instances): a good answer for 6 h, a refusal for 15 min.
+type Probe = { ok: boolean; at: number; status?: number; message?: string }
+const PROBE_KEY = 'maps:probe'
+const OK_TTL = 6 * 3600_000
+const FAIL_TTL = 15 * 60_000
+
+async function lastProbe(): Promise<Probe | null> {
+  return ((await Setting.findOne({ key: PROBE_KEY }).select('value').lean<any>())?.value as Probe) ?? null
+}
+
+/** Check (or re-check when stale / forced) that Google accepts the key; keeps Google's own error text. */
+export async function probeGoogle(origin: string, force = false): Promise<Probe> {
+  const prev = await lastProbe()
+  if (!force && prev && Date.now() - prev.at < (prev.ok ? OK_TTL : FAIL_TTL)) return prev
+  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+  let p: Probe
+  if (!key) p = { ok: false, at: Date.now(), message: 'No Google key configured' }
+  else {
+    try {
+      const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+        method: 'POST',
+        cache: 'no-store',
+        signal: AbortSignal.timeout(8000),
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': key, referer: `${origin}/` },
+        body: JSON.stringify({ input: 'Dhaka', includedRegionCodes: ['bd'] }),
+      })
+      const j: any = res.ok ? null : await res.json().catch(() => null)
+      p = { ok: res.ok, at: Date.now(), status: res.status, message: res.ok ? undefined : explain(res.status, j?.error?.message) }
+    } catch (e: any) {
+      p = { ok: false, at: Date.now(), message: `Google could not be reached (${e?.name === 'TimeoutError' ? 'timeout' : 'network'})` }
+    }
+  }
+  await Setting.updateOne({ key: PROBE_KEY }, { value: p }, { upsert: true })
+  return p
+}
+
+function explain(status: number, msg?: string) {
+  if (status === 403 && /not activated|not enabled|does not have permission|PERMISSION_DENIED/i.test(msg ?? 'permission'))
+    return `Google refused the key (${status}): the Maps APIs are not enabled on the Google Cloud project. Enable "Maps JavaScript API" and "Places API (New)" and link a billing account (needed even for the free monthly calls).`
+  if (status === 403 && /referer|referrer/i.test(msg ?? '')) return `Google refused the key (${status}): this website is not in the key's allowed websites (HTTP referrers).`
+  if (status === 429) return 'Google answered "too many requests" (429): the daily quota in Google Cloud is used up.'
+  return `Google refused the key (${status})${msg ? `: ${msg}` : ''}`
 }
 
 /** Per-day totals for the settings page (last `days` days, every provider / kind). */

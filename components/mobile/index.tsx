@@ -137,7 +137,8 @@ export function MRow({ children, href, className }: { children: ReactNode; href?
 }
 
 /** Call · WhatsApp · Map (design `contact`). WhatsApp is a link to a prefilled chat; for templated + logged sends use <WhatsAppButton>. */
-export function ContactBar({ phone, address, lat, lng, whatsappHref, soft }: { phone?: string; address?: string; lat?: number; lng?: number; whatsappHref?: string; soft?: boolean }) {
+/** `mapHref`: an in-app directions page (while travelling, so live location keeps flowing) instead of Google Maps. */
+export function ContactBar({ phone, address, lat, lng, whatsappHref, soft, mapHref }: { phone?: string; address?: string; lat?: number; lng?: number; whatsappHref?: string; soft?: boolean; mapHref?: string }) {
   const cls = cx('flex h-11 flex-1 items-center justify-center gap-1.5 rounded-[10px] text-sm font-semibold text-primary-700', soft ? 'bg-slate-100' : 'border-[1.5px] border-slate-300 bg-white')
   return (
     <div className="flex gap-2">
@@ -150,9 +151,15 @@ export function ContactBar({ phone, address, lat, lng, whatsappHref, soft }: { p
         </svg>
         WhatsApp
       </a>
-      <a href={mapsUrl(address, lat, lng)} target="_blank" rel="noreferrer" className={cls}>
-        <MapPin size={18} /> Map
-      </a>
+      {mapHref ? (
+        <a href={mapHref} className={cls}>
+          <MapPin size={18} /> Directions
+        </a>
+      ) : (
+        <a href={mapsUrl(address, lat, lng)} target="_blank" rel="noreferrer" className={cls}>
+          <MapPin size={18} /> Map
+        </a>
+      )}
     </div>
   )
 }

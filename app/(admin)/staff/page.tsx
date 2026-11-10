@@ -134,9 +134,12 @@ export default async function StaffPage({ searchParams }: { searchParams: SP }) 
               <UserOpenButton user={su} options={options} canManage={canManage} autoOpen={sp.edit === String(u._id)}>
                 <Avatar name={u.name} photo={u.photoUrl} size={32} tone={u.status === 'SUSPENDED' ? 'slate' : 'blue'} />
                 <span className="min-w-0">
-                  <span className="block truncate font-semibold text-slate-900 hover:text-primary-700">{u.name}</span>
+                  <span className="block truncate font-semibold text-slate-900 hover:text-primary-700">
+                    {u.name}
+                    {u.external && <span className="ml-1.5 rounded-full bg-[#EDE9FE] px-1.5 align-middle text-[10px] font-bold text-[#6D28D9]">OUTSIDE · HIS</span>}
+                  </span>
                   <span className="block truncate text-[11.5px] text-slate-500">
-                    {u.employeeId} · {fmtPhone(u.phone)}
+                    {u.employeeId} · {u.external ? [u.hisDesignation, u.hisDepartment].filter(Boolean).join(' · ') || 'no app login' : fmtPhone(u.phone)}
                   </span>
                 </span>
               </UserOpenButton>

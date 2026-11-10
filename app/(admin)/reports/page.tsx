@@ -7,6 +7,8 @@ import { AdminPage } from '@/components/admin/AdminPage'
 import { Avatar, Bars, Card, CardHeader, HBars, Kpi, Label, StatusChip, Table, Tr, Empty, btnClass } from '@/components/ui'
 import { UrlDateRange, UrlSelect } from '@/components/comms/UrlFilters'
 import { PrintButton, PrintStyles } from '@/components/reports/PrintButton'
+import { MoreReports, ReportFilters, type MoreView } from '@/components/reports/MoreReports'
+import { Tabs } from '@/components/ui'
 import { cx, date as fmtDate, dayNum, dur, taka } from '@/lib/format'
 
 export const metadata: Metadata = { title: 'Reports' }
@@ -21,6 +23,45 @@ export default async function ReportsPage({ searchParams }: { searchParams: SP }
   await requireWebUser('reports.view')
   const sp = await searchParams
   const f = normaliseFilter(sp)
+  // tabs keep the date range and filters
+  const view: 'overview' | MoreView = (['services', 'consumables', 'staff'] as const).includes(sp.view as MoreView) ? (sp.view as MoreView) : 'overview'
+  const keep = (v: string) => `/reports?${new URLSearchParams({ ...(v === 'overview' ? {} : { view: v }), from: f.from, to: f.to, ...(f.service ? { service: f.service } : {}), ...(f.zone ? { zone: f.zone } : {}) }).toString()}`
+  const tabs = (
+    <Tabs
+      className="no-print"
+      active={view}
+      items={[
+        { key: 'overview', label: 'Overview', href: keep('overview') },
+        { key: 'services', label: 'Services', href: keep('services') },
+        { key: 'consumables', label: 'Consumables', href: keep('consumables') },
+        { key: 'staff', label: 'Staff', href: keep('staff') },
+      ]}
+    />
+  )
+  if (view !== 'overview') {
+    const [svc, zn] = await Promise.all([
+      ServiceType.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('code name').lean<any[]>(),
+      Zone.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('name').lean<any[]>(),
+    ])
+    const title = { services: 'Home care services provided', consumables: 'Consumable usage', staff: 'Staff productivity' }[view]
+    return (
+      <AdminPage title="Reports">
+        <PrintStyles />
+        <div data-print-root className="flex flex-col gap-4">
+          <div className="hidden print:block">
+            <img src="/logo.svg" alt="Unico Hospitals" className="mb-2 h-9" />
+            <div className="text-lg font-bold">
+              {title} · {fmtDate(f.from)} – {fmtDate(f.to)}
+            </div>
+            <div className="text-[12px] text-slate-500">Generated {fmtDate(new Date())} · Unico HomeCare</div>
+          </div>
+          {tabs}
+          <ReportFilters view={view} f={f} services={svc} zones={zn} />
+          <MoreReports view={view} f={f} />
+        </div>
+      </AdminPage>
+    )
+  }
   const [r, services, zones] = await Promise.all([
     getReport(f),
     ServiceType.find({ isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('code name').lean<any[]>(),
@@ -48,6 +89,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: SP }
           </div>
         </div>
 
+        {tabs}
         <div className="no-print flex flex-wrap items-center gap-3">
           <UrlDateRange from={f.from} to={f.to} icon={<CalendarDays size={15} className="text-slate-500" />} />
           <UrlSelect

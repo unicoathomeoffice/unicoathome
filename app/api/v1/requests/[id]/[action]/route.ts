@@ -47,6 +47,7 @@ const ACTIONS: Record<string, Action> = {
   'check-out': { schema: svc.CheckOutInput, run: ({ r, user, meta }, i) => svc.checkOut(r, i, user, meta) },
   complete: { run: ({ r, user, meta }) => svc.completeVisit(r, user, meta) },
   returned: { run: ({ r, user, meta }) => svc.reachedHospital(r, user, meta) },
+  'back-at-hospital': { perm: 'requests.manage', schema: svc.BackAtHospitalInput, run: ({ r, user, meta }, i) => svc.recordBack(r, i, user, meta) },
   'petty-cash': { schema: svc.PettyCashInput, run: ({ r, user, meta }, i) => svc.requestPettyCash(r, i, user, meta) },
   'change-request': { schema: svc.StaffChangeInput, run: ({ r, user, meta }, i) => svc.staffChangeRequest(r, i, user, meta) },
 }

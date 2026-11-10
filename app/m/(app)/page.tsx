@@ -155,9 +155,16 @@ export default async function Home() {
                 </svg>
                 WhatsApp
               </a>
-              <a href={mapsUrl(hero.patientSnapshot?.address)} target="_blank" rel="noreferrer" className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-white text-[14px] font-semibold text-primary-700">
-                <MapPin size={18} /> Map
-              </a>
+              {hero.tracking?.active && hero.tracking?.phase === 'OUT' ? (
+                // travelling: directions inside the app, so live location keeps flowing
+                <a href={`/m/visits/${hero._id}/directions`} className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-white text-[14px] font-semibold text-primary-700">
+                  <MapPin size={18} /> Directions
+                </a>
+              ) : (
+                <a href={mapsUrl(hero.patientSnapshot?.address)} target="_blank" rel="noreferrer" className="flex h-11 flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-white text-[14px] font-semibold text-primary-700">
+                  <MapPin size={18} /> Map
+                </a>
+              )}
             </div>
           </div>
         </>

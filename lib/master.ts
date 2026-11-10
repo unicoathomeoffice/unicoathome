@@ -1,7 +1,7 @@
 import 'server-only'
 import { z } from 'zod'
 import type { Model } from 'mongoose'
-import { Department, Designation, Zone, ServiceType, Vehicle, User, HomecareRequest, isOid, oid } from './models'
+import { Department, Designation, Zone, ServiceType, Vehicle, User, HomecareRequest, Equipment, isOid, oid } from './models'
 import type { Permission } from './constants'
 
 type Master = { model: Model<any>; entity: string; perm: Permission; sort: Record<string, 1 | -1>; schema: z.ZodObject<any>; usage?: (ids: unknown[]) => Promise<Record<string, number>> }
@@ -21,6 +21,7 @@ async function countBy(model: Model<any>, field: string, ids: unknown[]) {
 }
 
 const checklistItem = z.object({ key: z.string().min(1), label: z.string().min(1), mandatory: z.boolean().default(true), sortOrder: z.number().optional() })
+const afterItem = checklistItem.extend({ withNote: z.boolean().optional(), notePrompt: z.string().max(60).optional() })
 
 /** Generic master-data lists served by /api/v1/master/:kind */
 export const MASTER: Record<string, Master> = {
@@ -61,6 +62,8 @@ export const MASTER: Record<string, Master> = {
       fee: z.coerce.number().nonnegative().default(0),
       requiresPrescription: z.boolean().default(false),
       checklist: z.array(checklistItem).default([]),
+      afterChecklist: z.array(afterItem).optional(), // after return to the hospital; unset = built-in defaults
+      kit: z.array(z.object({ itemId: z.string().refine(isOid, 'Pick an item'), recommendedQty: z.coerce.number().int().min(0).max(99).default(1), minQty: z.coerce.number().int().min(0).max(99).default(0), usualUse: z.coerce.number().min(0).max(999).optional() })).default([]),
       vitalsRequired: z.array(z.string()).default([]),
       staffMix: z.array(z.object({ role: z.string(), count: z.coerce.number().int().min(1) })).default([]),
       isActive: z.boolean().default(true),
@@ -89,5 +92,26 @@ export const MASTER: Record<string, Master> = {
       isActive: z.boolean().default(true),
     }),
     usage: (ids) => countBy(HomecareRequest, 'transport.vehicleId', ids),
+  },
+  // instruments + consumables (Settings → Equipment & consumables); in use = on a service's bag or any visit
+  equipment: {
+    model: Equipment,
+    entity: 'equipment',
+    perm: 'master.manage',
+    sort: { sortOrder: 1, name: 1 },
+    schema: z.object({
+      name: z.string().trim().min(2),
+      type: z.enum(['EQUIPMENT', 'CONSUMABLE']).default('CONSUMABLE'),
+      unit: z.string().trim().min(1).max(20).default('pcs'),
+      notes: z.string().max(300).optional(),
+      isActive: z.boolean().default(true),
+      sortOrder: z.number().default(0),
+    }),
+    usage: async (ids) => {
+      const [a, b, c] = await Promise.all([countBy(ServiceType, 'kit.itemId', ids), countBy(HomecareRequest, 'visit.kit.itemId', ids), countBy(HomecareRequest, 'visit.consumables.itemId', ids)])
+      const out: Record<string, number> = {}
+      for (const m of [a, b, c]) for (const [k, n] of Object.entries(m)) out[k] = (out[k] ?? 0) + n
+      return out
+    },
   },
 }

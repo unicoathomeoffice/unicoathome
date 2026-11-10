@@ -2,10 +2,10 @@ import { requireWebUser } from '@/lib/auth'
 import { getSettings } from '@/lib/settings'
 import { canOpenSettings } from '@/lib/constants'
 import { redirect } from 'next/navigation'
-import { googleBudget, suggestedDailyCap, usageReport, KIND_LABEL } from '@/lib/maps-usage'
+import { googleBudget, suggestedDailyCap, usageReport, KIND_LABEL, GOOGLE_KINDS } from '@/lib/maps-usage'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { Bars, Card, CardHeader, Kpi, Tag } from '@/components/ui'
-import { MapsSettings } from '@/components/admin-settings/MapsClient'
+import { MapsCheckButton, MapsSettings } from '@/components/admin-settings/MapsClient'
 
 export const metadata = { title: 'Maps & API usage · Unico HomeCare' }
 
@@ -15,7 +15,9 @@ const REASON: Record<string, [string, 'green' | 'amber' | 'red' | 'slate']> = {
   'no-key': ['No Google key · OpenStreetMap', 'slate'],
   'daily-cap': ['Daily cap reached · OpenStreetMap until tomorrow', 'amber'],
   'monthly-cap': ['Monthly allowance used · OpenStreetMap until next month', 'red'],
+  refused: ['Google refused the key · OpenStreetMap', 'red'],
 }
+const KIND_REASON: Record<string, string> = { ok: 'Using Google', 'daily-cap': "Today's share used → free provider", 'monthly-cap': 'Month used → free provider', off: 'Off', 'no-key': 'No key', refused: 'Refused by Google' }
 
 /** Google Maps cost control + call statistics (browsers report every map / geocoding call). */
 export default async function MapsPage() {
@@ -26,7 +28,7 @@ export default async function MapsPage() {
   const hasKey = !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
   const [label, tone] = REASON[budget.reason] ?? REASON.ok
   const kinds = Object.entries(report.byKind).sort((a, b) => b[1].month - a[1].month)
-  const monthCap = Math.floor(s.maps.monthlyFree * (1 - s.maps.reservePct / 100))
+  // each Google API has its own monthly allowance (budget.kinds)
 
   return (
     <AdminPage title="Maps & API usage" crumbs="Settings">
@@ -34,11 +36,45 @@ export default async function MapsPage() {
         <div className="flex flex-col gap-5">
           <Card>
             <CardHeader title="Status" right={<Tag tone={tone}>{label}</Tag>} />
-            <div className="grid grid-cols-2 gap-3">
-              <Kpi dense label="Google today" n={`${budget.used.today} / ${budget.dailyCap}`} color={budget.remainingToday > 0 ? '#0072A3' : '#B45309'} sub={`${budget.remainingToday} left today`} />
-              <Kpi dense label="Google this month" n={`${budget.used.month} / ${monthCap}`} color="#1F3864" sub={`${Math.max(0, monthCap - budget.used.month)} left`} />
+            {budget.message && (
+              <div className="mb-3 rounded-lg bg-[#FEE2E2] px-3 py-2.5 text-[12.5px] leading-5 text-[#991B1B]">
+                {budget.message}
+                <div className="mt-1 text-[11.5px] text-[#B91C1C]/80">Checked {budget.checkedAt ? new Date(budget.checkedAt).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '—'} · re-checked automatically every 15 min</div>
+              </div>
+            )}
+            <div className="mb-3 flex justify-end">
+              <MapsCheckButton />
             </div>
+            <table className="w-full text-[12.5px]">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-[.05em] text-slate-500">
+                  <th className="pb-1.5 font-semibold">Google API · own free allowance</th>
+                  <th className="pb-1.5 text-right font-semibold">Today</th>
+                  <th className="pb-1.5 text-right font-semibold">Month</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {GOOGLE_KINDS.map((k) => {
+                  const b = budget.kinds[k]
+                  return (
+                    <tr key={k}>
+                      <td className="py-1.5">
+                        {KIND_LABEL[k]}
+                        <div className={b.ok ? 'text-[11px] text-[#15803D]' : 'text-[11px] text-[#B45309]'}>{KIND_REASON[b.reason] ?? b.reason}</div>
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {b.today} / {b.dailyCap}
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {b.month} / {b.monthlyCap}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
             <ul className="mt-3 space-y-1 text-[12.5px] text-slate-600">
+              <li>• Each Google API has its own {s.maps.monthlyFree.toLocaleString('en-IN')} free calls a month (less the {s.maps.reservePct}% safety margin), spread evenly per day. When one runs out, only that one switches to the free OpenStreetMap service until the next day or month.</li>
               <li>• Phone GPS, OpenStreetMap maps and search are free and unlimited — they never count here.</li>
               <li>• Google key: {hasKey ? 'set' : 'not set'}. Google also needs active billing on the Google Cloud project.</li>
               <li>• Counts come from browsers reporting their own calls, so they are close but not exact.</li>
