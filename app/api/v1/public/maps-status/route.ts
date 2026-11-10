@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
   await db()
   const s = await getSettings()
   let budget = await googleBudget(s.maps)
-  const usable = s.maps.useGoogle && !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && GOOGLE_KINDS.some((k) => budget.kinds[k].month < budget.monthlyCap && budget.kinds[k].today < budget.dailyCap)
+  const usable = s.maps.useGoogle && !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY && GOOGLE_KINDS.some((k) => budget.kinds[k].month < budget.kinds[k].monthlyCap && budget.kinds[k].today < budget.kinds[k].dailyCap)
   if (usable) {
     const before = budget.checkedAt
     const p = await probeGoogle(req.nextUrl.origin)

@@ -67,8 +67,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     },
     {
       label: 'Maps API',
-      n: `${maps.used.today}/${maps.dailyCap}`,
-      sub: maps.reason === 'ok' ? `Google today · ${maps.remainingToday} left` : maps.reason === 'daily-cap' ? 'cap reached · free maps' : maps.reason === 'monthly-cap' ? 'month used · free maps' : maps.reason === 'refused' ? 'Google refused the key · free maps' : 'free OpenStreetMap',
+      n: `${maps.kinds.maps_js.today}/${maps.kinds.maps_js.dailyCap}`, // Google map loads today / today's cap (unused days roll over)
+      sub: maps.reason === 'ok' ? `map loads today · ${maps.remainingToday} left` : maps.reason === 'daily-cap' ? 'cap reached · free maps' : maps.reason === 'monthly-cap' ? 'month used · free maps' : maps.reason === 'refused' ? 'Google refused the key · free maps' : 'free OpenStreetMap',
       color: maps.reason === 'ok' ? '#0072A3' : maps.reason === 'daily-cap' || maps.reason === 'monthly-cap' ? '#B45309' : '#64748B',
       href: '/settings/maps',
     },

@@ -65,7 +65,7 @@ export function MapsSettings({ initial, suggested }: { initial: MapsCfg; suggest
         <span className="hc-label">Daily cap</span>
         <div className="flex gap-2">
           <button type="button" onClick={() => setC({ ...c, dailyCap: 'auto' })} className={`h-10 flex-1 rounded-lg border-[1.5px] text-[13.5px] font-semibold ${auto ? 'border-primary bg-primary-50 text-primary-700' : 'border-slate-300 text-slate-700'}`}>
-            Automatic · {suggested}/day
+            Automatic · ~{suggested}/day, unused roll over
           </button>
           <div className={`flex h-10 flex-1 items-center rounded-lg border-[1.5px] px-2 ${auto ? 'border-slate-300' : 'border-primary bg-primary-50'}`}>
             <input type="number" min={1} className="h-full w-full bg-transparent text-[13.5px] font-semibold outline-none" placeholder="Custom" value={auto ? '' : c.dailyCap} onChange={(e) => setC({ ...c, dailyCap: Math.max(1, Number(e.target.value) || 1) })} />

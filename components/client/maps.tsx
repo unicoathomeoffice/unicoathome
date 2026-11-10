@@ -92,10 +92,12 @@ async function googleSuggest(input: string): Promise<Suggestion[]> {
       pick: async () => {
         const place = p.toPlace()
         reportUsage('google', 'places_details')
-        await place.fetchFields({ fields: ['location', 'formattedAddress', 'displayName'] }) // ends the billing session
+        // location + address only = Essentials tier (10,000 free a month); displayName would make it Pro (5,000)
+        await place.fetchFields({ fields: ['location', 'formattedAddress'] }) // ends the billing session
         googleToken = null
         const at = point(place.location)
-        const name = place.displayName && !String(place.formattedAddress ?? '').startsWith(place.displayName) ? `${place.displayName}, ` : ''
+        const title = p.mainText?.text ?? '' // the place name from the suggestion (free)
+        const name = title && !String(place.formattedAddress ?? '').startsWith(title) ? `${title}, ` : ''
         return at ? { full: `${name}${place.formattedAddress ?? ''}`, ...at } : null
       },
     }))

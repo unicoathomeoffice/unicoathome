@@ -44,9 +44,9 @@ export const DEFAULT_SETTINGS = {
   /** Google Maps cost control (free tier). Public pages fall back to OpenStreetMap when a cap is reached. */
   maps: {
     useGoogle: true, // when false, everything runs on free OpenStreetMap even if a key exists
-    monthlyFree: 10000, // Google's free calls per month (per API)
+    monthlyFree: 10000, // Google's free calls per month per API, Essentials tier (Pro APIs get half: lib/maps-usage.ts)
     reservePct: 10, // keep this share of the monthly allowance unused as a safety margin
-    dailyCap: 'auto' as 'auto' | number, // 'auto' = (monthlyFree − reserve) ÷ days in month
+    dailyCap: 'auto' as 'auto' | number, // 'auto' = free calls left this month ÷ days left (unused days roll over)
   },
   sla: {
     confirmRoutineMin: 15,

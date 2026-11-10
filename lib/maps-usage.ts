@@ -42,9 +42,28 @@ export async function googleUsage() {
   return { today: sum((r) => r.day === today), month: sum(() => true), day: today, kinds }
 }
 
-const monthlyCapOf = (cfg: MapsCfg) => Math.floor((Number(cfg.monthlyFree) || 10000) * (1 - (Number(cfg.reservePct) || 0) / 100))
-/** Suggested daily cap per API: the monthly free calls spread evenly over the month, less a safety margin. */
+/**
+ * Google's free calls a month depend on the API's tier (since March 2025): Essentials 10,000, Pro 5,000. Map loads,
+ * address suggestions and place details (location + address only) are Essentials; traffic-aware routes are Pro.
+ * `monthlyFree` in Settings is the Essentials number; Pro gets half of it.
+ */
+export const FREE_TIER: Record<GoogleKind, 'essentials' | 'pro'> = { maps_js: 'essentials', places_autocomplete: 'essentials', places_details: 'essentials', routes: 'pro' }
+const freeOf = (cfg: MapsCfg, k: GoogleKind) => {
+  const base = Number(cfg.monthlyFree) || 10000
+  return FREE_TIER[k] === 'pro' ? Math.floor(base / 2) : base
+}
+const monthlyCapOf = (cfg: MapsCfg, k: GoogleKind = 'maps_js') => Math.floor(freeOf(cfg, k) * (1 - (Number(cfg.reservePct) || 0) / 100))
+/** A fresh month's even share per day (Essentials) — shown as the starting point in Settings. */
 export const suggestedDailyCap = (cfg: MapsCfg, day = isoDay()) => Math.max(10, Math.floor(monthlyCapOf(cfg) / daysInMonth(day)))
+/**
+ * Automatic daily cap with roll-over: what is left of this month's free calls ÷ the days left (today included), so a
+ * quiet day's unused calls can be used later and the whole free allowance gets used, never more.
+ */
+function rolloverCap(cfg: MapsCfg, k: GoogleKind, u: { today: number; month: number }, day: string) {
+  const left = Math.max(0, monthlyCapOf(cfg, k) - (u.month - u.today)) // free calls left at the start of today
+  const daysLeft = daysInMonth(day) - Number(day.slice(8, 10)) + 1
+  return Math.floor(left / Math.max(1, daysLeft))
+}
 
 type Reason = 'ok' | 'off' | 'no-key' | 'daily-cap' | 'monthly-cap' | 'refused'
 export type KindBudget = { ok: boolean; reason: Reason; today: number; month: number; dailyCap: number; monthlyCap: number; remainingToday: number }
@@ -56,12 +75,13 @@ export type KindBudget = { ok: boolean; reason: Reason; today: number; month: nu
  */
 export async function googleBudget(cfg: MapsCfg): Promise<{ allowed: boolean; reason: Reason; message?: string; checkedAt?: string; remainingToday: number; dailyCap: number; monthlyCap: number; used: { today: number; month: number }; kinds: Record<GoogleKind, KindBudget> }> {
   const [used, probe] = await Promise.all([googleUsage(), lastProbe()])
-  const dailyCap = cfg.dailyCap === 'auto' || !cfg.dailyCap ? suggestedDailyCap(cfg, used.day) : Number(cfg.dailyCap)
-  const monthlyCap = monthlyCapOf(cfg)
+  const auto = cfg.dailyCap === 'auto' || !cfg.dailyCap
   const global: Reason | null = !cfg.useGoogle ? 'off' : !process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? 'no-key' : probe && !probe.ok ? 'refused' : null
   const kinds = Object.fromEntries(
     GOOGLE_KINDS.map((k) => {
       const u = used.kinds[k]
+      const monthlyCap = monthlyCapOf(cfg, k)
+      const dailyCap = auto ? rolloverCap(cfg, k, u, used.day) : Math.min(Number(cfg.dailyCap), monthlyCap)
       const reason: Reason = global ?? (u.month >= monthlyCap ? 'monthly-cap' : u.today >= dailyCap ? 'daily-cap' : 'ok')
       return [k, { ok: reason === 'ok', reason, today: u.today, month: u.month, dailyCap, monthlyCap, remainingToday: Math.max(0, dailyCap - u.today) }]
     }),
@@ -75,8 +95,8 @@ export async function googleBudget(cfg: MapsCfg): Promise<{ allowed: boolean; re
     message: probe && !probe.ok ? probe.message : undefined,
     checkedAt: probe?.at ? new Date(probe.at).toISOString() : undefined,
     remainingToday: kinds.maps_js.remainingToday,
-    dailyCap,
-    monthlyCap,
+    dailyCap: kinds.maps_js.dailyCap,
+    monthlyCap: kinds.maps_js.monthlyCap,
     used: { today: used.today, month: used.month },
     kinds,
   }
