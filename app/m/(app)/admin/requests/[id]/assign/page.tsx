@@ -4,7 +4,7 @@ import { MScreen, MCard } from '@/components/mobile'
 import { PriorityBadge } from '@/components/ui'
 import { AssignForm } from '@/components/coord/AssignForm'
 import { requireDesk, loadCoordRequest } from '@/components/coord/data'
-import { ServiceType } from '@/lib/models'
+import { ServiceType, User } from '@/lib/models'
 import { rankCandidates } from '@/lib/services/requests'
 import { relDay, time, dayNum, dur, clock } from '@/lib/format'
 import { plain } from '@/lib/db'
@@ -25,7 +25,10 @@ export default async function AssignPage({ params }: { params: Promise<{ id: str
   const need: Record<string, number> = {}
   for (const t of types) for (const m of t.staffMix ?? []) need[m.role] = Math.max(need[m.role] ?? 0, m.count ?? 1)
   const needTotal = Object.values(need).reduce((a, b) => a + b, 0) || 1
-  const team = [r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])].filter(Boolean).map(String)
+  // supporting staff from the HIS are listed apart from the care-team picks
+  const supportIds: string[] = (r.assignment?.supportStaffIds ?? []).map(String)
+  const team = [r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])].filter(Boolean).map(String).filter((x) => !supportIds.includes(x))
+  const supportPeople = supportIds.length ? await User.find({ _id: { $in: supportIds } }).select('name hisDesignation employeeId').lean<any[]>() : []
   const services = (r.services ?? []).map((s: any) => s.name).join(' + ')
   return (
     <MScreen title={team.length ? 'Reassign team' : 'Assign team'} sub={`${r.requestNo} · ${r.scheduledAt ? `${dayNum(r.scheduledAt)} ${time(r.scheduledAt)}` : 'time not set'}`} back={`/m/admin/requests/${id}`}>
@@ -63,6 +66,7 @@ export default async function AssignPage({ params }: { params: Promise<{ id: str
         transport={!!r.transport?.needed}
         canOverride={can(user, 'requests.override')}
         canActForExternal={can(user, 'requests.assign')}
+        initialSupport={supportPeople.map((u) => ({ id: String(u._id), name: u.name, designation: u.hisDesignation ?? undefined, employeeId: u.employeeId ?? '' }))}
       />
       </div>
     </MScreen>

@@ -9,6 +9,7 @@ import { Avatar, Empty, Table, Tag, Tr } from '@/components/ui'
 import { FilterSelect, SearchBox } from '@/components/people/filters'
 import { AddUserButton, ImportCsvButton, UserOpenButton, UserRowMenu, SignupLinkButton } from '@/components/people/StaffClient'
 import type { StaffOptions, StaffUser } from '@/components/people/UserDrawer'
+import { AppLoginButton } from '@/components/people/AppLoginButton'
 import { cx, dayNum, phone as fmtPhone, relDay, time } from '@/lib/format'
 
 export const metadata = { title: 'Staff & users · Unico HomeCare' }
@@ -136,10 +137,14 @@ export default async function StaffPage({ searchParams }: { searchParams: SP }) 
                 <span className="min-w-0">
                   <span className="block truncate font-semibold text-slate-900 hover:text-primary-700">
                     {u.name}
-                    {u.external && <span className="ml-1.5 rounded-full bg-[#EDE9FE] px-1.5 align-middle text-[10px] font-bold text-[#6D28D9]">OUTSIDE · HIS</span>}
+                    {u.external ? (
+                      <span className="ml-1.5 rounded-full bg-[#EDE9FE] px-1.5 align-middle text-[10px] font-bold text-[#6D28D9]">OUTSIDE · HIS</span>
+                    ) : u.source === 'H360' ? (
+                      <span className="ml-1.5 rounded-full bg-[#EDE9FE] px-1.5 align-middle text-[10px] font-bold text-[#6D28D9]">FROM HIS</span>
+                    ) : null}
                   </span>
                   <span className="block truncate text-[11.5px] text-slate-500">
-                    {u.employeeId} · {u.external ? [u.hisDesignation, u.hisDepartment].filter(Boolean).join(' · ') || 'no app login' : fmtPhone(u.phone)}
+                    {u.employeeId} · {u.external || u.source === 'H360' ? [u.hisDesignation, u.hisDepartment].filter(Boolean).join(' · ') || (u.external ? 'no app login' : fmtPhone(u.phone)) : fmtPhone(u.phone)}
                   </span>
                 </span>
               </UserOpenButton>
@@ -169,7 +174,15 @@ export default async function StaffPage({ searchParams }: { searchParams: SP }) 
                     </span>
                   ))}
               </span>
-              <span className="whitespace-nowrap text-[13px]">{(u.platformAccess ?? []).map((a: string) => (a === 'web' ? 'Web' : 'App')).join(' · ') || '—'}</span>
+              <span className="whitespace-nowrap text-[13px]">
+                {(u.platformAccess ?? []).map((a: string) => (a === 'web' ? 'Web' : 'App')).join(' · ') || '—'}
+                {/* people added from the HIS: give them a phone-app login, or a fresh PIN */}
+                {u.source === 'H360' && u.status === 'ACTIVE' && (canManage || can(me, 'requests.assign')) && (
+                  <span className="block">
+                    <AppLoginButton userId={String(u._id)} name={u.name} hasLogin={(u.platformAccess ?? []).includes('app')} />
+                  </span>
+                )}
+              </span>
               <span className="flex items-center gap-1.5 whitespace-nowrap text-[13px]">
                 <span className="size-2 rounded-full" style={{ background: AV_DOT[u.availability] ?? '#94A3B8' }} />
                 {AVAILABILITY_LABEL[u.availability as keyof typeof AVAILABILITY_LABEL] ?? '—'}

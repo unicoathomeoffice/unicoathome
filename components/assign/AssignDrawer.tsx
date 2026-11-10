@@ -26,6 +26,9 @@ export type AssignProps = {
   teamSize: number
   currentPrimaryId: string | null
   currentSecondaryIds: string[]
+  /** supporting staff from the HIS already on the visit (not in the care-team slots) */
+  currentSupportIds?: string[]
+  supportPeople?: { id: string; name: string; designation?: string; employeeId: string }[]
   /** staff id → busy intervals [startMs, endMs] on the visit day */
   busy: Record<string, [number, number][]>
   /** 00:00 of the visit day (Dhaka) in ms */
@@ -44,6 +47,8 @@ export function AssignDrawer(p: AssignProps) {
   const teamKey = [p.currentPrimaryId ?? '', ...p.currentSecondaryIds].join(',') // stable across parent re-renders
   const initialTeam = useMemo(() => teamKey.split(',').filter((x, i, a) => !!x && a.indexOf(x) === i), [teamKey])
   const [team, setTeam] = useState<string[]>(initialTeam)
+  const supportKey = (p.currentSupportIds ?? []).join(',')
+  const [support, setSupport] = useState<string[]>(p.currentSupportIds ?? [])
   const [teamSize, setTeamSize] = useState(Math.min(5, Math.max(1, p.teamSize || 1, initialTeam.length)))
   const primary = team[0] ?? null
   const secondary = team.slice(1)
@@ -70,8 +75,9 @@ export function AssignDrawer(p: AssignProps) {
   useEffect(() => {
     if (!p.open) return
     setTeam(initialTeam)
+    setSupport(supportKey ? supportKey.split(',') : [])
     setTeamSize(Math.min(5, Math.max(1, p.teamSize || 1, initialTeam.length)))
-  }, [p.open, initialTeam, p.teamSize])
+  }, [p.open, initialTeam, p.teamSize, supportKey])
 
   useEffect(() => {
     if (!p.open) setDone(null)
@@ -94,6 +100,7 @@ export function AssignDrawer(p: AssignProps) {
           body: {
             primaryStaffId: primary,
             secondaryStaffIds: sec,
+            supportStaffIds: support.filter((x) => !team.includes(x)),
             teamSize: Math.max(teamSize, 1 + sec.length),
             ...(dirtySchedule ? { date, slot: slot || undefined, time: slot !== p.slot ? undefined : p.time || undefined } : {}),
             expectedDurationMin: Number(duration) || undefined,
@@ -197,6 +204,9 @@ export function AssignDrawer(p: AssignProps) {
           busy={p.busy}
           dayStartMs={p.dayStartMs}
           onLoaded={onLoaded}
+          support={support}
+          setSupport={setSupport}
+          known={p.supportPeople}
         />
 
         <label>
@@ -216,7 +226,7 @@ export function AssignDrawer(p: AssignProps) {
             <Toggle on={acceptNow} onChange={setAcceptNow} label="Accept on their behalf" />
           </div>
         )}
-        <NotifyPicker params={primary ? { events: ['ASSIGNED'], requestId: p.requestId, staffIds: team } : null} value={notify} onChange={setNotify} onPaired={setPaired} preview={{ templateKey: 'patient_assigned' }} />
+        <NotifyPicker params={primary ? { events: ['ASSIGNED'], requestId: p.requestId, staffIds: [...team, ...support] } : null} value={notify} onChange={setNotify} onPaired={setPaired} preview={{ templateKey: 'patient_assigned' }} />
       </div>
     </Drawer>
   )

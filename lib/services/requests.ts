@@ -537,6 +537,8 @@ export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user:
 export const AssignInput = z.object({
   primaryStaffId: z.string(),
   secondaryStaffIds: z.array(z.string()).default([]),
+  /** supporting staff from the HIS — on the team like members (see the visit, do steps), labelled "Supporting" */
+  supportStaffIds: z.array(z.string()).max(10).optional(),
   teamSize: z.coerce.number().int().min(1).max(10).optional(),
   date: z.string().optional(),
   time: z.string().optional(),
@@ -550,6 +552,9 @@ export const AssignInput = z.object({
 })
 
 export async function assign(r: any, input: z.infer<typeof AssignInput>, user: SessionUser, meta: Meta) {
+  // supporting staff ride along as team members (visibility, notices, requisition passengers) with their own label
+  const support = [...new Set(input.supportStaffIds ?? [])].filter((x) => x !== input.primaryStaffId)
+  input = { ...input, secondaryStaffIds: [...input.secondaryStaffIds, ...support.filter((x) => !input.secondaryStaffIds.includes(x))] }
   const ids = [input.primaryStaffId, ...input.secondaryStaffIds]
   if (!ids.every(isOid)) throw bad('Invalid staff')
   if (new Set(ids).size !== ids.length) throw bad('The same person is on the care team twice', { secondaryStaffIds: 'Duplicate team member' })
@@ -567,7 +572,8 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   if (input.fee != null) r.set('billing.estimatedFee', input.fee)
   r.set('assignment.primaryStaffId', input.primaryStaffId)
   r.set('assignment.secondaryStaffIds', input.secondaryStaffIds)
-  r.set('assignment.teamSize', input.teamSize ?? ids.length)
+  r.set('assignment.supportStaffIds', support)
+  r.set('assignment.teamSize', Math.max(input.teamSize ?? 0, ids.length))
   r.set('assignment.assignedBy', user.id)
   r.set('assignment.assignedAt', new Date())
   r.set('assignment.acceptedAt', undefined)
@@ -1278,7 +1284,7 @@ export async function withPeople<T extends any[]>(rows: T): Promise<T> {
   }
   const vehicleIds = [...new Set(rows.map((r) => r.transport?.vehicleId).filter(Boolean).map(String))]
   const [users, vehicles] = await Promise.all([
-    ids.size ? User.find({ _id: { $in: [...ids] } }).select('name role employeeId phone designationId photoUrl').lean<any[]>() : [],
+    ids.size ? User.find({ _id: { $in: [...ids] } }).select('name role employeeId phone designationId photoUrl hisDesignation').lean<any[]>() : [],
     vehicleIds.length ? Vehicle.find({ _id: { $in: vehicleIds } }).lean<any[]>() : [],
   ])
   const designationIds = [...new Set(users.map((u) => u.designationId).filter(Boolean).map(String))]
@@ -1286,11 +1292,15 @@ export async function withPeople<T extends any[]>(rows: T): Promise<T> {
   const person = (id: unknown) => {
     const u = users.find((x) => String(x._id) === String(id))
     if (!u) return null
-    return { id: String(u._id), name: u.name, role: u.role, employeeId: u.employeeId, phone: u.phone, photoUrl: u.photoUrl as string | undefined, designation: desigs.find((d) => String(d._id) === String(u.designationId))?.title }
+    return { id: String(u._id), name: u.name, role: u.role, employeeId: u.employeeId, phone: u.phone, photoUrl: u.photoUrl as string | undefined, designation: desigs.find((d) => String(d._id) === String(u.designationId))?.title ?? (u.hisDesignation as string | undefined) }
   }
   for (const r of rows) {
     r.primaryStaff = person(r.assignment?.primaryStaffId)
-    r.secondaryStaff = (r.assignment?.secondaryStaffIds ?? []).map(person).filter(Boolean)
+    const support = new Set((r.assignment?.supportStaffIds ?? []).map(String))
+    r.secondaryStaff = (r.assignment?.secondaryStaffIds ?? []).map((id: unknown) => {
+      const p = person(id)
+      return p && { ...p, supporting: support.has(String(id)) } // supporting staff from the HIS
+    }).filter(Boolean)
     r.driver = person(r.transport?.driverId)
     r.createdByUser = person(r.createdBy)
     const v = vehicles.find((x) => String(x._id) === String(r.transport?.vehicleId))

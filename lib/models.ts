@@ -225,6 +225,8 @@ const RequestSchema = new Schema<any>(
       teamSize: { type: Number, default: 1 },
       primaryStaffId: { type: ObjectId, ref: 'User' },
       secondaryStaffIds: [{ type: ObjectId, ref: 'User' }],
+      /** of the members (also in secondaryStaffIds): supporting staff added from the HIS, labelled "Supporting" */
+      supportStaffIds: [{ type: ObjectId, ref: 'User' }],
       /** someone on the team is outside staff from the HIS (no app): coordinators do their visit steps */
       hasExternal: Boolean,
       assignedBy: { type: ObjectId, ref: 'User' },
@@ -845,6 +847,24 @@ const ShortLinkSchema = new Schema<any>(
 ShortLinkSchema.index({ target: 1 })
 ShortLinkSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, partialFilterExpression: { expiresAt: { $exists: true } } })
 export const ShortLink = model('ShortLink', ShortLinkSchema, 'short_links')
+
+/** Hospital employees from the HIS (read-only copy of its Employee Search, refreshed daily) — lets the Assign
+ *  screens search by designation too, which the HIS search itself does not do (lib/h360-staff.ts). */
+const HisEmployeeSchema = new Schema<any>(
+  {
+    _id: String, // HIS employee ID (person_code)
+    name: String,
+    designation: String,
+    department: String,
+    gender: String,
+    phone: String,
+    phoneDigits: String, // last 10 digits, for phone search
+    syncedAt: Date,
+  },
+  { timestamps: false },
+)
+HisEmployeeSchema.index({ name: 1 })
+export const HisEmployee = model('HisEmployee', HisEmployeeSchema, 'his_employees')
 
 // ---------------------------------------------------------------- live location pings (tracking trail)
 const LocationPingSchema = new Schema<any>(

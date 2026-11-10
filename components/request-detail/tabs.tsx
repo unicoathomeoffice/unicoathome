@@ -193,7 +193,7 @@ export function OverviewTab({
                       ? `Respond by ${time(r.assignment.respondBy)}`
                       : '—'}
                 </Field>
-                <Field k="Secondary">{r.secondaryStaff?.length ? r.secondaryStaff.map((s: any) => s.name).join(', ') : '—'}</Field>
+                <Field k="Secondary">{r.secondaryStaff?.length ? r.secondaryStaff.map((s: any) => (s.supporting ? `${s.name} (supporting)` : s.name)).join(', ') : '—'}</Field>
                 <Field k="Notify">Push ✓{staffWhatsAppAt ? ` · WhatsApp ✓ ${time(staffWhatsAppAt)}` : ' · WhatsApp —'}</Field>
               </div>
             </>
@@ -414,7 +414,7 @@ export function AssignmentTab({ r, people, logs }: { r: any; people: People; log
                     <div className="truncate text-[14px] font-bold">{s.name}</div>
                     <div className="truncate text-[12px] text-slate-500">{[s.designation ?? ROLE_LABEL[s.role as Role], s.employeeId, phone(s.phone)].filter(Boolean).join(' · ')}</div>
                   </div>
-                  <Tag tone={s.primary ? 'blue' : 'violet'}>{s.primary ? 'Primary' : 'Secondary'}</Tag>
+                  <Tag tone={s.primary ? 'blue' : 'violet'}>{s.primary ? 'Primary' : s.supporting ? 'Supporting' : 'Secondary'}</Tag>
                 </div>
               ))}
               <div className="mt-2 grid grid-cols-2 gap-3">

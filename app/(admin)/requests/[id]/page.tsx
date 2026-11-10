@@ -137,6 +137,8 @@ export default async function RequestDetailPage({ params, searchParams }: { para
       const iv: [number, number] = [s, s + (t.expectedDurationMin ?? 45) * 60_000]
       for (const sid of [t.assignment?.primaryStaffId, ...(t.assignment?.secondaryStaffIds ?? [])].filter(Boolean).map(String)) (busy[sid] ??= []).push(iv)
     }
+    const supportIds: string[] = (r.assignment?.supportStaffIds ?? []).map(String).filter((x: string) => (r.assignment?.secondaryStaffIds ?? []).map(String).includes(x))
+    const supportPeople = supportIds.length ? await User.find({ _id: { $in: supportIds } }).select('name hisDesignation employeeId').lean<any[]>() : []
     assign = {
       requestId: id,
       requestNo: r.requestNo,
@@ -151,7 +153,10 @@ export default async function RequestDetailPage({ params, searchParams }: { para
       instructions: r.assignment?.instructions ?? '',
       teamSize: r.assignment?.teamSize ?? 1,
       currentPrimaryId: r.assignment?.primaryStaffId ? String(r.assignment.primaryStaffId) : null,
-      currentSecondaryIds: (r.assignment?.secondaryStaffIds ?? []).map(String),
+      // supporting staff (from the HIS) are kept apart from the care-team slots
+      currentSecondaryIds: (r.assignment?.secondaryStaffIds ?? []).map(String).filter((x: string) => !supportIds.includes(x)),
+      currentSupportIds: supportIds,
+      supportPeople: supportPeople.map((u: any) => ({ id: String(u._id), name: u.name, designation: u.hisDesignation ?? undefined, employeeId: u.employeeId ?? '' })),
       busy,
       dayStartMs: start.getTime(),
       acceptTimeoutMin: sla.acceptTimeoutMin,

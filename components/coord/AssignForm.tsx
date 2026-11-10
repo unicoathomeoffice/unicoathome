@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState } from 'react'
-import { Check, Loader2, ChevronDown } from 'lucide-react'
+import { Check, Loader2, ChevronDown, HeartHandshake, X } from 'lucide-react'
 import { api, useAction, useToast, Toggle } from '@/components/client'
 import { NotifyPicker } from '@/components/client/NotifyPicker'
 import { HisStaffSearch, type AddedStaff } from '@/components/assign/HisStaffSearch'
@@ -32,7 +32,7 @@ const GROUPS: { role: string; label: string }[] = [
 ]
 
 /** Team number + ranked candidates grouped by role; the first pick is primary. Used by S3 and the new request form. */
-export function MobileTeamPicker({ candidates: ranked, need = {}, picked, setPicked, size, setSize, onOutside }: { candidates: Cand[]; need?: Record<string, number>; picked: string[]; setPicked: (v: string[]) => void; size: number; setSize: (n: number) => void; onOutside?: (id: string) => void }) {
+export function MobileTeamPicker({ candidates: ranked, need = {}, picked, setPicked, size, setSize, onOutside, hisSearch = true }: { candidates: Cand[]; need?: Record<string, number>; picked: string[]; setPicked: (v: string[]) => void; size: number; setSize: (n: number) => void; onOutside?: (id: string) => void; hisSearch?: boolean }) {
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const [extra, setExtra] = useState<Cand[]>([]) // picked from the HIS search
   const candidates = useMemo(() => [...extra.filter((e) => !ranked.some((c) => c.id === e.id)), ...ranked], [extra, ranked])
@@ -133,14 +133,19 @@ export function MobileTeamPicker({ candidates: ranked, need = {}, picked, setPic
         )
       })}
       {!candidates.length && <div className="rounded-card bg-white p-5 text-center text-[14px] text-slate-500 shadow-card">No active field staff found. Try another slot or check staff availability.</div>}
-      <HisStaffSearch big taken={picked} onAdd={addOutside} />
+      {hisSearch && <HisStaffSearch big taken={picked} onAdd={addOutside} />}
     </>
   )
 }
 
+type Support = { id: string; name: string; designation?: string; employeeId: string }
+
 /** S3 / M18 — team number, ranked candidates grouped by role, primary + others, instructions, "Notify on WhatsApp". */
-export function AssignForm({ id, requestNo, candidates, need, initialTeam, initialSize, instructions: initialInstr, transport, canOverride = false, canActForExternal = false }: { id: string; requestNo: string; candidates: Cand[]; need: Record<string, number>; initialTeam: string[]; initialSize: number; instructions?: string; transport: boolean; canOverride?: boolean; canActForExternal?: boolean }) {
+export function AssignForm({ id, requestNo, candidates, need, initialTeam, initialSize, instructions: initialInstr, transport, canOverride = false, canActForExternal = false, initialSupport = [] }: { id: string; requestNo: string; candidates: Cand[]; need: Record<string, number>; initialTeam: string[]; initialSize: number; instructions?: string; transport: boolean; canOverride?: boolean; canActForExternal?: boolean; initialSupport?: Support[] }) {
   const [acceptNow, setAcceptNow] = useState(true)
+  const toast = useToast()
+  // supporting staff from the HIS: help on the visit, see it in the app — apart from the care-team picks
+  const [support, setSupport] = useState<Support[]>(initialSupport)
   const [size, setSize] = useState(Math.min(5, Math.max(1, initialSize)))
   const [picked, setPicked] = useState<string[]>(initialTeam)
   const [outside, setOutside] = useState<string[]>(candidates.filter((c) => c.external).map((c) => c.id))
@@ -153,7 +158,37 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
   const ready = picked.length === size
   return (
     <>
-      <MobileTeamPicker candidates={candidates} need={need} picked={picked} setPicked={setPicked} size={size} setSize={setSize} onOutside={(x) => setOutside((o) => [...o, x])} />
+      <MobileTeamPicker candidates={candidates} need={need} picked={picked} setPicked={setPicked} size={size} setSize={setSize} onOutside={(x) => setOutside((o) => [...o, x])} hisSearch={false} />
+
+      <div className="flex flex-col gap-2">
+        <SLabel>
+          <span className="inline-flex items-center gap-1.5">
+            <HeartHandshake size={15} className="text-[#6D28D9]" /> Supporting staff · {support.length}
+          </span>
+        </SLabel>
+        {support.map((s) => (
+          <div key={s.id} className="flex min-h-[52px] items-center gap-2.5 rounded-card bg-white px-3.5 py-2 shadow-card ring-1 ring-[#DDD6FE]">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[15px] font-semibold">{s.name}</div>
+              <div className="truncate text-[12.5px] text-slate-500">Supporting · {[s.designation, s.employeeId].filter(Boolean).join(' · ')}</div>
+            </div>
+            <button type="button" onClick={() => setSupport((x) => x.filter((y) => y.id !== s.id))} className="flex size-11 items-center justify-center rounded-lg text-slate-400" aria-label={`Remove ${s.name}`}>
+              <X size={18} />
+            </button>
+          </div>
+        ))}
+        <HisStaffSearch
+          big
+          title="Supporting staff (from H360)"
+          sub="search the whole hospital"
+          offerLogin
+          taken={[...picked, ...support.map((s) => s.id)]}
+          onAdd={(a) => {
+            if (picked.includes(a.id)) return toast(`${a.name} is already on the care team`, 'err')
+            setSupport((x) => (x.some((y) => y.id === a.id) ? x : [...x, { id: a.id, name: a.name, designation: a.designation, employeeId: a.employeeId }]))
+          }}
+        />
+      </div>
 
       <div>
         <FLabel>Instructions to team</FLabel>
@@ -168,7 +203,7 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
           <Toggle on={acceptNow} onChange={setAcceptNow} label="Accept on their behalf" />
         </div>
       )}
-      <NotifyPicker params={picked.length ? { events: ['ASSIGNED'], requestId: id, staffIds: picked } : null} value={notify} onChange={setNotify} preview={{ templateKey: 'patient_assigned' }} />
+      <NotifyPicker params={picked.length ? { events: ['ASSIGNED'], requestId: id, staffIds: [...picked, ...support.map((s) => s.id)] } : null} value={notify} onChange={setNotify} preview={{ templateKey: 'patient_assigned' }} />
       <div className="text-center text-[12px] text-slate-400">Score = skill 40 · availability 30 · zone 20 · workload 10. The first pick is primary{accepting ? '.' : ' and must accept within the timeout.'}</div>
 
       <FixedBottom note={!picked.length ? undefined : !ready ? `Pick ${size - picked.length} more or lower the team number` : transport ? 'The car requisition goes with this assignment' : undefined}>
@@ -178,7 +213,7 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
           className={bbtn('p', 'flex-1')}
           onClick={() =>
             run(
-              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: accepting ? true : undefined, notify: notify ?? undefined } }),
+              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), supportStaffIds: support.map((s) => s.id).filter((x) => !picked.includes(x)), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: accepting ? true : undefined, notify: notify ?? undefined } }),
               `${requestNo} assigned · team notified`,
               { redirect: `/m/admin/requests/${id}` },
             )

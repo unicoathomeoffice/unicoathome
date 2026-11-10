@@ -2,7 +2,7 @@
 // The care-team picker of W06: team size, the chosen team (primary + members) and the ranked candidates (score bar +
 // badges + availability strip). Used by the Assign drawer and by New request → Assign staff (request not saved yet).
 import { useEffect, useMemo, useState } from 'react'
-import { Check, Star, UserX, X } from 'lucide-react'
+import { Check, HeartHandshake, Star, UserX, X } from 'lucide-react'
 import { useToast } from '@/components/client'
 import { Avatar } from '@/components/ui'
 import { ROLE_LABEL, type Role } from '@/lib/constants'
@@ -104,6 +104,9 @@ export function TeamPicker({
   dayStartMs,
   autoPick = true,
   onLoaded,
+  support,
+  setSupport,
+  known,
 }: {
   team: string[]
   setTeam: (t: string[] | ((cur: string[]) => string[])) => void
@@ -119,6 +122,11 @@ export function TeamPicker({
   autoPick?: boolean
   /** the candidates as they load (for names outside the picker) */
   onLoaded?: (items: Candidate[]) => void
+  /** supporting staff from the HIS (Assign screens): helpers on the visit besides the care team */
+  support?: string[]
+  setSupport?: (fn: (cur: string[]) => string[]) => void
+  /** people already on the visit who may not be among the candidates (names for their rows) */
+  known?: { id: string; name: string; designation?: string; employeeId: string }[]
 }) {
   const toast = useToast()
   const [role, setRole] = useState('')
@@ -127,6 +135,11 @@ export function TeamPicker({
   const [all, setAll] = useState<Record<string, Candidate>>({})
   const primary = team[0] ?? null
   const secondary = team.slice(1)
+  useEffect(() => {
+    if (!known?.length) return
+    const initials = (n: string) => n.replace(/^(Dr\.?|Md\.?|Mst\.?)\s+/i, '').split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase()
+    setAll((x) => ({ ...Object.fromEntries(known.map((k) => [k.id, { id: k.id, name: k.name, initials: initials(k.name), role: 'ALLIED', designation: k.designation, employeeId: k.employeeId, score: 0, skillMatch: false, zoneMatch: false, free: true, visitsToday: 0, availability: 'ON_DUTY', badges: [] } as Candidate])), ...x }))
+  }, [known])
 
   useEffect(() => {
     let live = true
@@ -148,7 +161,7 @@ export function TeamPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadKey])
 
-  const secondaryOptions = useMemo(() => Object.values(all).filter((c) => !team.includes(c.id)), [all, team])
+  const secondaryOptions = useMemo(() => Object.values(all).filter((c) => !team.includes(c.id) && !support?.includes(c.id)), [all, team, support])
   const shown = useMemo(() => (items ?? []).filter((c) => !role || c.role === role), [items, role])
   const nameOf = (id: string) => all[id]?.name ?? 'Current team member'
 
@@ -166,7 +179,7 @@ export function TeamPicker({
   }
   const makePrimary = (id: string) => setTeam([id, ...team.filter((x) => x !== id)])
   /** someone picked from the HIS: known to the picker from now on, and on the team (grows the team when full) */
-  function addOutside(s: AddedStaff) {
+  function addOutside(s: AddedStaff, asSupport = false) {
     const c: Candidate = {
       id: s.id,
       name: s.name,
@@ -185,6 +198,10 @@ export function TeamPicker({
     }
     setAll((x) => ({ ...x, [c.id]: c }))
     onLoaded?.([c])
+    if (asSupport && setSupport) {
+      if (team.includes(c.id)) return toast(`${c.name} is already on the care team`, 'err')
+      return setSupport((cur) => (cur.includes(c.id) ? cur : [...cur, c.id]))
+    }
     if (team.includes(c.id)) return
     if (team.length >= 5) return toast('A care team has at most 5 people', 'err')
     if (teamSize === 1 && team.length === 1) return setTeam([c.id]) // one-person visit: the new person takes the place
@@ -369,7 +386,37 @@ export function TeamPicker({
           ))}
         </select>
       </div>
-      <HisStaffSearch taken={team} onAdd={addOutside} />
+      {setSupport ? (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-1.5 text-[13px] font-bold">
+            <HeartHandshake size={15} className="text-[#6D28D9]" /> Supporting staff · {support?.length ?? 0}
+            <span className="font-normal text-slate-500">· help on this visit, see it in the app</span>
+          </div>
+          {!!support?.length && (
+            <div className="flex flex-col gap-1.5">
+              {support.map((id) => {
+                const c = all[id]
+                return (
+                  <div key={id} className="flex h-11 items-center gap-2.5 rounded-lg bg-white px-2.5 ring-1 ring-[#DDD6FE]">
+                    <span className="w-[74px] flex-none text-[11px] font-bold uppercase tracking-[.04em] text-[#6D28D9]">Supporting</span>
+                    <Avatar initials={c?.initials ?? '?'} photo={c?.photoUrl} size={28} />
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-slate-800">
+                      {c?.name ?? 'Supporting staff'}
+                      <span className="font-normal text-slate-500"> · {[c?.designation, c?.employeeId].filter(Boolean).join(' · ')}</span>
+                    </span>
+                    <button type="button" onClick={() => setSupport((cur) => cur.filter((x) => x !== id))} className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-[#B91C1C]" aria-label={`Remove ${c?.name ?? 'supporting staff'}`}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          <HisStaffSearch taken={[...team, ...(support ?? [])]} onAdd={(s) => addOutside(s, true)} title="Supporting staff (from H360)" sub="search the whole hospital" offerLogin />
+        </div>
+      ) : (
+        <HisStaffSearch taken={team} onAdd={addOutside} />
+      )}
     </>
   )
 }

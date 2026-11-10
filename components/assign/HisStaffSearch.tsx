@@ -1,16 +1,33 @@
 'use client'
-// "Outside staff (HIS)": find a hospital employee who is not in HomeCare (the HIS roster's Employee Search, read-only)
-// and put them on the care team. The server adds them as outside staff with no login, or reuses their account.
+// Hospital employees from the HIS (its Employee Search, read-only, plus a daily copy so designations are searchable
+// too): find someone by name, designation, employee ID or phone and put them on the visit. The server reuses their
+// HomeCare account, or adds them — with a HomeCare app login (temporary PIN on WhatsApp) when "app login" is on.
 import { useEffect, useState } from 'react'
 import { Building2, Loader2, Plus, Search } from 'lucide-react'
-import { api, useToast } from '@/components/client'
+import { api, Toggle, useToast } from '@/components/client'
 import { cx, phone as fmtPhone } from '@/lib/format'
 
-type Hit = { employeeId: string; name: string; designation?: string; department?: string; gender?: string; phone?: string; userId: string | null; inApp: boolean; active: boolean | null }
-export type AddedStaff = { id: string; name: string; role: string; external: boolean; employeeId: string; designation?: string; department?: string }
+type Hit = { employeeId: string; name: string; designation?: string; department?: string; gender?: string; phone?: string; userId: string | null; inApp: boolean; hasLogin?: boolean; active: boolean | null }
+export type AddedStaff = { id: string; name: string; role: string; external: boolean; employeeId: string; designation?: string; department?: string; hasLogin?: boolean }
 
-export function HisStaffSearch({ onAdd, taken = [], big = false }: { onAdd: (s: AddedStaff) => void; taken?: string[]; big?: boolean }) {
+export function HisStaffSearch({
+  onAdd,
+  taken = [],
+  big = false,
+  title = 'Outside staff (HIS)',
+  sub = 'hospital employees not in HomeCare',
+  offerLogin = false,
+}: {
+  onAdd: (s: AddedStaff) => void
+  taken?: string[]
+  big?: boolean
+  title?: string
+  sub?: string
+  /** show "Give HomeCare app login" (on by default): they sign in to the phone app and do their own visit steps */
+  offerLogin?: boolean
+}) {
   const toast = useToast()
+  const [login, setLogin] = useState(offerLogin)
   const [q, setQ] = useState('')
   const [hits, setHits] = useState<Hit[] | null>(null)
   const [note, setNote] = useState<string | null>(null)
@@ -42,9 +59,16 @@ export function HisStaffSearch({ onAdd, taken = [], big = false }: { onAdd: (s: 
   async function add(h: Hit) {
     setBusy(h.employeeId)
     try {
-      const r = await api<{ id: string; name: string; role: string; external: boolean; created: boolean }>('/users/external', { body: { employeeId: h.employeeId } })
+      const r = await api<{ id: string; name: string; role: string; external: boolean; created: boolean; hasLogin: boolean; loginSent?: boolean; pin?: string }>('/users/external', { body: { employeeId: h.employeeId, ...(offerLogin && login ? { appAccess: true } : {}) } })
       onAdd({ ...r, employeeId: h.employeeId, designation: h.designation, department: h.department })
-      toast(r.created ? `${r.name} added as outside staff` : `${r.name} added to the team`, 'ok')
+      if (r.pin) alert(`${r.name} has no WhatsApp number in the HIS.
+
+Give them their HomeCare app login:
+Employee ID: ${h.employeeId}
+Temporary PIN: ${r.pin}
+
+They change it after signing in.`)
+      toast(r.loginSent ? `${r.name} added · app login ready to send on WhatsApp` : r.created ? `${r.name} added` : `${r.name} added to the visit`, 'ok')
       setQ('')
     } catch (e: any) {
       toast(e.message, 'err')
@@ -56,12 +80,21 @@ export function HisStaffSearch({ onAdd, taken = [], big = false }: { onAdd: (s: 
   return (
     <div className="rounded-card border border-dashed border-[#C4B5FD] bg-[#FAF8FF] p-3">
       <div className="mb-1.5 flex items-center gap-1.5 text-[13px] font-bold text-[#5B21B6]">
-        <Building2 size={15} /> Outside staff (HIS)
-        <span className="font-normal text-slate-500">· hospital employees not in HomeCare</span>
+        <Building2 size={15} /> {title}
+        <span className="font-normal text-slate-500">· {sub}</span>
       </div>
+      {offerLogin && (
+        <div className="mb-2 flex items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 ring-1 ring-[#EDE9FE]">
+          <span className="text-[12.5px] leading-[17px]">
+            <b>Give HomeCare app login</b>
+            <span className="block text-slate-500">Employee ID + temporary PIN on WhatsApp · they see only the visits they are on</span>
+          </span>
+          <Toggle on={login} onChange={setLogin} label="Give HomeCare app login" />
+        </div>
+      )}
       <label className="relative block">
         <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input className={cx('hc-input pl-9', big && 'hc-input-lg')} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name or employee ID, e.g. Khadija or 11809" />
+        <input className={cx('hc-input pl-9', big && 'hc-input-lg')} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, designation, employee ID or phone — e.g. Khadija, lab technician, 11809" />
       </label>
       {q.trim().length >= 2 && !hits && <Loader2 size={16} className="mt-2 animate-spin text-slate-400" />}
       {note && <div className="mt-2 text-[12.5px] text-slate-500">{note}</div>}
@@ -74,7 +107,7 @@ export function HisStaffSearch({ onAdd, taken = [], big = false }: { onAdd: (s: 
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[13.5px] font-semibold text-slate-800">
                     {h.name} <span className="font-normal text-slate-500">· {h.employeeId}</span>
-                    {h.inApp ? <span className="ml-1.5 rounded-full bg-primary-50 px-1.5 text-[10.5px] font-bold text-primary-700">IN HOMECARE</span> : <span className="ml-1.5 rounded-full bg-[#EDE9FE] px-1.5 text-[10.5px] font-bold text-[#6D28D9]">OUTSIDE</span>}
+                    {h.inApp ? <span className="ml-1.5 rounded-full bg-primary-50 px-1.5 text-[10.5px] font-bold text-primary-700">{h.hasLogin ? 'HAS LOGIN' : 'IN HOMECARE'}</span> : <span className="ml-1.5 rounded-full bg-[#EDE9FE] px-1.5 text-[10.5px] font-bold text-[#6D28D9]">{h.userId ? 'OUTSIDE' : 'HIS'}</span>}
                   </div>
                   <div className="truncate text-[12px] text-slate-500">{[h.designation, h.department, h.phone && fmtPhone(h.phone)].filter(Boolean).join(' · ')}</div>
                 </div>
