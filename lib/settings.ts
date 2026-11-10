@@ -67,7 +67,7 @@ export const DEFAULT_SETTINGS = {
     sendDepartmentReport: true,
     dailyDigest: true,
   },
-  whatsapp: { defaultCountry: process.env.WA_DEFAULT_COUNTRY ?? '880', mode: 'deeplink' as 'deeplink' | 'cloud' | 'baileys', autoSend: true },
+  whatsapp: { defaultCountry: process.env.WA_DEFAULT_COUNTRY ?? '880', mode: 'deeplink' as 'deeplink' | 'cloud' | 'baileys', autoSend: true, approval: 'ALL' as 'ALL' | 'OFF' }, // ALL: every WhatsApp waits in the Outbox until an admin sends it
   /** extra email addresses that get a copy of the patient's message per event (Settings → Notification rules) */
   emailCopies: {} as Record<string, string[]>,
   /** WhatsApp alert to the heads of department when a new request comes in (Settings → Notification rules).

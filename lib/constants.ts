@@ -58,6 +58,7 @@ export const PERMISSIONS = {
   'transport.manage': ['SUPER_ADMIN', 'HC_ADMIN', 'TRANSPORT_SUPERVISOR'],
   'transport.drive': ['DRIVER'],
   'messages.send': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'DOCTOR', 'NURSE', 'ALLIED'],
+  'messages.approve': ['SUPER_ADMIN', 'HC_ADMIN'], // WhatsApp Outbox: preview, edit and send what waits for approval
   'reports.view': ['SUPER_ADMIN', 'HC_ADMIN', 'VIEWER'],
   'audit.view': ['SUPER_ADMIN', 'HC_ADMIN'],
   'approvals.decide': ['SUPER_ADMIN', 'HC_ADMIN'],

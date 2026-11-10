@@ -1,6 +1,8 @@
 import 'server-only'
 import QRCode from 'qrcode'
 import { MessageLog, WaAuth } from '../models'
+import { getSettings } from '../settings'
+import { waBatch } from './context'
 import { background, stripRequestNo, waNumber } from '../messaging'
 import { acquireLock, connect, type Conn } from './client'
 import { isPaired, mongoAuthState, pairedPhone } from './auth-state'
@@ -28,11 +30,15 @@ export async function waStatus() {
 
 /** Log a WhatsApp message and deliver it in the background. With attachmentId the file is sent (PDF as a document,
  *  photo as an image) and `text` becomes its caption. Delivery follows the sending-safety rules (lib/wa/guard.ts). */
-export async function queueWhatsApp(input: { to: string; toName?: string; text: string; templateKey?: string; requestId?: unknown; patientId?: unknown; initiatedBy?: string; attachmentId?: unknown; fileName?: string; priority?: number }) {
+export async function queueWhatsApp(input: { to: string; toName?: string; text: string; templateKey?: string; requestId?: unknown; patientId?: unknown; initiatedBy?: string; attachmentId?: unknown; fileName?: string; priority?: number; approved?: boolean }) {
   input = { ...input, text: stripRequestNo(input.text ?? ''), fileName: input.fileName ? stripRequestNo(input.fileName).replace(/-+(?=\.)/, '') : undefined }
   const to = waNumber(input.to)
   const c = to ? await contactState(to) : null
   const blocked = !to ? 'No valid number' : c?.optOut ? 'Opted out (replied STOP)' : c?.exists === false && checkFresh(c) ? 'Not on WhatsApp' : null
+  // nothing goes out without an admin: the message waits in the Outbox (approved = tests / already approved by a person)
+  const hold = !blocked && !input.approved && (await getSettings()).whatsapp.approval !== 'OFF'
+  const status = blocked ? 'SKIPPED' : hold ? 'PENDING' : 'QUEUED'
+  const ctx = waBatch()
   const log = await MessageLog.create({
     channel: 'WHATSAPP',
     provider: PROVIDER,
@@ -42,15 +48,18 @@ export async function queueWhatsApp(input: { to: string; toName?: string; text: 
     renderedText: (input.text ?? '').slice(0, 1500),
     requestId: input.requestId,
     patientId: input.patientId,
-    initiatedBy: input.initiatedBy,
+    initiatedBy: input.initiatedBy ?? ctx?.userId,
+    batch: ctx?.batch,
     attachmentId: input.attachmentId,
     fileName: input.fileName,
     priority: input.priority ?? priorityOf(input.templateKey),
-    status: blocked ? 'SKIPPED' : 'QUEUED',
+    status,
     error: blocked ?? undefined,
-    events: [{ status: blocked ? 'SKIPPED' : 'QUEUED', at: new Date(), note: blocked ?? undefined }],
+    events: [{ status, at: new Date(), note: blocked ?? (hold ? 'Waiting for approval' : undefined) }],
   })
-  if (!blocked) background(() => pumpSoon())
+  if (status === 'QUEUED') background(() => pumpSoon())
+  // nobody is looking at a review window for this one (staff app step, timer, website…): tell the admins
+  if (hold && !ctx) background(async () => (await import('./outbox')).noticePending())
   return log
 }
 
@@ -82,7 +91,7 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
   if (room.left <= 0) return { sent: 0, failed: 0, skipped: 'rate limit — will send later' }
   const quiet = await inQuietHours()
   // urgent first; routine automatic messages wait out quiet hours (anything sent by hand still goes)
-  const rows = await MessageLog.find({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED', ...(quiet ? { $or: [{ priority: { $gte: 10 } }, { initiatedBy: { $ne: null } }] } : {}) })
+  const rows = await MessageLog.find({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED', ...(quiet ? { $or: [{ priority: { $gte: 10 } }, { initiatedBy: { $ne: null } }, { approvedBy: { $ne: null } }] } : {}) })
     .sort({ priority: -1, at: 1 })
     .limit(40)
   if (!rows.length) return { sent: 0, failed: 0, skipped: 'waiting for morning (quiet hours)' }

@@ -16,7 +16,7 @@ export function TransportDocsBox({ requestId, requestNo, requisitionId, gatePass
   const last = (k: string) => sent.find((m) => m.templateKey === k)
   const line = (k: string) => {
     const m = last(k)
-    return !m ? 'not sent' : ok(m.status) ? `sent ✓ ${new Date(m.at).toLocaleTimeString('en-US', { timeZone: 'Asia/Dhaka', hour: 'numeric', minute: '2-digit' })}` : m.status === 'FAILED' ? 'failed' : m.status === 'QUEUED' && !linked ? 'waiting for WhatsApp link' : 'sending…'
+    return !m ? 'not sent' : ok(m.status) ? `sent ✓ ${new Date(m.at).toLocaleTimeString('en-US', { timeZone: 'Asia/Dhaka', hour: 'numeric', minute: '2-digit' })}` : m.status === 'FAILED' ? 'failed' : m.status === 'PENDING' ? 'waiting for approval (Outbox)' : m.status === 'SKIPPED' ? 'not sent' : m.status === 'QUEUED' && !linked ? 'waiting for WhatsApp link' : 'sending…'
   }
   async function resend() {
     const ok = await confirmSend({

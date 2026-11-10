@@ -193,7 +193,7 @@ export const POST = route(
     if (input.test === 'hod') {
       if (!(await isPaired())) throw bad('WhatsApp is not paired — pair it in Settings → WhatsApp first')
       const { queueWhatsApp } = await import('@/lib/wa/service')
-      const log = await queueWhatsApp({ to: input.to, toName: input.name, text: `Unico HomeCare · test message for ${input.name || 'the department head'}.\nYou will get a WhatsApp like this whenever a new home care request for your service needs assignment.\n— sent by ${user.name}`, templateKey: 'test', initiatedBy: user.id })
+      const log = await queueWhatsApp({ to: input.to, toName: input.name, text: `Unico HomeCare · test message for ${input.name || 'the department head'}.\nYou will get a WhatsApp like this whenever a new home care request for your service needs assignment.\n— sent by ${user.name}`, templateKey: 'test', initiatedBy: user.id, approved: true })
       await audit(user, 'settings.test_whatsapp', 'settings', 'hodAlerts', { after: { to: log.to } }, clientMeta(req, user))
       return { id: String(log._id), to: log.to }
     }

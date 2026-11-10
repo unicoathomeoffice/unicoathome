@@ -570,8 +570,14 @@ const MessageLogSchema = new Schema<any>(
     requestId: { type: ObjectId, ref: 'HomecareRequest' },
     patientId: { type: ObjectId, ref: 'Patient' },
     initiatedBy: { type: ObjectId, ref: 'User' },
-    status: { type: String, enum: ['PREPARED', 'QUEUED', 'SENT', 'SENT_CONFIRMED', 'DELIVERED', 'OPENED', 'FAILED', 'SKIPPED'], default: 'QUEUED' },
+    // PENDING = waiting in the Outbox for an admin to approve (Settings → WhatsApp → "Send only after approval")
+    status: { type: String, enum: ['PENDING', 'PREPARED', 'QUEUED', 'SENT', 'SENT_CONFIRMED', 'DELIVERED', 'OPENED', 'FAILED', 'SKIPPED'], default: 'QUEUED' },
     events: [{ _id: false, status: String, at: Date, note: String }],
+    batch: String, // the click it came from (lib/wa/context.ts) — the review window shows one action's messages
+    approvedBy: { type: ObjectId, ref: 'User' },
+    approvedAt: Date,
+    editedBy: { type: ObjectId, ref: 'User' },
+    originalText: String, // the generated text, kept when an admin edits it before sending
     providerId: String,
     // WhatsApp file message: the Attachment sent as a document / image, renderedText is its caption
     attachmentId: { type: ObjectId, ref: 'Attachment' },
@@ -588,6 +594,7 @@ const MessageLogSchema = new Schema<any>(
 MessageLogSchema.index({ requestId: 1, at: -1 })
 MessageLogSchema.index({ channel: 1, at: -1 })
 MessageLogSchema.index({ status: 1, at: 1 })
+MessageLogSchema.index({ batch: 1 }, { partialFilterExpression: { batch: { $exists: true } } })
 MessageLogSchema.index({ channel: 1, provider: 1, sentAt: -1, to: 1 }, { partialFilterExpression: { sentAt: { $exists: true } } }) // WhatsApp rate limits
 export const MessageLog = model('MessageLog', MessageLogSchema, 'message_logs')
 

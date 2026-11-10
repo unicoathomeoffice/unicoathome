@@ -764,7 +764,7 @@ export function VisitTab({
 
 // ================================================================ Messages
 const CH_ICON: Record<string, ReactNode> = { EMAIL: <Mail size={15} />, WHATSAPP: <MessageCircle size={15} />, PUSH: <Bell size={15} />, SMS: <Smartphone size={15} /> }
-const MSG_TONE: Record<string, Tone> = { PREPARED: 'slate', QUEUED: 'blue', SENT: 'green', SENT_CONFIRMED: 'green', DELIVERED: 'green', OPENED: 'green', FAILED: 'red', SKIPPED: 'amber' }
+const MSG_TONE: Record<string, Tone> = { PENDING: 'amber', PREPARED: 'slate', QUEUED: 'blue', SENT: 'green', SENT_CONFIRMED: 'green', DELIVERED: 'green', OPENED: 'green', FAILED: 'red', SKIPPED: 'amber' }
 
 export function MessagesTab({ msgs, chat, people, canResend, compose }: { msgs: any[]; chat: any[]; people: People; canResend: boolean; compose?: { requestId: string; contact: { name?: string; email?: string | null; phone?: string | null }; whatsappLive: boolean } }) {
   return (

@@ -13,16 +13,17 @@ export const maxDuration = 60 // a WhatsApp session may take ~10–30 s to open 
 export const GET = route(async ({ user }) => {
   if (!canOpenSettings(user)) throw forbidden()
   const s = await getSettings()
-  return { status: await waStatus(), autoSend: s.whatsapp.autoSend !== false, safety: await safetyStatus() }
+  return { status: await waStatus(), autoSend: s.whatsapp.autoSend !== false, approval: s.whatsapp.approval !== 'OFF', safety: await safetyStatus() }
 })
 
-/** PATCH { autoSend } */
+/** PATCH { autoSend?, approval? } — approval true: every WhatsApp waits in the Outbox until an admin sends it */
 export const PATCH = route(async ({ req, user }) => {
   if (!canOpenSettings(user)) throw forbidden()
-  const input = await body(req, z.object({ autoSend: z.boolean() }))
+  const input = await body(req, z.object({ autoSend: z.boolean().optional(), approval: z.boolean().optional() }))
   const before = (await getSettings()).whatsapp
-  await saveSetting('whatsapp', { ...before, autoSend: input.autoSend }, user.id)
-  await audit(user, 'settings.update', 'settings', 'whatsapp', { before: { autoSend: before.autoSend }, after: input, label: 'whatsapp' }, clientMeta(req, user))
+  const next = { ...before, ...(input.autoSend != null ? { autoSend: input.autoSend } : {}), ...(input.approval != null ? { approval: input.approval ? 'ALL' : 'OFF' } : {}) }
+  await saveSetting('whatsapp', next, user.id)
+  await audit(user, 'settings.update', 'settings', 'whatsapp', { before: { autoSend: before.autoSend, approval: before.approval }, after: { autoSend: next.autoSend, approval: next.approval }, label: 'whatsapp' }, clientMeta(req, user))
   return { ok: true }
 })
 
@@ -42,7 +43,7 @@ export const POST = route(async ({ req, user }) => {
   if (input.action === 'test') {
     const to = bdMobile(input.to)
     if (!to) throw bad('Enter a valid mobile number (01XXXXXXXXX)')
-    await queueWhatsApp({ to, text: input.text ?? `Test message from Unico HomeCare (${user.name}). If you can read this, WhatsApp auto-send is working.`, templateKey: 'test', initiatedBy: user.id })
+    await queueWhatsApp({ to, text: input.text ?? `Test message from Unico HomeCare (${user.name}). If you can read this, WhatsApp auto-send is working.`, templateKey: 'test', initiatedBy: user.id, approved: true })
     const r = await pumpWhatsApp()
     await audit(user, 'settings.test_whatsapp', 'settings', 'whatsapp', { after: { to, ...r } }, meta)
     return { ok: true, ...r }

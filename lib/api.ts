@@ -4,6 +4,7 @@ import { ZodError, type ZodType } from 'zod'
 import { db } from './db'
 import { getUser, type SessionUser } from './auth'
 import { can, type Permission, type Role, hasAnyRole } from './constants'
+import { withWaBatch } from './wa/context'
 
 export class ApiError extends Error {
   constructor(
@@ -54,7 +55,9 @@ export function route<P = Record<string, string>>(fn: Handler<P>, opt: { perm?: 
       if (!user) throw new ApiError(401, 'UNAUTHENTICATED', 'Please sign in again')
       if (opt.perm && !can(user, opt.perm)) throw forbidden()
       if (opt.roles && !hasAnyRole(user, opt.roles)) throw forbidden()
-      const out = await fn({ req, user, params: (await ctx?.params) ?? ({} as P) })
+      const params = (await ctx?.params) ?? ({} as P)
+      // WhatsApp messages this click creates carry its batch id, for the review window
+      const out = await withWaBatch(req.headers.get('x-wa-batch'), user.id, () => fn({ req, user, params }))
       if (out instanceof Response) return out
       return json(out ?? { ok: true })
     } catch (e) {

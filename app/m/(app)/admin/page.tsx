@@ -1,4 +1,4 @@
-import { Inbox, UsersRound, FilePlus2, Route, CalendarRange, NotebookPen, ShieldCheck, Truck, ChevronRight, Receipt } from 'lucide-react'
+import { Inbox, UsersRound, FilePlus2, Route, CalendarRange, NotebookPen, ShieldCheck, Truck, ChevronRight, Receipt, Send } from 'lucide-react'
 import { MScreen, MList, MRow } from '@/components/mobile'
 import { AutoRefresh } from '@/components/client'
 import { SlaPill, StatusChip, PriorityBadge } from '@/components/ui'
@@ -16,7 +16,7 @@ export const metadata = { title: 'Admin' }
 export default async function AdminHub() {
   const user = await requireDesk()
   const { start, end } = dayRange()
-  const [statusCounts, today, pendingApprovals, activePlans, open, settings] = await Promise.all([
+  const [statusCounts, today, pendingApprovals, activePlans, open, settings, waiting] = await Promise.all([
     HomecareRequest.aggregate([{ $match: { deletedAt: null, status: { $in: ['NEW', 'VERIFIED', 'CONFIRMED', 'RESCHEDULED', 'ASSIGNED', 'COMPLETED'] } } }, { $group: { _id: '$status', n: { $sum: 1 } } }]),
     HomecareRequest.find({ deletedAt: null, scheduledAt: { $gte: start, $lt: end }, status: { $ne: 'CANCELLED' } }).select('status').lean<any[]>(),
     can(user, 'approvals.decide') ? Approval.countDocuments({ status: 'PENDING' }) : Promise.resolve(0),
@@ -25,6 +25,7 @@ export default async function AdminHub() {
       .select('requestNo status priority patientSnapshot services timeline assignment scheduledAt')
       .lean<any[]>(),
     getSettings(),
+    can(user, 'messages.approve') ? import('@/lib/wa/outbox').then((m) => m.pendingCount()) : Promise.resolve(0),
   ])
   const c = (s: string[]) => statusCounts.filter((x) => s.includes(x._id)).reduce((a, x) => a + x.n, 0)
   const toConfirm = c(['NEW', 'VERIFIED'])
@@ -42,6 +43,7 @@ export default async function AdminHub() {
 
   const tools = [
     { href: '/m/admin/inbox', icon: Inbox, title: 'Request inbox', sub: 'Verify · confirm · assign · cancel', n: toConfirm + toAssign },
+    ...(can(user, 'messages.approve') ? [{ href: '/m/admin/outbox', icon: Send, title: 'WhatsApp outbox', sub: 'Check, edit and send waiting messages', n: waiting }] : []),
     { href: '/m/admin/patients', icon: UsersRound, title: 'Patient board', sub: 'Search by phone, UHID or name' },
     { href: '/m/new-request', icon: FilePlus2, title: 'New request', sub: 'Quick form · 2 minutes' },
     { href: '/m/route', icon: Route, title: 'Day route', sub: `All ${today.length} visits today on a map` },

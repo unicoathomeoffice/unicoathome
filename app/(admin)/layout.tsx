@@ -3,6 +3,9 @@ import { HomecareRequest } from '@/lib/models'
 import { unreadCount } from '@/lib/unread'
 import { ROLE_LABEL, ACTIVE_STATUSES, permissionsFor } from '@/lib/constants'
 import { Sidebar } from '@/components/admin/Sidebar'
+import { WaReviewProvider } from '@/components/client/WaReview'
+import { can } from '@/lib/constants'
+import { getSettings } from '@/lib/settings'
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await requireWebUser()
@@ -11,8 +14,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     HomecareRequest.countDocuments({ status: { $in: ACTIVE_STATUSES }, deletedAt: null }),
     unreadCount(user.id), // shared with AdminPage's bell — one query per request
   ]).then(([open, unread]) => ({ open, unread }))
+  // admins approve every WhatsApp: the "Review & send" window opens after any click that created messages
+  const review = can(user, 'messages.approve') && (await getSettings()).whatsapp.approval !== 'OFF'
   return (
     <div className="flex h-dvh overflow-hidden bg-page">
+      {review && <WaReviewProvider />}
       <Sidebar user={{ name: user.name, initials: user.initials, photoUrl: user.photoUrl, perms: permissionsFor(user), roleLabel: user.designation ?? ROLE_LABEL[user.role] }} counts={counts} />
       {children}
     </div>

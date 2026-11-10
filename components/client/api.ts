@@ -14,11 +14,23 @@ export class ApiClientError extends Error {
   }
 }
 
+/**
+ * WhatsApp review hook (components/client/WaReview.tsx): every change sent through api() carries a fresh batch id, and
+ * when that action created WhatsApp messages they open in the "Review & send" window for the admin to approve.
+ */
+type MutationHook = { start(path: string): string | null; done(batch: string): void }
+let mutationHook: MutationHook | null = null
+export function setMutationHook(h: MutationHook | null) {
+  mutationHook = h
+}
+
 /** fetch wrapper for /api/v1. Throws ApiClientError with the server's message. */
 export async function api<T = any>(path: string, opts: { method?: string; body?: unknown; form?: FormData; signal?: AbortSignal } = {}): Promise<T> {
+  const method = opts.method ?? (opts.body || opts.form ? 'POST' : 'GET')
+  const batch = method !== 'GET' ? mutationHook?.start(path) ?? null : null
   const res = await fetch(path.startsWith('/api') ? path : `/api/v1${path}`, {
-    method: opts.method ?? (opts.body || opts.form ? 'POST' : 'GET'),
-    headers: opts.form ? undefined : { 'content-type': 'application/json' },
+    method,
+    headers: { ...(opts.form ? {} : { 'content-type': 'application/json' }), ...(batch ? { 'x-wa-batch': batch } : {}) },
     body: opts.form ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
     credentials: 'same-origin',
     signal: opts.signal,
@@ -30,6 +42,7 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
     }
     throw new ApiClientError(data?.error?.message ?? `Request failed (${res.status})`, res.status, data?.error?.code, data?.error?.fields)
   }
+  if (batch) mutationHook?.done(batch)
   return data as T
 }
 

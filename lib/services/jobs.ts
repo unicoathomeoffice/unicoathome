@@ -123,6 +123,8 @@ export async function sweep(force = false) {
     const { pumpWhatsApp } = await import('../wa/service')
     await pumpWhatsApp().catch(() => {})
   }
+  // WhatsApp Outbox: messages nobody approved for 48 h are discarded
+  await (await import('../wa/outbox')).expirePending().catch(() => 0)
   // daily WhatsApp summary: sent once, at the first sweep after the chosen time
   const { sendDailySummary } = await import('./daily')
   const daily = await sendDailySummary().catch((e) => ({ sent: 0, skipped: String(e?.message ?? e) }))

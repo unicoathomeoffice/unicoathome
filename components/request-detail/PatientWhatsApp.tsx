@@ -34,7 +34,9 @@ export function ConfirmationStatus({ requestId, wa, last, patientName }: { reque
     ? { text: 'Not sent yet', cls: 'text-slate-500' }
     : sent
       ? { text: `Sent ✓ ${at}`, cls: 'text-[#15803D]' }
-      : last.status === 'QUEUED'
+      : last.status === 'PENDING'
+        ? { text: `Waiting in the Outbox for approval (${at})`, cls: 'text-[#6D28D9]' }
+        : last.status === 'QUEUED'
         ? { text: `Sending… (queued ${at})`, cls: 'text-[#B45309]' }
         : last.status === 'PREPARED'
           ? { text: `Opened in WhatsApp ${at} · not confirmed as sent`, cls: 'text-[#B45309]' }

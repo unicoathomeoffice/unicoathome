@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { cx, isoDay, time, dayNum } from '@/lib/format'
 
 export const MSG_STATUS: Record<string, { label: string; bg: string; fg: string }> = {
+  PENDING: { label: 'Waiting approval', bg: '#EDE9FE', fg: '#6D28D9' },
   PREPARED: { label: 'Prepared', bg: '#F1F5F9', fg: '#475569' },
   QUEUED: { label: 'Queued', bg: '#FEF3C7', fg: '#B45309' },
   SENT: { label: 'Sent', bg: '#E8F5FB', fg: '#0072A3' },

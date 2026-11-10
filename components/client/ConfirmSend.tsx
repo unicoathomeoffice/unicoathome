@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom'
 import { AlertTriangle, FileText, Loader2, MessageCircle, Send } from 'lucide-react'
 import { btnClass } from '@/components/ui'
 import { phone as fmtPhone } from '@/lib/format'
+import { reviewActive } from './WaReview'
 
 export type ConfirmSendOptions = {
   title: string
@@ -107,7 +108,9 @@ function Dialog({ o, onDone }: { o: ConfirmSendOptions; onDone: (ok: boolean) =>
 /** `const { confirmSend, confirmDialog } = useConfirmSend()` · `if (!(await confirmSend({...}))) return` · render {confirmDialog}. */
 export function useConfirmSend() {
   const [st, setSt] = useState<null | { o: ConfirmSendOptions; resolve: (ok: boolean) => void }>(null)
-  const confirmSend = (o: ConfirmSendOptions) => new Promise<boolean>((resolve) => setSt({ o, resolve }))
+  // with the Outbox on, the action's messages open in the "Review & send" window right after the click (real text per
+  // recipient, editable) — asking here as well would ask twice
+  const confirmSend = (o: ConfirmSendOptions) => (reviewActive() ? Promise.resolve(true) : new Promise<boolean>((resolve) => setSt({ o, resolve })))
   const confirmDialog = st ? (
     <Dialog
       o={st.o}

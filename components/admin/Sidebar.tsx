@@ -2,9 +2,10 @@
 import Link, { useLinkStatus } from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Suspense, use, useEffect, useState } from 'react'
-import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X, MapPinned, Receipt } from 'lucide-react'
+import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X, MapPinned, Receipt, Send } from 'lucide-react'
 import { cx } from '@/lib/format'
 import { api } from '@/components/client/api'
+import { OutboxBadge } from '@/components/client/WaReview'
 import type { Permission } from '@/lib/constants'
 
 /** perms: what the signed-in user holds (custom role included) — computed on the server with permissionsFor() */
@@ -21,6 +22,7 @@ const NAV: { href: string; label: string; icon: any; countKey?: string; perm?: P
   { href: '/reports', label: 'Reports', icon: BarChart3, perm: 'reports.view' },
   { href: '/claims', label: 'Claims', icon: Receipt, perm: 'approvals.decide' },
   { href: '/messages', label: 'Messages', icon: Mail, perm: (p) => p.includes('requests.readAll') && (p.includes('messages.send') || p.includes('reports.view')) },
+  { href: '/outbox', label: 'WhatsApp outbox', icon: Send, countKey: 'outbox', perm: 'messages.approve' }, // messages waiting for approval
   { href: '/notifications', label: 'Notifications', icon: Bell, countKey: 'unread' },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
@@ -77,7 +79,9 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Promise<Recor
                 <n.icon size={18} />
                 <span className="flex-1">{n.label}</span>
                 <Pending />
-                {n.countKey && (
+                {n.countKey === 'outbox' ? (
+                  <OutboxBadge />
+                ) : n.countKey && (
                   <Suspense fallback={null}>
                     <Count counts={counts} k={n.countKey} />
                   </Suspense>

@@ -14,6 +14,7 @@ const CH: Record<NotifyRow['channel'], { label: string; icon: ReactNode }> = {
   INAPP: { label: 'In-app', icon: <Bell size={14} className="text-slate-500" /> },
 }
 const STATUS: Record<string, { label: string; tone: Tone }> = {
+  PENDING: { label: 'Waiting for approval', tone: 'amber' },
   PREPARED: { label: 'Opened on phone', tone: 'slate' },
   QUEUED: { label: 'Sending', tone: 'blue' },
   SENT: { label: 'Sent', tone: 'green' },

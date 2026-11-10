@@ -10,11 +10,12 @@ import { WaQueueDrawer } from './WaQueueDrawer'
 export type WaStatus = { paired: boolean; state?: 'connected' | 'needs_rescan' | 'not_paired'; stateReason?: string | null; phone: string | null; queued: number; failed7d: number; lastSentAt: string | null; lastError: string | null; lastErrorAt: string | null; pairedAt: string | null; verifiedAt?: string | null }
 
 /** Settings → WhatsApp: pair the hospital's WhatsApp by QR (no server needed), auto-send switch, test, queue. */
-export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial: WaStatus; autoSend: boolean }) {
+export function WhatsAppConnection({ initial, autoSend: initialAuto, approval: initialApproval = true }: { initial: WaStatus; autoSend: boolean; approval?: boolean }) {
   const router = useRouter()
   const toast = useToast()
   const [st, setSt] = useState(initial)
   const [autoSend, setAutoSend] = useState(initialAuto)
+  const [approval, setApproval] = useState(initialApproval)
   const [qr, setQr] = useState<string | null>(null)
   const [pairing, setPairing] = useState(false)
   const [note, setNote] = useState('')
@@ -31,7 +32,8 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
 
   async function refresh() {
     try {
-      const r = await api<{ status: WaStatus; autoSend: boolean }>('/settings/whatsapp')
+      const r = await api<{ status: WaStatus; autoSend: boolean; approval: boolean }>('/settings/whatsapp')
+      setApproval(r.approval)
       setSt(r.status)
       setAutoSend(r.autoSend)
     } catch {}
@@ -101,6 +103,18 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
       toast(e.message, 'err')
     } finally {
       setBusy(null)
+    }
+  }
+
+  async function toggleApproval(v: boolean) {
+    if (!v && !confirm('Turn approval off? Automatic WhatsApp messages will then go out on their own, without anyone checking them.')) return
+    setApproval(v)
+    try {
+      await api('/settings/whatsapp', { method: 'PATCH', body: { approval: v } })
+      toast(v ? 'Every WhatsApp now waits in the Outbox for approval' : 'WhatsApp messages go out automatically again', 'ok')
+    } catch (e: any) {
+      setApproval(!v)
+      toast(e.message, 'err')
     }
   }
 
@@ -181,6 +195,20 @@ export function WhatsAppConnection({ initial, autoSend: initialAuto }: { initial
           </button>
         </div>
       )}
+
+      <div className="flex items-center justify-between gap-3 rounded-lg bg-[#F0FDF4] px-3 py-2.5 ring-1 ring-[#BBF7D0]">
+        <span className="text-[13.5px]">
+          <span className="font-semibold">Send only after approval</span>
+          <span className="block text-[12px] text-slate-600">
+            Every WhatsApp — patient, staff, department heads, security, live updates, daily summary — waits in the{' '}
+            <a href="/outbox" className="font-semibold text-primary-700 hover:underline">
+              Outbox
+            </a>{' '}
+            until an admin checks it, edits it if needed and sends it.
+          </span>
+        </span>
+        <Toggle on={approval} onChange={toggleApproval} label="Send only after approval" />
+      </div>
 
       <div className="flex items-center justify-between py-1">
         <span className="text-[13.5px]">
