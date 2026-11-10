@@ -5,7 +5,7 @@ import { Loader2, RefreshCw, Save } from 'lucide-react'
 import { api, Toggle, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 
-export type MapsCfg = { useGoogle: boolean; monthlyFree: number; reservePct: number; dailyCap: 'auto' | number }
+export type MapsCfg = { useGoogle: boolean; monthlyFree: number; reservePct: number; dailyCap: 'none' | 'auto' | number }
 
 /** Settings → Maps & API usage: the switches that keep Google Maps inside the free tier. */
 export function MapsSettings({ initial, suggested }: { initial: MapsCfg; suggested: number }) {
@@ -15,6 +15,8 @@ export function MapsSettings({ initial, suggested }: { initial: MapsCfg; suggest
   const [busy, setBusy] = useState(false)
   const dirty = JSON.stringify(c) !== JSON.stringify(initial)
   const auto = c.dailyCap === 'auto'
+  const none = c.dailyCap === 'none'
+  const custom = !auto && !none
 
   async function save() {
     setBusy(true)
@@ -64,15 +66,18 @@ export function MapsSettings({ initial, suggested }: { initial: MapsCfg; suggest
       <div className="mt-4">
         <span className="hc-label">Daily cap</span>
         <div className="flex gap-2">
-          <button type="button" onClick={() => setC({ ...c, dailyCap: 'auto' })} className={`h-10 flex-1 rounded-lg border-[1.5px] text-[13.5px] font-semibold ${auto ? 'border-primary bg-primary-50 text-primary-700' : 'border-slate-300 text-slate-700'}`}>
-            Automatic · ~{suggested}/day, unused roll over
+          <button type="button" onClick={() => setC({ ...c, dailyCap: 'none' })} className={`h-10 flex-1 rounded-lg border-[1.5px] text-[13.5px] font-semibold ${none ? 'border-primary bg-primary-50 text-primary-700' : 'border-slate-300 text-slate-700'}`}>
+            No daily limit · monthly only
           </button>
-          <div className={`flex h-10 flex-1 items-center rounded-lg border-[1.5px] px-2 ${auto ? 'border-slate-300' : 'border-primary bg-primary-50'}`}>
-            <input type="number" min={1} className="h-full w-full bg-transparent text-[13.5px] font-semibold outline-none" placeholder="Custom" value={auto ? '' : c.dailyCap} onChange={(e) => setC({ ...c, dailyCap: Math.max(1, Number(e.target.value) || 1) })} />
+          <button type="button" onClick={() => setC({ ...c, dailyCap: 'auto' })} className={`h-10 flex-1 rounded-lg border-[1.5px] text-[13.5px] font-semibold ${auto ? 'border-primary bg-primary-50 text-primary-700' : 'border-slate-300 text-slate-700'}`}>
+            Spread · ~{suggested}/day
+          </button>
+          <div className={`flex h-10 flex-1 items-center rounded-lg border-[1.5px] px-2 ${custom ? 'border-primary bg-primary-50' : 'border-slate-300'}`}>
+            <input type="number" min={1} className="h-full w-full bg-transparent text-[13.5px] font-semibold outline-none" placeholder="Custom" value={custom ? c.dailyCap : ''} onChange={(e) => setC({ ...c, dailyCap: Math.max(1, Number(e.target.value) || 1) })} />
             <span className="text-[12px] text-slate-500">/day</span>
           </div>
         </div>
-        <p className="mt-1.5 text-[12.5px] text-slate-500">Automatic spreads the monthly allowance evenly, so one busy day can’t use up the rest of the month. When a day’s cap is reached, Google pauses until tomorrow and OpenStreetMap takes over.</p>
+        <p className="mt-1.5 text-[12.5px] text-slate-500">No daily limit: Google is used until each API’s monthly free calls are used up, then OpenStreetMap takes over until the 1st. Spread: the calls left are shared over the days left (unused days roll over). Either way the free monthly allowance is never exceeded.</p>
       </div>
 
       <button type="button" onClick={save} disabled={busy || !dirty} className={btnClass('p', 'md', 'mt-4 w-full')}>

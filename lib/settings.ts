@@ -46,7 +46,7 @@ export const DEFAULT_SETTINGS = {
     useGoogle: true, // when false, everything runs on free OpenStreetMap even if a key exists
     monthlyFree: 10000, // Google's free calls per month per API, Essentials tier (Pro APIs get half: lib/maps-usage.ts)
     reservePct: 10, // keep this share of the monthly allowance unused as a safety margin
-    dailyCap: 'auto' as 'auto' | number, // 'auto' = free calls left this month ÷ days left (unused days roll over)
+    dailyCap: 'none' as 'none' | 'auto' | number, // 'none' = monthly limit only · 'auto' = free left ÷ days left (roll-over)
   },
   sla: {
     confirmRoutineMin: 15,

@@ -75,13 +75,15 @@ export type KindBudget = { ok: boolean; reason: Reason; today: number; month: nu
  */
 export async function googleBudget(cfg: MapsCfg): Promise<{ allowed: boolean; reason: Reason; message?: string; checkedAt?: string; remainingToday: number; dailyCap: number; monthlyCap: number; used: { today: number; month: number }; kinds: Record<GoogleKind, KindBudget> }> {
   const [used, probe] = await Promise.all([googleUsage(), lastProbe()])
-  const auto = cfg.dailyCap === 'auto' || !cfg.dailyCap
+  const none = cfg.dailyCap === 'none' || !cfg.dailyCap // monthly limit only
+  const auto = cfg.dailyCap === 'auto'
   const global: Reason | null = !cfg.useGoogle ? 'off' : !process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ? 'no-key' : probe && !probe.ok ? 'refused' : null
   const kinds = Object.fromEntries(
     GOOGLE_KINDS.map((k) => {
       const u = used.kinds[k]
       const monthlyCap = monthlyCapOf(cfg, k)
-      const dailyCap = auto ? rolloverCap(cfg, k, u, used.day) : Math.min(Number(cfg.dailyCap), monthlyCap)
+      // no daily limit: today may use everything left of the month's free calls
+      const dailyCap = none ? Math.max(0, monthlyCap - (u.month - u.today)) : auto ? rolloverCap(cfg, k, u, used.day) : Math.min(Number(cfg.dailyCap), monthlyCap)
       const reason: Reason = global ?? (u.month >= monthlyCap ? 'monthly-cap' : u.today >= dailyCap ? 'daily-cap' : 'ok')
       return [k, { ok: reason === 'ok', reason, today: u.today, month: u.month, dailyCap, monthlyCap, remainingToday: Math.max(0, dailyCap - u.today) }]
     }),
