@@ -59,8 +59,9 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Promise<Recor
 
   const body = (
     <div className="flex h-full w-[264px] flex-none flex-col bg-navy px-4 py-5 text-white">
-      <Link href="/dashboard" className="flex items-center gap-2.5 rounded-[10px] bg-white px-3.5 py-2.5">
-        <img src="/logo.svg" alt="Unico Hospitals" className="block h-[34px]" />
+      <Link href="/dashboard" className="flex items-center gap-2.5 px-2 py-1.5">
+        {/* the colour logo is drawn in white straight on the navy sidebar — no white box */}
+        <img src="/logo.svg" alt="Unico Hospitals" className="block h-[40px] brightness-0 invert" />
       </Link>
       <div className="mx-3 mb-2 mt-[22px] text-[11px] font-bold uppercase tracking-[.1em] text-white/50">Home Care</div>
       <nav className="no-scrollbar flex flex-1 flex-col gap-0.5 overflow-y-auto">
