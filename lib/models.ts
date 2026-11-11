@@ -85,6 +85,10 @@ const EquipmentSchema = new Schema<any>(
     variant: String,
     brand: String,
     h360Code: { type: String, index: true }, // item code in H360 (Nursing Services - Family Medicine sub-store)
+    // H360 match (lib/services/store-sync.ts): both stores agreed on h360LastStock at h360SyncedAt
+    h360SyncedAt: Date,
+    h360LastStock: Number,
+    tolerance: { type: Number, default: 0 }, // a gap this small counts as matched (e.g. loose stationery)
   },
   opts,
 )
@@ -128,6 +132,49 @@ const StoreConsumptionSchema = new Schema<any>(
 )
 StoreConsumptionSchema.index({ at: -1 })
 export const StoreConsumption = model('StoreConsumption', StoreConsumptionSchema, 'store_consumptions')
+
+/** A store item that does not match H360 — followed up until resolved (or accepted for a while, with a reason). */
+const StoreIssueSchema = new Schema<any>(
+  {
+    itemId: { type: ObjectId, ref: 'Equipment' },
+    code: String, // H360 code (also for items only in H360)
+    name: String,
+    status: { type: String, enum: ['OPEN', 'IN_PROGRESS', 'ACCEPTED', 'RESOLVED'], default: 'OPEN' },
+    kind: String, // TO_CONSUME · H360_LOWER · H360_HIGHER · ONLY_H360 · ONLY_LOCAL
+    since: { type: Date, default: Date.now }, // first seen
+    lastDiff: Number,
+    lastValue: Number, // ৳
+    assignedTo: { type: ObjectId, ref: 'User' },
+    acceptedReason: String,
+    acceptedUntil: Date,
+    resolvedHow: String, // matched · consumed in H360 · received · added · accepted · cleared
+    resolvedAt: Date,
+    resolvedBy: { type: ObjectId, ref: 'User' },
+    log: [{ _id: false, at: Date, by: { type: ObjectId, ref: 'User' }, byName: String, text: String }],
+  },
+  { timestamps: true },
+)
+StoreIssueSchema.index({ status: 1, code: 1 })
+export const StoreIssue = model('StoreIssue', StoreIssueSchema, 'store_issues')
+
+/** Every comparison with H360, for the trend (differences and ৳ out of balance over time). */
+const StoreSnapshotSchema = new Schema<any>(
+  {
+    at: { type: Date, default: Date.now },
+    h360Total: Number,
+    localTotal: Number,
+    items: Number,
+    matched: Number,
+    differences: Number,
+    toConsume: Number,
+    unexplained: Number,
+    value: Number, // ৳ out of balance (|difference| × H360 purchase price)
+    by: { type: ObjectId, ref: 'User' }, // empty = background check
+  },
+  { timestamps: false },
+)
+StoreSnapshotSchema.index({ at: -1 })
+export const StoreSnapshot = model('StoreSnapshot', StoreSnapshotSchema, 'store_snapshots')
 
 // ---------------------------------------------------------------- users
 const UserSchema = new Schema<any>(

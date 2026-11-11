@@ -125,6 +125,9 @@ export async function sweep(force = false) {
   }
   // WhatsApp Outbox: messages nobody approved for 48 h are discarded
   await (await import('../wa/outbox')).expirePending().catch(() => 0)
+  // Family Medicine store vs H360: compared every 30 minutes in the background (alerts on new differences)
+  const { background } = await import('../messaging')
+  background(async () => (await import('./store-sync')).compareIfDue())
   // daily WhatsApp summary: sent once, at the first sweep after the chosen time
   const { sendDailySummary } = await import('./daily')
   const daily = await sendDailySummary().catch((e) => ({ sent: 0, skipped: String(e?.message ?? e) }))

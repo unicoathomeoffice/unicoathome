@@ -109,6 +109,7 @@ export const MASTER: Record<string, Master> = {
       variant: z.string().trim().max(40).optional(), // "22G"
       brand: z.string().trim().max(40).optional(), // "B Braun"
       h360Code: z.string().trim().max(30).optional(),
+      tolerance: z.number().int().min(0).max(1000).optional(),
       isActive: z.boolean().default(true),
       sortOrder: z.number().default(0),
     }),
