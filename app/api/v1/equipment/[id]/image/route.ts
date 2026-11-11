@@ -10,16 +10,19 @@ import { forgetMaster } from '@/lib/cached'
 import sharp from 'sharp'
 import { can } from '@/lib/constants'
 import { forbidden } from '@/lib/api'
+import { galleryOf, materialize, MAX_IMAGES, retireIfUnused } from '@/lib/services/item-images'
 
-/** GET /api/v1/equipment/:id/image — the item's picture, for any signed-in staff (bag check, service editor, reports). */
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+/** GET /api/v1/equipment/:id/image[?att=<id>] — the item's cover (or one of its gallery pictures), for any signed-in staff. */
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   if (!isOid(id)) return new NextResponse(null, { status: 404 })
   await db()
   if (!(await getUser())) return new NextResponse(null, { status: 401 })
-  const item = await Equipment.findById(id).select('imageId').lean<any>()
-  if (!item?.imageId) return new NextResponse(null, { status: 404 })
-  const a = await Attachment.findOne({ _id: item.imageId, kind: 'EQUIPMENT', deletedAt: null }).select('+data +blobUrl mime storage').lean<any>()
+  const item = await Equipment.findById(id).select('imageId images').lean<any>()
+  const att = req.nextUrl.searchParams.get('att')
+  const want = att && isOid(att) ? (galleryOf(item ?? {}).some((g) => g.attachmentId === att) ? att : null) : item?.imageId
+  if (!want) return new NextResponse(null, { status: 404 })
+  const a = await Attachment.findOne({ _id: want, kind: 'EQUIPMENT', deletedAt: null }).select('+data +blobUrl mime storage').lean<any>()
   if (!a) return new NextResponse(null, { status: 404 })
   // the URL carries ?v=<imageId>, so a new picture is a new URL: cache for long
   const headers = { 'content-type': a.mime ?? 'image/webp', 'cache-control': 'private, max-age=31536000, immutable' }
@@ -33,7 +36,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   return new Response(new Uint8Array(buf), { headers })
 }
 
-/** POST /api/v1/equipment/:id/image (multipart: file) — set or replace the picture (catalog or store admins). */
+/**
+ * POST /api/v1/equipment/:id/image (multipart: file) — catalog or store admins.
+ *   default: replace the cover · ?add=1: add to the gallery (cover too when the item has none, or with &cover=1)
+ *   ?replace=<attId>: replace one gallery picture (an edited version)
+ */
 export const POST = route<{ id: string }>(
   async ({ req, user, params }) => {
     if (!can(user, 'master.manage') && !can(user, 'store.manage')) throw forbidden()
@@ -45,16 +52,40 @@ export const POST = route<{ id: string }>(
     if (!(file instanceof File)) throw bad('No file')
     if (file.size > MAX_UPLOAD_BYTES) throw bad(`Picture is larger than ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`)
     if (!/^image\/(jpeg|png|webp|avif|heic|heif)$/.test(file.type)) throw bad('Only JPG, PNG, WEBP, AVIF or HEIC pictures')
+    const q = req.nextUrl.searchParams
+    const add = q.get('add') === '1'
+    const replace = q.get('replace')
+    materialize(item)
+    if (add && item.images.length >= MAX_IMAGES) throw bad(`An item can have up to ${MAX_IMAGES} pictures — remove one first`)
     const pic = await toAvif(Buffer.from(await file.arrayBuffer()))
     const a = await storeFile({ data: pic.data, mime: pic.mime, filename: `${item.name.replace(/[^\w.-]+/g, '-').slice(0, 60)}.${pic.ext}`, kind: 'EQUIPMENT', uploadedBy: user.id, ownerType: 'USER', ownerId: user.id, caption: item.name })
-    const old = item.imageId
-    item.imageId = a._id
+    const caption = String(form.get('caption') ?? '').slice(0, 40) || undefined
+    let old: unknown = null
+    if (replace && isOid(replace)) {
+      // an edited version of one gallery picture: same place, same caption
+      const i = item.images.findIndex((x: any) => String(x.attachmentId) === replace)
+      if (i < 0) throw notFound('Picture')
+      old = item.images[i].attachmentId
+      item.images[i].attachmentId = a._id
+      if (String(item.imageId) === replace) item.imageId = a._id
+    } else if (add) {
+      item.images.push({ attachmentId: a._id, caption, at: new Date() })
+      if (!item.imageId || q.get('cover') === '1') item.imageId = a._id
+    } else {
+      // replace the cover
+      old = item.imageId
+      const i = item.images.findIndex((x: any) => String(x.attachmentId) === String(old))
+      if (i >= 0) item.images[i].attachmentId = a._id
+      else item.images.unshift({ attachmentId: a._id, caption, at: new Date() })
+      item.imageId = a._id
+    }
+    item.markModified('images')
     await item.save()
     // sizes of a family can share one picture: only retire the old file when nothing uses it any more
-    if (old && !(await Equipment.exists({ imageId: old }))) await Attachment.updateOne({ _id: old }, { deletedAt: new Date() })
+    await retireIfUnused(old)
     forgetMaster()
-    await audit(user, 'equipment.image', 'equipment', item._id, { after: { imageId: String(a._id) }, label: item.name }, clientMeta(req, user))
-    return { ok: true, imageId: String(a._id) }
+    await audit(user, add ? 'equipment.image_add' : 'equipment.image', 'equipment', item._id, { after: { imageId: String(a._id), cover: String(item.imageId) === String(a._id), pictures: item.images.length }, label: item.name }, clientMeta(req, user))
+    return { ok: true, imageId: String(a._id), cover: String(item.imageId), count: item.images.length }
   },
 )
 
@@ -66,9 +97,13 @@ export const DELETE = route<{ id: string }>(async ({ req, user, params }) => {
   if (!item) throw notFound('Item')
   const old = item.imageId
   if (!old) return { ok: true }
-  item.imageId = undefined
+  // remove the cover; the next gallery picture becomes the cover
+  materialize(item)
+  item.images = item.images.filter((x: any) => String(x.attachmentId) !== String(old))
+  item.imageId = item.images[0]?.attachmentId
+  item.markModified('images')
   await item.save()
-  if (!(await Equipment.exists({ imageId: old }))) await Attachment.updateOne({ _id: old }, { deletedAt: new Date() })
+  await retireIfUnused(old)
   forgetMaster()
   await audit(user, 'equipment.image_remove', 'equipment', item._id, { label: item.name }, clientMeta(req, user))
   return { ok: true }

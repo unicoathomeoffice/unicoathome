@@ -84,6 +84,8 @@ const EquipmentSchema = new Schema<any>(
     family: String,
     variant: String,
     brand: String,
+    // more pictures (front, back, label, box…); imageId above is the cover (lib/services/item-images.ts)
+    images: [{ _id: false, attachmentId: { type: ObjectId, ref: 'Attachment' }, caption: String, at: Date }],
     h360Code: { type: String, index: true }, // item code in H360 (Nursing Services - Family Medicine sub-store)
     // H360 match (lib/services/store-sync.ts): both stores agreed on h360LastStock at h360SyncedAt
     h360SyncedAt: Date,

@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowDownLeft, ArrowUpRight, Camera, ClipboardCheck, EyeOff, ImageOff, Loader2, Package, PackageMinus, PackagePlus, Plus, Save, Search, Trash2 } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Camera, ClipboardCheck, EyeOff, ImageOff, Images, Loader2, Package, PackageMinus, PackagePlus, Plus, Save, Search, Trash2 } from 'lucide-react'
 import { api, Drawer, Segmented, Toggle, useToast } from '@/components/client'
 import { btnClass, Tag } from '@/components/ui'
 import { cx } from '@/lib/format'
@@ -13,12 +13,12 @@ import { groupItems, parseItemName } from '@/lib/store-groups'
 import { ConsumeDrawer } from '@/components/store/ConsumeDrawer'
 import { usePasteFiles } from '@/components/client/paste'
 import { ImageEditor } from '@/components/store/ImageEditor'
-import { ImageViewer } from '@/components/store/ImageViewer'
+import { ImageViewer, pictureCount } from '@/components/store/ImageViewer'
 import { AddItemChooser } from '@/components/store/AddItemChooser'
 import { LoanDrawer } from '@/components/store/LoanDrawer'
 import { ReceiveDrawer } from '@/components/store/ReceiveDrawer'
 
-export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string; lentOut?: number; borrowed?: number }
+export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; images?: { attachmentId: string }[]; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string; lentOut?: number; borrowed?: number }
 
 /** out ≤ 0 · low ≤ alert level · ok */
 export const stockState = (i: { stock?: number; alertBelow?: number }) => ((i.stock ?? 0) <= 0 ? 'out' : (i.alertBelow ?? 0) > 0 && (i.stock ?? 0) <= (i.alertBelow ?? 0) ? 'low' : 'ok')
@@ -203,9 +203,10 @@ function ItemCard({ i, onOpen, onPicture, clickable }: { i: EquipmentDoc; onOpen
         title={i.imageId ? 'View picture' : 'Add a picture'}
         onClick={(e) => (e.stopPropagation(), onPicture(i))}
         onKeyDown={(e) => e.key === 'Enter' && (e.stopPropagation(), onPicture(i))}
-        className="rounded-lg transition hover:ring-2 hover:ring-primary/50"
+        className="relative rounded-lg transition hover:ring-2 hover:ring-primary/50"
       >
         <ItemPicture item={i} size={64} />
+        <PicBadge item={i} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14.5px] font-bold text-slate-900" title={i.name}>
@@ -222,6 +223,17 @@ function ItemCard({ i, onOpen, onPicture, clickable }: { i: EquipmentDoc; onOpen
         {!!i.inUse && <span className="mt-0.5 block text-[11.5px] text-slate-400">Used in {i.inUse} service / visit record{i.inUse === 1 ? '' : 's'}</span>}
       </span>
     </button>
+  )
+}
+
+/** "▣ 4" on a picture when the item has several */
+function PicBadge({ item }: { item: EquipmentDoc }) {
+  const n = pictureCount(item)
+  if (n < 2) return null
+  return (
+    <span className="pointer-events-none absolute bottom-1 left-1 flex items-center gap-0.5 rounded bg-slate-900/65 px-1 text-[10.5px] font-bold text-white" title={`${n} pictures`}>
+      <Images size={10} /> {n}
+    </span>
   )
 }
 
@@ -267,6 +279,7 @@ function FamilyCard({ family, members, onOpen, onPicture, onAddSize }: { family:
                 className="relative block aspect-square w-full bg-slate-100"
               >
                 <ItemPicture item={m} size={0} className="!size-full rounded-none" />
+                <PicBadge item={m} />
                 <span className={cx('absolute right-1 top-1 rounded px-1.5 text-[11.5px] font-bold shadow-sm', STOCK_TONE[st])}>{m.stock ?? 0}</span>
               </span>
               <span className="px-1.5 py-1">
@@ -327,6 +340,8 @@ function EditItem({
   const pick = useRef<HTMLInputElement>(null)
   const noPic = siblings.filter((x) => !x.imageId).length
   const [forFamily, setForFamily] = useState(false)
+  const [gallery, setGallery] = useState(false)
+  const nPics = item ? pictureCount(item) : 0
   const takePicture = (x: File) => {
     setFile(x)
     setPreview(URL.createObjectURL(x))
@@ -472,7 +487,12 @@ function EditItem({
                 </button>
               )}
             </div>
-            <span className="text-[12px] text-slate-500">Crop, auto white background, saved small & sharp (AVIF). Ctrl+V or drop works too.</span>
+            {item && (
+              <button type="button" className="flex items-center gap-1.5 self-start text-[12.5px] font-semibold text-primary-700 hover:underline" onClick={() => setGallery(true)}>
+                <Images size={14} /> {nPics > 1 ? `All ${nPics} pictures` : 'More pictures (front, back, label…)'}
+              </button>
+            )}
+            <span className="text-[12px] text-slate-500">Photo studio: filters, white background, crop — saved small & sharp (AVIF). Ctrl+V or drop works too.</span>
             {!!f.family.trim() && siblings.length > 0 && (preview || file) && (
               <label className="flex items-center gap-2 text-[12.5px]">
                 <input type="checkbox" className="size-4 accent-[#0090CA]" checked={forFamily} onChange={(e) => setForFamily(e.target.checked)} />
@@ -560,6 +580,7 @@ function EditItem({
           onCancel={() => setEditing(null)}
         />
       )}
+      {gallery && item && <ImageViewer item={item} canEdit={canEdit || canStock} siblings={siblings.length} onClose={() => setGallery(false)} />}
     </Drawer>
   )
 }
