@@ -82,3 +82,21 @@ export async function fetchItemTransactions(row: Pick<H360StockRow, 'itemId' | '
     return { headers, rows }
   })
 }
+
+export type H360InventoryItem = { code: string; name: string; uom: string; type: string; generic: string }
+
+/** H360's inventory item list (Department Indent → item search), read-only. Name or code, min 2 characters. */
+export async function searchInventoryItems(q: string): Promise<H360InventoryItem[]> {
+  const term = q.trim()
+  if (term.length < 2) return []
+  return memo(`h360inv:${term.toLowerCase()}`, 60_000, async () => {
+    const res = await readOnlyPost('/v1/item-autocomplete-store-wise', { search_data: term, store_id: '', suppiler_id: '', minor_group_no: '', department_from: '' }, true, 'store')
+    if (!res.ok) throw new H360Error('DOWN', `H360 item search answered ${res.status}`)
+    const json: any = await res.json().catch(() => null)
+    const rows: any[] = Array.isArray(json) ? json : (json?.data ?? [])
+    return rows
+      .filter((r) => r?.item_name)
+      .slice(0, 40)
+      .map((r) => ({ code: txt(String(r.item_code ?? r.item_id ?? '')), name: txt(r.item_name), uom: txt(r.uom_name) || 'pcs', type: txt(r.itemtype_code), generic: txt(r.generic_name) }))
+  })
+}

@@ -10,8 +10,9 @@ import { forget, memo } from './memo'
 
 // '/doctor-info-autocomplete' is the Roster page's "Employee Search" (employee_ind=1): lib/h360-staff.ts
 // '/inventory/search_stock_ledger_list_subStore' + '/inventory/stock_details' are the Sub Store Stock Ledger's Search and
-// per-item transactions (read-only report): lib/h360-store.ts
-const READ_ONLY_POSTS = new Set(['/get-item-name-v1', '/patient-info-autocomplete', '/hospital-patient-search', '/doctor-info-autocomplete', '/inventory/search_stock_ledger_list_subStore', '/inventory/stock_details'])
+// per-item transactions (read-only report); '/v1/item-autocomplete-store-wise' is the Department Indent page's item
+// name search (inventory item list): lib/h360-store.ts
+const READ_ONLY_POSTS = new Set(['/get-item-name-v1', '/patient-info-autocomplete', '/hospital-patient-search', '/doctor-info-autocomplete', '/inventory/search_stock_ledger_list_subStore', '/inventory/stock_details', '/v1/item-autocomplete-store-wise'])
 
 /** POST to an H360 *search* endpoint only (form-encoded, AJAX headers, CSRF). Anything else throws. */
 export async function readOnlyPost(path: string, fields: Record<string, string>, retry = true, as: H360Profile = 'main'): Promise<Response> {

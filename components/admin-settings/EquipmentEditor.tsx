@@ -14,6 +14,7 @@ import { ConsumeDrawer } from '@/components/store/ConsumeDrawer'
 import { usePasteFiles } from '@/components/client/paste'
 import { ImageEditor } from '@/components/store/ImageEditor'
 import { ImageViewer } from '@/components/store/ImageViewer'
+import { AddItemChooser } from '@/components/store/AddItemChooser'
 
 export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string }
 
@@ -51,6 +52,7 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
   const [edit, setEdit] = useState<EquipmentDoc | 'new' | null>(null)
   const [consume, setConsume] = useState<string[] | null>(null)
   const [viewer, setViewer] = useState<EquipmentDoc | null>(null)
+  const [adding, setAdding] = useState<null | { tab: 'h360' | 'store' | 'copy' | 'bulk'; copyFrom?: string }>(null)
   const canPic = canEdit || canStock
   const open = (i: EquipmentDoc) => (canEdit || canStock) && setEdit(i)
   const brands = useMemo(() => [...new Set(items.map((i) => i.brand).filter(Boolean) as string[])].sort(), [items])
@@ -122,8 +124,8 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
             <PackageMinus size={16} /> Consume
           </button>
         )}
-        {canEdit && (
-          <button type="button" className={btnClass('p')} onClick={() => setEdit('new')}>
+        {(canEdit || canStock) && (
+          <button type="button" className={btnClass('p')} onClick={() => setAdding({ tab: 'h360' })}>
             <Plus size={16} /> Add item
           </button>
         )}
@@ -138,7 +140,7 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
             g.members.length === 1 ? (
               <ItemCard key={g.members[0]._id} i={g.members[0]} onOpen={open} onPicture={setViewer} clickable={canEdit || canStock} />
             ) : (
-              <FamilyCard key={g.family} family={g.family} members={g.members} onOpen={open} onPicture={setViewer} />
+              <FamilyCard key={g.family} family={g.family} members={g.members} onOpen={open} onPicture={setViewer} onAddSize={canEdit || canStock ? (m) => setAdding({ tab: 'copy', copyFrom: m._id }) : undefined} />
             ),
           )}
         </div>
@@ -165,6 +167,7 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
         />
       )}
       {consume && <ConsumeDrawer items={items} preset={consume} onClose={() => setConsume(null)} />}
+      {adding && <AddItemChooser items={items} preset={adding} onClose={() => setAdding(null)} onBlank={canEdit ? () => (setAdding(null), setEdit('new')) : undefined} />}
       {viewer && <ImageViewer item={viewer} canEdit={canPic} siblings={viewer.family ? items.filter((x) => x.family === viewer.family && x._id !== viewer._id).length : 0} onClose={() => setViewer(null)} />}
     </div>
   )
@@ -200,7 +203,7 @@ function ItemCard({ i, onOpen, onPicture, clickable }: { i: EquipmentDoc; onOpen
 }
 
 /** One family (e.g. IV cannula) with a chip per size: "22G · B Braun · 3". Click a chip for that item. */
-function FamilyCard({ family, members, onOpen, onPicture }: { family: string; members: EquipmentDoc[]; onOpen: (i: EquipmentDoc) => void; onPicture: (i: EquipmentDoc) => void }) {
+function FamilyCard({ family, members, onOpen, onPicture, onAddSize }: { family: string; members: EquipmentDoc[]; onOpen: (i: EquipmentDoc) => void; onPicture: (i: EquipmentDoc) => void; onAddSize?: (from: EquipmentDoc) => void }) {
   const total = members.reduce((a, m) => a + Math.max(0, m.stock ?? 0), 0)
   const unit = members[0].unit
   const makers = [...new Set(members.map((m) => m.brand).filter(Boolean))]
@@ -251,11 +254,18 @@ function FamilyCard({ family, members, onOpen, onPicture }: { family: string; me
           )
         })}
       </div>
-      {members.length > 8 && (
-        <button type="button" onClick={() => setAll(!all)} className="self-start text-[12px] font-semibold text-primary-700 hover:underline">
-          {all ? 'Show fewer' : `+${members.length - 8} more sizes`}
-        </button>
-      )}
+      <div className="flex items-center gap-3">
+        {members.length > 8 && (
+          <button type="button" onClick={() => setAll(!all)} className="text-[12px] font-semibold text-primary-700 hover:underline">
+            {all ? 'Show fewer' : `+${members.length - 8} more sizes`}
+          </button>
+        )}
+        {onAddSize && (
+          <button type="button" onClick={() => onAddSize(members[members.length - 1])} className="ml-auto text-[12px] font-semibold text-primary-700 hover:underline">
+            + Add a size
+          </button>
+        )}
+      </div>
     </div>
   )
 }
