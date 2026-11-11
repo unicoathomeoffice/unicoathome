@@ -107,6 +107,11 @@ const StockMoveSchema = new Schema<any>(
     loanId: { type: ObjectId, ref: 'StoreLoan' },
     requestId: { type: ObjectId, ref: 'HomecareRequest' }, // VISIT: the visit the consumables were used on
     consumptionId: { type: ObjectId, ref: 'StoreConsumption' }, // MANUAL: the admin's consumption entry
+    // corrections (lib/services/stock.ts correctMove): the original keeps its delta; a new ADJUST move (fixOf) puts the
+    // stock right, and the original records what it should have been (fixedTo) and why
+    fixOf: { type: ObjectId, ref: 'StockMove' },
+    fixedTo: Number,
+    fixes: [{ _id: false, at: Date, by: { type: ObjectId, ref: 'User' }, why: String, from: Number, to: Number }],
     note: String,
     by: { type: ObjectId, ref: 'User' },
     at: { type: Date, default: Date.now },

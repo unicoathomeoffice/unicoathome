@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowDownLeft, ArrowUpRight, Camera, ClipboardCheck, EyeOff, ImageOff, Images, Loader2, Package, PackageMinus, PackagePlus, Plus, Save, Search, Trash2 } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Camera, ClipboardCheck, EyeOff, ImageOff, Images, Loader2, Minus, Package, PackageMinus, PackagePlus, Pencil, Plus, Save, Search, Trash2 } from 'lucide-react'
 import { api, Drawer, Segmented, Toggle, useToast } from '@/components/client'
 import { btnClass, Tag } from '@/components/ui'
 import { cx } from '@/lib/format'
@@ -585,8 +585,150 @@ function EditItem({
   )
 }
 
-type Move = { id: string; at: string; delta: number; balance: number | null; reason: keyof typeof REASON; note: string; by: string | null; requestId: string | null; requestNo: string | null }
+type Move = {
+  id: string
+  at: string
+  delta: number
+  balance: number | null
+  reason: keyof typeof REASON
+  note: string
+  by: string | null
+  requestId: string | null
+  requestNo: string | null
+  consumptionId?: string | null
+  loanId?: string | null
+  fix?: boolean
+  fixedTo?: number | null
+  fixes?: { at: string; by: string | null; why: string; from: number; to: number }[]
+}
 const REASON = { OPENING: 'Opening stock', RECEIVED: 'Received', VISIT: 'Visit', ADJUST: 'Stock count', MANUAL: 'Consumed', LOAN_IN: 'Borrowed', LOAN_OUT: 'Lent', LOAN_RETURN_IN: 'Loan returned', LOAN_RETURN_OUT: 'Given back' } as const
+const signed = (n: number) => (n > 0 ? `+${n}` : String(n))
+const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })
+
+/** − / + switch for a quantity: big, coloured, impossible to miss */
+function SignSwitch({ sign, onChange }: { sign: 1 | -1; onChange: (s: 1 | -1) => void }) {
+  return (
+    <span className="flex flex-none overflow-hidden rounded-lg ring-1 ring-slate-300" role="radiogroup" aria-label="Add or take away">
+      <button type="button" role="radio" aria-checked={sign < 0} onClick={() => onChange(-1)} className={cx('flex h-11 w-11 items-center justify-center transition', sign < 0 ? 'bg-[#DC2626] text-white' : 'bg-white text-slate-500 hover:bg-slate-50')} title="Take away (−)">
+        <Minus size={18} strokeWidth={3} />
+      </button>
+      <button type="button" role="radio" aria-checked={sign > 0} onClick={() => onChange(1)} className={cx('flex h-11 w-11 items-center justify-center border-l border-slate-300 transition', sign > 0 ? 'bg-[#16A34A] text-white' : 'bg-white text-slate-500 hover:bg-slate-50')} title="Add (+)">
+        <Plus size={18} strokeWidth={3} />
+      </button>
+    </span>
+  )
+}
+
+/** One history line, with Edit: opening / received / adjustments are corrected here; the others link to their place. */
+function MoveRow({ m, itemId, unit, canStock, onDone }: { m: Move; itemId: string; unit: string; canStock: boolean; onDone: (stock: number) => void }) {
+  const toast = useToast()
+  const [open, setOpen] = useState(false)
+  const now = m.fixedTo ?? m.delta
+  const signedKind = m.reason === 'ADJUST'
+  const [sign, setSign] = useState<1 | -1>(now < 0 ? -1 : 1)
+  const [qty, setQty] = useState(String(Math.abs(now)))
+  const [why, setWhy] = useState('')
+  const [busy, setBusy] = useState(false)
+  const editable = canStock && !m.fix && (m.reason === 'OPENING' || m.reason === 'RECEIVED' || m.reason === 'ADJUST')
+  const elsewhere = canStock && !m.fix && (m.consumptionId ? { href: '/store?tab=consumption', label: 'Edit in Consumption' } : m.loanId ? { href: '/store?tab=loans&status=all', label: 'Edit in Loans' } : null)
+  async function save(value: number) {
+    if (why.trim().length < 3) return toast('Say why (e.g. typed 96, it was 90)', 'err')
+    setBusy(true)
+    try {
+      const r = await api<{ stock: number; delta: number }>(`/equipment/${itemId}/stock/${m.id}`, { method: 'PATCH', body: { qty: value, why: why.trim() } })
+      toast(`Corrected · stock ${r.delta > 0 ? '+' : ''}${r.delta} → ${r.stock} ${unit}`, 'ok')
+      setOpen(false)
+      setWhy('')
+      onDone(r.stock)
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const value = (signedKind ? sign : 1) * (Number(qty) || 0)
+  return (
+    <li className={cx('px-2.5 py-1.5 text-[12.5px]', m.fix && 'bg-slate-50/70')}>
+      <div className="flex items-center gap-2.5">
+        <span className={cx('w-14 flex-none text-right font-bold', now < 0 ? 'text-[#B91C1C]' : now > 0 ? 'text-[#15803D]' : 'text-slate-400')}>
+          {m.fixedTo != null && <s className="mr-1 text-[11px] font-semibold text-slate-400">{signed(m.delta)}</s>}
+          {signed(now)}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate" title={m.note}>
+            <b>{m.fix ? 'Correction' : REASON[m.reason]}</b>
+            {m.fixedTo != null && <span className="ml-1 rounded bg-[#FEF3C7] px-1 text-[10.5px] font-bold text-[#B45309]">Corrected</span>}
+            {m.note ? ` · ${m.note}` : ''}
+            {m.requestId && (
+              <Link href={`/requests/${m.requestId}`} className="ml-1 text-primary-700 hover:underline">
+                {m.requestNo}
+              </Link>
+            )}
+          </span>
+          <span className="block text-[11px] text-slate-400">
+            {when(m.at)}
+            {m.by ? ` · ${m.by}` : ''}
+          </span>
+        </span>
+        <span className="flex-none text-slate-500">= {m.balance ?? '—'}</span>
+        {editable ? (
+          <button type="button" onClick={() => setOpen(!open)} className={cx('flex size-8 flex-none items-center justify-center rounded-lg hover:bg-slate-100', open ? 'bg-primary-50 text-primary-700' : 'text-slate-500')} title="Correct this entry" aria-label="Correct this entry">
+            <Pencil size={14} />
+          </button>
+        ) : elsewhere ? (
+          <Link href={elsewhere.href} className="flex size-8 flex-none items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100" title={elsewhere.label} aria-label={elsewhere.label}>
+            <Pencil size={14} />
+          </Link>
+        ) : (
+          <span className="size-8 flex-none" />
+        )}
+      </div>
+      {!!m.fixes?.length && (
+        <div className="ml-16 mt-0.5 text-[11px] text-slate-500">
+          {m.fixes.map((f, i) => (
+            <div key={i}>
+              {signed(f.from)} → {signed(f.to)} · {f.why} · {f.by ?? '—'}, {when(f.at)}
+            </div>
+          ))}
+        </div>
+      )}
+      {open && (
+        <div className="mt-2 flex flex-col gap-2 rounded-lg bg-primary-50/60 p-2.5 ring-1 ring-primary/20">
+          <div className="text-[12px] font-semibold text-slate-700">
+            What should this entry have been? <span className="font-normal text-slate-500">The stock moves by the difference; the history is kept.</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {signedKind && <SignSwitch sign={sign} onChange={setSign} />}
+            <input className="hc-input w-24 text-center text-[15px] font-bold" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value.replace(/\D/g, ''))} aria-label="Correct quantity" />
+            <span className="text-[12px] text-slate-500">
+              {unit} · was <b>{signed(now)}</b>
+              {value !== now && (
+                <>
+                  {' '}
+                  → stock <b className={value - now < 0 ? 'text-[#B91C1C]' : 'text-[#15803D]'}>{signed(value - now)}</b>
+                </>
+              )}
+            </span>
+          </div>
+          <input className="hc-input" placeholder="Why * — e.g. typed 96, the H360 sheet says 90" value={why} onChange={(e) => setWhy(e.target.value)} maxLength={160} />
+          <div className="flex flex-wrap gap-1.5">
+            <button type="button" disabled={busy || value === now} onClick={() => save(value)} className={btnClass('p', 'sm')}>
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save correction
+            </button>
+            {now !== 0 && (
+              <button type="button" disabled={busy} onClick={() => save(0)} className={btnClass('o', 'sm', 'bg-white text-[#B91C1C]')} title="The whole entry was a mistake">
+                Cancel this entry
+              </button>
+            )}
+            <button type="button" onClick={() => setOpen(false)} className={btnClass('ghost', 'sm')}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </li>
+  )
+}
 
 /** The store part of the drawer: count now, "Received +", "Counted" (stock-take) and the history of moves. */
 function StockSection({ item, canStock = true, onConsume, onLoan }: { item: EquipmentDoc; canStock?: boolean; onConsume?: () => void; onLoan?: (d: 'TAKEN' | 'GIVEN') => void }) {
@@ -597,6 +739,7 @@ function StockSection({ item, canStock = true, onConsume, onLoan }: { item: Equi
   const [recv, setRecv] = useState('')
   const [count, setCount] = useState('')
   const [adj, setAdj] = useState('')
+  const [adjSign, setAdjSign] = useState<1 | -1>(-1)
   const [adjWhy, setAdjWhy] = useState('Counting mistake')
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState<null | 'receive' | 'count' | 'adjust'>(null)
@@ -609,10 +752,10 @@ function StockSection({ item, canStock = true, onConsume, onLoan }: { item: Equi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item._id])
   async function go(action: 'receive' | 'count' | 'adjust') {
-    const qty = Number(action === 'receive' ? recv : action === 'count' ? count : adj)
+    const qty = action === 'adjust' ? adjSign * Number(adj) : Number(action === 'receive' ? recv : count)
     if (action === 'receive' && !(qty > 0)) return toast('Enter how many came in', 'err')
     if (action === 'count' && (count === '' || Number.isNaN(qty))) return toast('Enter the counted number', 'err')
-    if (action === 'adjust' && (!qty || Number.isNaN(qty))) return toast('Enter + or − how many (e.g. -2)', 'err')
+    if (action === 'adjust' && (!qty || Number.isNaN(qty))) return toast('Choose − or + and enter how many', 'err')
     setBusy(action)
     try {
       const why = action === 'adjust' ? [adjWhy, note.trim()].filter(Boolean).join(' · ') : note.trim() || undefined
@@ -665,16 +808,17 @@ function StockSection({ item, canStock = true, onConsume, onLoan }: { item: Equi
       </div>
       {/* a quick correction with a reason (found, damaged, expired, a counting mistake…) */}
       <div className="mt-2">
-        <span className="hc-label">Adjust ± with a reason</span>
-        <div className="flex gap-1.5">
-          <input className="hc-input w-20 min-w-0 text-center" inputMode="numeric" placeholder="±" value={adj} onChange={(e) => setAdj(e.target.value.replace(/[^\d-]/g, ''))} aria-label="Adjust by" />
-          <select className="hc-input min-w-0 flex-1" value={adjWhy} onChange={(e) => setAdjWhy(e.target.value)} aria-label="Reason">
-            {['Counting mistake', 'Found', 'Damaged', 'Expired', 'Wrong entry corrected', 'Other'].map((x) => (
+        <span className="hc-label">Adjust − take away / + add, with a reason</span>
+        <div className="flex flex-wrap gap-1.5">
+          <SignSwitch sign={adjSign} onChange={setAdjSign} />
+          <input className={cx('hc-input w-20 min-w-0 text-center text-[15px] font-bold', adjSign < 0 ? 'text-[#B91C1C]' : 'text-[#15803D]')} inputMode="numeric" placeholder="qty" value={adj} onChange={(e) => setAdj(e.target.value.replace(/\D/g, ''))} aria-label={adjSign < 0 ? 'Take away how many' : 'Add how many'} />
+          <select className="hc-input min-w-[140px] flex-1" value={adjWhy} onChange={(e) => setAdjWhy(e.target.value)} aria-label="Reason">
+            {(adjSign < 0 ? ['Damaged', 'Expired', 'Lost / missing', 'Counting mistake', 'Wrong entry corrected', 'Other'] : ['Found', 'Counting mistake', 'Wrong entry corrected', 'Returned unused', 'Other']).map((x) => (
               <option key={x}>{x}</option>
             ))}
           </select>
-          <button type="button" disabled={!!busy} onClick={() => go('adjust')} className={btnClass('o', 'md', 'flex-none bg-white px-3')} title="Adjust the stock">
-            {busy === 'adjust' ? <Loader2 size={15} className="animate-spin" /> : 'Adjust'}
+          <button type="button" disabled={!!busy || !Number(adj)} onClick={() => go('adjust')} className={btnClass('o', 'md', cx('flex-none bg-white px-3', adjSign < 0 ? 'text-[#B91C1C]' : 'text-[#15803D]'))} title="Adjust the stock">
+            {busy === 'adjust' ? <Loader2 size={15} className="animate-spin" /> : Number(adj) ? `${adjSign < 0 ? '−' : '+'}${Number(adj)} · ${stock + adjSign * Number(adj)}` : 'Adjust'}
           </button>
         </div>
       </div>
@@ -713,30 +857,20 @@ function StockSection({ item, canStock = true, onConsume, onLoan }: { item: Equi
       ) : !moves.length ? (
         <div className="mt-1 text-[12.5px] text-slate-400">No moves yet</div>
       ) : (
-        <ul className="mt-1 max-h-[220px] divide-y divide-slate-200 overflow-y-auto rounded-lg bg-white ring-1 ring-slate-200">
+        <ul className="mt-1 max-h-[320px] divide-y divide-slate-200 overflow-y-auto rounded-lg bg-white ring-1 ring-slate-200">
           {moves.map((m) => (
-            <li key={m.id} className="flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px]">
-              <span className={cx('w-12 flex-none text-right font-bold', m.delta < 0 ? 'text-[#B91C1C]' : 'text-[#15803D]')}>
-                {m.delta > 0 ? '+' : ''}
-                {m.delta}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate">
-                  <b>{REASON[m.reason]}</b>
-                  {m.note ? ` · ${m.note}` : ''}
-                  {m.requestId && (
-                    <Link href={`/requests/${m.requestId}`} className="ml-1 text-primary-700 hover:underline">
-                      {m.requestNo}
-                    </Link>
-                  )}
-                </span>
-                <span className="block text-[11px] text-slate-400">
-                  {new Date(m.at).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })}
-                  {m.by ? ` · ${m.by}` : ''}
-                </span>
-              </span>
-              <span className="flex-none text-slate-500">= {m.balance ?? '—'}</span>
-            </li>
+            <MoveRow
+              key={m.id}
+              m={m}
+              itemId={item._id}
+              unit={item.unit}
+              canStock={canStock}
+              onDone={(s) => {
+                setStock(s)
+                load()
+                router.refresh()
+              }}
+            />
           ))}
         </ul>
       )}

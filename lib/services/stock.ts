@@ -14,11 +14,11 @@ type Reason = 'OPENING' | 'RECEIVED' | 'VISIT' | 'ADJUST' | 'MANUAL' | 'LOAN_IN'
 type Actor = Pick<SessionUser, 'id' | 'name' | 'role'> | null
 
 /** Change an item's stock by `delta` (atomic) and log the move with the new balance. */
-export async function moveStock(itemId: unknown, delta: number, reason: Reason, opts: { requestId?: unknown; consumptionId?: unknown; loanId?: unknown; note?: string; by?: string } = {}) {
+export async function moveStock(itemId: unknown, delta: number, reason: Reason, opts: { requestId?: unknown; consumptionId?: unknown; loanId?: unknown; fixOf?: unknown; note?: string; by?: string } = {}) {
   if (!delta) return null
   const item = await Equipment.findOneAndUpdate({ _id: itemId }, { $inc: { stock: delta } }, { new: true }).select('name unit stock alertBelow type').lean<any>()
   if (!item) return null
-  await StockMove.create({ itemId, delta, balance: item.stock, reason, requestId: opts.requestId, consumptionId: opts.consumptionId, loanId: opts.loanId, note: opts.note, by: opts.by })
+  await StockMove.create({ itemId, delta, balance: item.stock, reason, requestId: opts.requestId, consumptionId: opts.consumptionId, loanId: opts.loanId, fixOf: opts.fixOf, note: opts.note, by: opts.by })
   // used on a visit and now low / out: tell the admins (once per crossing)
   if (delta < 0) {
     const before = item.stock - delta
@@ -115,8 +115,45 @@ export async function stockHistory(itemId: string, limit = 30) {
       by: users.find((u) => String(u._id) === String(m.by))?.name ?? null,
       requestId: q ? String(q._id) : null,
       requestNo: q?.requestNo ?? null,
+      consumptionId: m.consumptionId ? String(m.consumptionId) : null,
+      loanId: m.loanId ? String(m.loanId) : null,
+      fix: !!m.fixOf, // this move is a correction of another
+      fixedTo: typeof m.fixedTo === 'number' ? m.fixedTo : null,
+      fixes: (m.fixes ?? []).map((f: any) => ({ at: new Date(f.at).toISOString(), by: users.find((u) => String(u._id) === String(f.by))?.name ?? null, why: f.why ?? '', from: f.from, to: f.to })),
     }
   })
+}
+
+const MOVE_LABEL: Partial<Record<Reason, string>> = { OPENING: 'opening stock', RECEIVED: 'received', ADJUST: 'adjustment' }
+export const CorrectMoveInput = z.object({
+  qty: z.coerce.number().int().min(-1000000).max(1000000), // what the entry should have been (signed for adjustments; 0 = cancel it)
+  why: z.string().trim().min(3, 'Say why').max(160),
+})
+
+/**
+ * Correct a wrong stock entry (opening stock, received, an adjustment) without rewriting history: the entry keeps its
+ * number and records what it should have been, and a new correction move puts the stock right by the difference.
+ * Consumption, loans and visits are corrected in their own place (their edit keeps the moves in step).
+ */
+export async function correctMove(itemId: string, moveId: string, input: z.infer<typeof CorrectMoveInput>, user: SessionUser, meta: Meta = {}) {
+  const m = await StockMove.findOne({ _id: moveId, itemId }).lean<any>()
+  if (!m) throw notFound('Entry')
+  if (m.fixOf) throw bad('This is a correction — correct the original entry instead')
+  if (m.reason === 'MANUAL') throw bad('Edit this in Store → Consumption')
+  if (String(m.reason).startsWith('LOAN')) throw bad('Edit this in Store → Loans')
+  if (m.reason === 'VISIT') throw bad('Change the consumables on the visit record')
+  if ((m.reason === 'OPENING' || m.reason === 'RECEIVED') && input.qty < 0) throw bad('Received / opening stock cannot be below 0')
+  const was = typeof m.fixedTo === 'number' ? m.fixedTo : m.delta
+  const diff = input.qty - was
+  if (!diff) throw bad('That is the same number')
+  const sign = (n: number) => (n > 0 ? `+${n}` : String(n))
+  const day = new Date(m.at).toLocaleDateString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short' })
+  const label = MOVE_LABEL[m.reason as Reason] ?? 'entry'
+  const after = await moveStock(itemId, diff, 'ADJUST', { fixOf: m._id, note: `Corrected ${label} of ${day} (was ${sign(was)}, now ${sign(input.qty)}) · ${input.why}`, by: user.id })
+  if (!after) throw notFound('Item')
+  await StockMove.updateOne({ _id: m._id }, { $set: { fixedTo: input.qty }, $push: { fixes: { at: new Date(), by: user.id, why: input.why, from: was, to: input.qty } } })
+  await audit(user, 'stock.move_fix', 'equipment', itemId, { before: { move: moveId, qty: was, stock: after.stock - diff }, after: { qty: input.qty, stock: after.stock, why: input.why }, label: after.name }, meta)
+  return { ok: true, stock: after.stock as number, delta: diff }
 }
 
 export const ReceiveInput = z.object({
