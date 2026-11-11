@@ -128,6 +128,8 @@ export async function sweep(force = false) {
   // Family Medicine store vs H360: compared every 30 minutes in the background (alerts on new differences)
   const { background } = await import('../messaging')
   background(async () => (await import('./store-sync')).compareIfDue())
+  // store loans past their return date: one reminder a day each
+  background(async () => (await import('./store-loans')).remindOverdueLoans())
   // daily WhatsApp summary: sent once, at the first sweep after the chosen time
   const { sendDailySummary } = await import('./daily')
   const daily = await sendDailySummary().catch((e) => ({ sent: 0, skipped: String(e?.message ?? e) }))

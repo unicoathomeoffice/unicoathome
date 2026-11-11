@@ -45,6 +45,7 @@ export type CompareRow = {
   usedHere: number
   receivedHere: number
   countedHere: number
+  loansHere: number // + borrowed / lent items returned · − lent / borrowed items given back
   outH360: number | null // null = H360 history not read
   inH360: number | null
   toConsume: number // used here, not yet consumed in H360 → enter in H360 Department Consumption
@@ -160,6 +161,7 @@ export async function compareWithH360(opts: { fresh?: boolean; deep?: boolean } 
     let usedHere = 0
     let receivedHere = 0
     let countedHere = 0
+    let loansHere = 0
     const usage: Usage[] = []
     for (const m of mine) {
       if (m.reason === 'VISIT' || (m.reason === 'MANUAL' && !voided.has(String(m.consumptionId)))) {
@@ -167,7 +169,8 @@ export async function compareWithH360(opts: { fresh?: boolean; deep?: boolean } 
         const q = reqs.find((x) => String(x._id) === String(m.requestId))
         const c = cons.find((x) => String(x._id) === String(m.consumptionId))
         usage.push({ at: new Date(m.at).toISOString(), qty: -m.delta, what: m.reason === 'VISIT' ? 'Visit' : 'By hand', requestId: q ? String(q._id) : null, requestNo: q?.requestNo ?? null, patient: q?.patientSnapshot?.name ?? null, ref: c?.no ?? null })
-      } else if (m.reason === 'RECEIVED') receivedHere += m.delta
+      } else if (String(m.reason).startsWith('LOAN_')) loansHere += m.delta
+      else if (m.reason === 'RECEIVED') receivedHere += m.delta
       else if (m.reason === 'ADJUST' && !(m.consumptionId && voided.has(String(m.consumptionId)))) countedHere += m.delta
       else if (m.reason === 'MANUAL' && voided.has(String(m.consumptionId))) {
         /* voided by hand: the ADJUST back cancels it */
@@ -193,7 +196,7 @@ export async function compareWithH360(opts: { fresh?: boolean; deep?: boolean } 
     const consumedOnlyInH360 = outH360 == null ? 0 : Math.max(0, outH360 - usedHere)
     const receivedOnlyInH360 = inH360 == null ? 0 : Math.max(0, inH360 - receivedHere)
     // what the known moves explain of the difference; the rest is unexplained
-    const explained = outH360 == null ? null : receivedHere - (inH360 ?? 0) - (usedHere - outH360) + countedHere
+    const explained = outH360 == null ? null : receivedHere - (inH360 ?? 0) - (usedHere - outH360) + countedHere + loansHere
     const unexplained = kind === 'MATCH' || !l || !r ? 0 : explained == null ? null : diff - explained
     // HomeCare lower than H360: usually used here and not yet consumed in H360 (TO_CONSUME); else H360 has more
     if (kind === 'H360_LOWER' && diff < 0) kind = toConsume > 0 ? 'TO_CONSUME' : 'H360_HIGHER'
@@ -220,6 +223,7 @@ export async function compareWithH360(opts: { fresh?: boolean; deep?: boolean } 
       usedHere,
       receivedHere,
       countedHere,
+      loansHere,
       outH360,
       inH360,
       toConsume,

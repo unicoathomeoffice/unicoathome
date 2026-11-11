@@ -38,6 +38,7 @@ function why(r: CompareRow) {
   if (r.receivedOnlyInH360) parts.push(`${r.receivedOnlyInH360} received in H360, not here`)
   if (r.receivedHere - (r.inH360 ?? 0) > 0) parts.push(`${r.receivedHere - (r.inH360 ?? 0)} received here, not in H360`)
   if (r.countedHere) parts.push(`stock count here ${sign(r.countedHere)}`)
+  if (r.loansHere) parts.push(r.loansHere < 0 ? `${-r.loansHere} lent out (loan)` : `${r.loansHere} borrowed (loan)`)
   if (r.unexplained) parts.push(`${Math.abs(r.unexplained)} unexplained`)
   if (r.outH360 == null && !parts.length) parts.push('H360 history not read')
   return parts.join(' · ') || 'Different'
@@ -386,6 +387,7 @@ function RowDetail({ r, staff, busy, act }: { r: CompareRow; staff: { id: string
               ['Used here (visits + by hand)', r.usedHere],
               ['Received here', r.receivedHere],
               ['Stock counts here', r.countedHere],
+              ['Loans (+ borrowed / − lent)', r.loansHere],
               ['Consumed in H360', r.outH360 ?? 'not read'],
               ['Received in H360', r.inH360 ?? 'not read'],
               ['Unexplained', r.unexplained ?? '—'],

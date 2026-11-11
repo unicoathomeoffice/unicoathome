@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Camera, ClipboardCheck, EyeOff, ImageOff, Loader2, Package, PackageMinus, PackagePlus, Plus, Save, Search, Trash2 } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, Camera, ClipboardCheck, EyeOff, ImageOff, Loader2, Package, PackageMinus, PackagePlus, Plus, Save, Search, Trash2 } from 'lucide-react'
 import { api, Drawer, Segmented, Toggle, useToast } from '@/components/client'
 import { btnClass, Tag } from '@/components/ui'
 import { cx } from '@/lib/format'
@@ -15,8 +15,9 @@ import { usePasteFiles } from '@/components/client/paste'
 import { ImageEditor } from '@/components/store/ImageEditor'
 import { ImageViewer } from '@/components/store/ImageViewer'
 import { AddItemChooser } from '@/components/store/AddItemChooser'
+import { LoanDrawer } from '@/components/store/LoanDrawer'
 
-export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string }
+export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string; lentOut?: number; borrowed?: number }
 
 /** out ≤ 0 · low ≤ alert level · ok */
 export const stockState = (i: { stock?: number; alertBelow?: number }) => ((i.stock ?? 0) <= 0 ? 'out' : (i.alertBelow ?? 0) > 0 && (i.stock ?? 0) <= (i.alertBelow ?? 0) ? 'low' : 'ok')
@@ -53,6 +54,7 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
   const [consume, setConsume] = useState<string[] | null>(null)
   const [viewer, setViewer] = useState<EquipmentDoc | null>(null)
   const [adding, setAdding] = useState<null | { tab: 'h360' | 'store' | 'copy' | 'bulk'; copyFrom?: string }>(null)
+  const [loan, setLoan] = useState<null | { direction: 'TAKEN' | 'GIVEN'; preset: string[] }>(null)
   const canPic = canEdit || canStock
   const open = (i: EquipmentDoc) => (canEdit || canStock) && setEdit(i)
   const brands = useMemo(() => [...new Set(items.map((i) => i.brand).filter(Boolean) as string[])].sort(), [items])
@@ -120,9 +122,17 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
           <Toggle on={hidden} onChange={setHidden} label="Show hidden items" /> Hidden
         </label>
         {canStock && (
-          <button type="button" className={btnClass('o')} onClick={() => setConsume([])}>
-            <PackageMinus size={16} /> Consume
-          </button>
+          <>
+            <button type="button" className={btnClass('o')} onClick={() => setConsume([])}>
+              <PackageMinus size={16} /> Consume
+            </button>
+            <button type="button" className={btnClass('o')} onClick={() => setLoan({ direction: 'TAKEN', preset: [] })} title="Borrow from a department, staff or outside">
+              <ArrowDownLeft size={16} /> Take loan
+            </button>
+            <button type="button" className={btnClass('o')} onClick={() => setLoan({ direction: 'GIVEN', preset: [] })} title="Lend to a department, staff or outside">
+              <ArrowUpRight size={16} /> Give loan
+            </button>
+          </>
         )}
         {(canEdit || canStock) && (
           <button type="button" className={btnClass('p')} onClick={() => setAdding({ tab: 'h360' })}>
@@ -164,9 +174,14 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
             setEdit(null)
             setConsume([id])
           }}
+          onLoan={(id, direction) => {
+            setEdit(null)
+            setLoan({ direction, preset: [id] })
+          }}
         />
       )}
       {consume && <ConsumeDrawer items={items} preset={consume} onClose={() => setConsume(null)} />}
+      {loan && <LoanDrawer direction={loan.direction} preset={loan.preset} items={items} onClose={() => setLoan(null)} />}
       {adding && <AddItemChooser items={items} preset={adding} onClose={() => setAdding(null)} onBlank={canEdit ? () => (setAdding(null), setEdit('new')) : undefined} />}
       {viewer && <ImageViewer item={viewer} canEdit={canPic} siblings={viewer.family ? items.filter((x) => x.family === viewer.family && x._id !== viewer._id).length : 0} onClose={() => setViewer(null)} />}
     </div>
@@ -194,6 +209,8 @@ function ItemCard({ i, onOpen, onPicture, clickable }: { i: EquipmentDoc; onOpen
           <StockChip item={i} />
           <Tag tone={i.type === 'EQUIPMENT' ? 'indigo' : 'blue'}>{i.type === 'EQUIPMENT' ? 'Equipment' : 'Consumable'}</Tag>
           {i.brand && <span className="text-[11.5px] font-semibold text-slate-500">{i.brand}</span>}
+          {!!i.lentOut && <span className="rounded-full bg-[#FFFBEB] px-1.5 text-[11px] font-bold text-[#B45309] ring-1 ring-[#FDE68A]">{i.lentOut} lent out</span>}
+          {!!i.borrowed && <span className="rounded-full bg-[#EEF2FF] px-1.5 text-[11px] font-bold text-[#4338CA] ring-1 ring-[#C7D2FE]">{i.borrowed} borrowed</span>}
           {!i.isActive && <Tag tone="slate">Hidden</Tag>}
         </span>
         {!!i.inUse && <span className="mt-0.5 block text-[11.5px] text-slate-400">Used in {i.inUse} service / visit record{i.inUse === 1 ? '' : 's'}</span>}
@@ -249,6 +266,12 @@ function FamilyCard({ family, members, onOpen, onPicture, onAddSize }: { family:
               <span className="px-1.5 py-1">
                 <b className="block truncate text-[12.5px] text-slate-900">{m.variant || m.name}</b>
                 {m.brand && <span className="block truncate text-[11px] text-slate-500">{m.brand}</span>}
+                {(!!m.lentOut || !!m.borrowed) && (
+                  <span className="block truncate text-[10.5px] font-semibold">
+                    {!!m.lentOut && <span className="text-[#B45309]">{m.lentOut} lent </span>}
+                    {!!m.borrowed && <span className="text-[#4338CA]">{m.borrowed} borrowed</span>}
+                  </span>
+                )}
               </span>
             </button>
           )
@@ -278,6 +301,7 @@ function EditItem({
   onConsume,
   siblings = [],
   onOpenSibling,
+  onLoan,
 }: {
   item: EquipmentDoc | null
   onClose: () => void
@@ -286,6 +310,7 @@ function EditItem({
   onConsume?: (id: string) => void
   siblings?: EquipmentDoc[]
   onOpenSibling?: (i: EquipmentDoc) => void
+  onLoan?: (id: string, direction: 'TAKEN' | 'GIVEN') => void
 }) {
   const router = useRouter()
   const toast = useToast()
@@ -408,7 +433,7 @@ function EditItem({
       }
     >
       <div className="flex flex-col gap-4">
-        {item && <StockSection item={item} canStock={canStock} onConsume={onConsume ? () => onConsume(item._id) : undefined} />}
+        {item && <StockSection item={item} canStock={canStock} onConsume={onConsume ? () => onConsume(item._id) : undefined} onLoan={onLoan ? (d) => onLoan(item._id, d) : undefined} />}
         {siblings.length > 0 && (
           <div>
             <div className="mb-1 text-[12px] font-semibold text-slate-600">Other sizes in {item?.family}</div>
@@ -533,11 +558,11 @@ function EditItem({
   )
 }
 
-type Move = { id: string; at: string; delta: number; balance: number | null; reason: 'OPENING' | 'RECEIVED' | 'VISIT' | 'ADJUST' | 'MANUAL'; note: string; by: string | null; requestId: string | null; requestNo: string | null }
-const REASON = { OPENING: 'Opening stock', RECEIVED: 'Received', VISIT: 'Visit', ADJUST: 'Stock count', MANUAL: 'Consumed' } as const
+type Move = { id: string; at: string; delta: number; balance: number | null; reason: keyof typeof REASON; note: string; by: string | null; requestId: string | null; requestNo: string | null }
+const REASON = { OPENING: 'Opening stock', RECEIVED: 'Received', VISIT: 'Visit', ADJUST: 'Stock count', MANUAL: 'Consumed', LOAN_IN: 'Borrowed', LOAN_OUT: 'Lent', LOAN_RETURN_IN: 'Loan returned', LOAN_RETURN_OUT: 'Given back' } as const
 
 /** The store part of the drawer: count now, "Received +", "Counted" (stock-take) and the history of moves. */
-function StockSection({ item, canStock = true, onConsume }: { item: EquipmentDoc; canStock?: boolean; onConsume?: () => void }) {
+function StockSection({ item, canStock = true, onConsume, onLoan }: { item: EquipmentDoc; canStock?: boolean; onConsume?: () => void; onLoan?: (d: 'TAKEN' | 'GIVEN') => void }) {
   const router = useRouter()
   const toast = useToast()
   const [stock, setStock] = useState(item.stock ?? 0)
@@ -607,10 +632,31 @@ function StockSection({ item, canStock = true, onConsume }: { item: EquipmentDoc
         </div>
       </div>
       <input className="hc-input mt-2" placeholder="Note (optional) — e.g. H360 requisition or invoice no." value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
-      {onConsume && (
-        <button type="button" onClick={onConsume} className={btnClass('o', 'sm', 'mt-2 bg-white')}>
-          <PackageMinus size={14} /> Consume by hand (clinic, wastage, expired…)
-        </button>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {onConsume && (
+          <button type="button" onClick={onConsume} className={btnClass('o', 'sm', 'bg-white')}>
+            <PackageMinus size={14} /> Consume
+          </button>
+        )}
+        {onLoan && (
+          <>
+            <button type="button" onClick={() => onLoan('GIVEN')} className={btnClass('o', 'sm', 'bg-white')}>
+              <ArrowUpRight size={14} /> Lend
+            </button>
+            <button type="button" onClick={() => onLoan('TAKEN')} className={btnClass('o', 'sm', 'bg-white')}>
+              <ArrowDownLeft size={14} /> Borrow
+            </button>
+          </>
+        )}
+      </div>
+      {(!!item.lentOut || !!item.borrowed) && (
+        <div className="mt-2 text-[12.5px]">
+          {!!item.lentOut && <span className="font-semibold text-[#B45309]">{item.lentOut} lent out · </span>}
+          {!!item.borrowed && <span className="font-semibold text-[#4338CA]">{item.borrowed} borrowed · </span>}
+          <Link href="/store?tab=loans&status=open" className="text-primary-700 hover:underline">
+            see loans
+          </Link>
+        </div>
       )}
       </>
       )}

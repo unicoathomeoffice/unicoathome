@@ -1,5 +1,5 @@
 import { requireWebUser } from '@/lib/auth'
-import { Equipment, HomecareRequest } from '@/lib/models'
+import { Equipment, HomecareRequest, StoreLoan } from '@/lib/models'
 import { unreadCount } from '@/lib/unread'
 import { ROLE_LABEL, ACTIVE_STATUSES, permissionsFor } from '@/lib/constants'
 import { Sidebar } from '@/components/admin/Sidebar'
@@ -15,7 +15,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     unreadCount(user.id), // shared with AdminPage's bell — one query per request
     // store items low (at / below their alert level) or out of stock
     Equipment.countDocuments({ isActive: { $ne: false }, $or: [{ stock: { $lte: 0 } }, { $expr: { $and: [{ $gt: ['$alertBelow', 0] }, { $lte: ['$stock', '$alertBelow'] }] } }] }),
-  ]).then(([open, unread, store]) => ({ open, unread, store }))
+    StoreLoan.countDocuments({ status: { $in: ['OPEN', 'PARTLY_RETURNED'] }, dueAt: { $lt: new Date() } }), // overdue loans
+  ]).then(([open, unread, store, overdueLoans]) => ({ open, unread, store: store + overdueLoans }))
   // admins approve every WhatsApp: the "Review & send" window opens after any click that created messages
   const review = can(user, 'messages.approve') && (await getSettings()).whatsapp.approval !== 'OFF'
   return (

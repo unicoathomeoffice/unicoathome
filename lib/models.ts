@@ -100,7 +100,9 @@ const StockMoveSchema = new Schema<any>(
     itemId: { type: ObjectId, ref: 'Equipment', required: true },
     delta: { type: Number, required: true }, // + in, − out
     balance: Number, // stock after this move
-    reason: { type: String, enum: ['OPENING', 'RECEIVED', 'VISIT', 'ADJUST', 'MANUAL'], required: true },
+    // LOAN_IN: borrowed (taken) · LOAN_OUT: lent (given) · LOAN_RETURN_OUT: we gave a borrowed item back · LOAN_RETURN_IN: a lent item came back
+    reason: { type: String, enum: ['OPENING', 'RECEIVED', 'VISIT', 'ADJUST', 'MANUAL', 'LOAN_IN', 'LOAN_OUT', 'LOAN_RETURN_IN', 'LOAN_RETURN_OUT'], required: true },
+    loanId: { type: ObjectId, ref: 'StoreLoan' },
     requestId: { type: ObjectId, ref: 'HomecareRequest' }, // VISIT: the visit the consumables were used on
     consumptionId: { type: ObjectId, ref: 'StoreConsumption' }, // MANUAL: the admin's consumption entry
     note: String,
@@ -132,6 +134,35 @@ const StoreConsumptionSchema = new Schema<any>(
 )
 StoreConsumptionSchema.index({ at: -1 })
 export const StoreConsumption = model('StoreConsumption', StoreConsumptionSchema, 'store_consumptions')
+
+/** Loans of store items: TAKEN (we borrowed — stock up, we owe it back) or GIVEN (we lent — stock down, they owe us). */
+const StoreLoanSchema = new Schema<any>(
+  {
+    no: { type: String, required: true, unique: true }, // LT-261111-01 (taken) · LG-261111-01 (given)
+    direction: { type: String, enum: ['TAKEN', 'GIVEN'], required: true },
+    partner: {
+      kind: { type: String, enum: ['DEPARTMENT', 'STAFF', 'OUTSIDE'], required: true },
+      name: { type: String, required: true }, // typed by hand ("Emergency", "MICU L-7", a person, another hospital)
+      phone: String,
+      userId: { type: ObjectId, ref: 'User' },
+    },
+    items: [{ _id: false, itemId: { type: ObjectId, ref: 'Equipment' }, name: String, unit: String, qty: Number, returnedQty: { type: Number, default: 0 } }],
+    status: { type: String, enum: ['OPEN', 'PARTLY_RETURNED', 'RETURNED', 'WRITTEN_OFF'], default: 'OPEN' },
+    at: { type: Date, default: Date.now },
+    dueAt: Date,
+    note: String,
+    requestId: { type: ObjectId, ref: 'HomecareRequest' },
+    by: { type: ObjectId, ref: 'User' },
+    returns: [{ _id: false, at: Date, by: { type: ObjectId, ref: 'User' }, items: [{ _id: false, itemId: { type: ObjectId, ref: 'Equipment' }, qty: Number }], note: String }],
+    closedAt: Date,
+    writeOffReason: String,
+    remindedAt: Date, // last overdue reminder
+  },
+  { timestamps: true },
+)
+StoreLoanSchema.index({ status: 1, dueAt: 1 })
+StoreLoanSchema.index({ 'partner.name': 1 })
+export const StoreLoan = model('StoreLoan', StoreLoanSchema, 'store_loans')
 
 /** A store item that does not match H360 — followed up until resolved (or accepted for a while, with a reason). */
 const StoreIssueSchema = new Schema<any>(
