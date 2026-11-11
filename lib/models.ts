@@ -96,8 +96,9 @@ const StockMoveSchema = new Schema<any>(
     itemId: { type: ObjectId, ref: 'Equipment', required: true },
     delta: { type: Number, required: true }, // + in, − out
     balance: Number, // stock after this move
-    reason: { type: String, enum: ['OPENING', 'RECEIVED', 'VISIT', 'ADJUST'], required: true },
+    reason: { type: String, enum: ['OPENING', 'RECEIVED', 'VISIT', 'ADJUST', 'MANUAL'], required: true },
     requestId: { type: ObjectId, ref: 'HomecareRequest' }, // VISIT: the visit the consumables were used on
+    consumptionId: { type: ObjectId, ref: 'StoreConsumption' }, // MANUAL: the admin's consumption entry
     note: String,
     by: { type: ObjectId, ref: 'User' },
     at: { type: Date, default: Date.now },
@@ -107,6 +108,26 @@ const StockMoveSchema = new Schema<any>(
 StockMoveSchema.index({ itemId: 1, at: -1 })
 StockMoveSchema.index({ requestId: 1, itemId: 1 }, { partialFilterExpression: { requestId: { $exists: true } } })
 export const StockMove = model('StockMove', StockMoveSchema, 'stock_moves')
+
+/** Consumption entered by hand by a store admin (used in clinic, wastage, expired…) — like H360's Department Consumption. */
+const StoreConsumptionSchema = new Schema<any>(
+  {
+    no: { type: String, required: true, unique: true }, // SC-261111-01
+    items: [{ _id: false, itemId: { type: ObjectId, ref: 'Equipment' }, name: String, unit: String, qty: Number }],
+    reason: { type: String, enum: ['CLINIC', 'PATIENT', 'WASTAGE', 'EXPIRED', 'TRANSFER', 'OTHER'], required: true },
+    requestId: { type: ObjectId, ref: 'HomecareRequest' },
+    patientName: String,
+    note: String,
+    at: { type: Date, default: Date.now }, // when it was used
+    by: { type: ObjectId, ref: 'User' },
+    voidedAt: Date,
+    voidedBy: { type: ObjectId, ref: 'User' },
+    voidReason: String,
+  },
+  { timestamps: true },
+)
+StoreConsumptionSchema.index({ at: -1 })
+export const StoreConsumption = model('StoreConsumption', StoreConsumptionSchema, 'store_consumptions')
 
 // ---------------------------------------------------------------- users
 const UserSchema = new Schema<any>(

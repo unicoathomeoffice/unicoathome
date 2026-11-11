@@ -5,11 +5,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Camera, ClipboardCheck, EyeOff, ImageOff, Loader2, Package, PackagePlus, Plus, Save, Search, Trash2 } from 'lucide-react'
+import { Camera, ClipboardCheck, EyeOff, ImageOff, Loader2, Package, PackageMinus, PackagePlus, Plus, Save, Search, Trash2 } from 'lucide-react'
 import { api, compressImage, Drawer, Segmented, Toggle, useToast } from '@/components/client'
 import { btnClass, Tag } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { groupItems, parseItemName } from '@/lib/store-groups'
+import { ConsumeDrawer } from '@/components/store/ConsumeDrawer'
 
 export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string }
 
@@ -45,6 +46,7 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
   const [view, setView] = useState<'GROUPED' | 'ALL'>('GROUPED')
   const [hidden, setHidden] = useState(false)
   const [edit, setEdit] = useState<EquipmentDoc | 'new' | null>(null)
+  const [consume, setConsume] = useState<string[] | null>(null)
   const open = (i: EquipmentDoc) => (canEdit || canStock) && setEdit(i)
   const brands = useMemo(() => [...new Set(items.map((i) => i.brand).filter(Boolean) as string[])].sort(), [items])
   const shown = useMemo(() => {
@@ -110,6 +112,11 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
         <label className="flex items-center gap-2 text-[13px] text-slate-600">
           <Toggle on={hidden} onChange={setHidden} label="Show hidden items" /> Hidden
         </label>
+        {canStock && (
+          <button type="button" className={btnClass('o')} onClick={() => setConsume([])}>
+            <PackageMinus size={16} /> Consume
+          </button>
+        )}
         {canEdit && (
           <button type="button" className={btnClass('p')} onClick={() => setEdit('new')}>
             <Plus size={16} /> Add item
@@ -137,7 +144,19 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
           ))}
         </div>
       )}
-      {edit && <EditItem item={edit === 'new' ? null : edit} onClose={() => setEdit(null)} canEdit={canEdit} canStock={canStock} />}
+      {edit && (
+        <EditItem
+          item={edit === 'new' ? null : edit}
+          onClose={() => setEdit(null)}
+          canEdit={canEdit}
+          canStock={canStock}
+          onConsume={(id) => {
+            setEdit(null)
+            setConsume([id])
+          }}
+        />
+      )}
+      {consume && <ConsumeDrawer items={items} preset={consume} onClose={() => setConsume(null)} />}
     </div>
   )
 }
@@ -207,7 +226,7 @@ function FamilyCard({ family, members, onOpen }: { family: string; members: Equi
   )
 }
 
-function EditItem({ item, onClose, canEdit = true, canStock = true }: { item: EquipmentDoc | null; onClose: () => void; canEdit?: boolean; canStock?: boolean }) {
+function EditItem({ item, onClose, canEdit = true, canStock = true, onConsume }: { item: EquipmentDoc | null; onClose: () => void; canEdit?: boolean; canStock?: boolean; onConsume?: (id: string) => void }) {
   const router = useRouter()
   const toast = useToast()
   const [f, setF] = useState({ name: item?.name ?? '', type: item?.type ?? ('CONSUMABLE' as const), unit: item?.unit ?? 'pcs', notes: item?.notes ?? '', isActive: item?.isActive ?? true, alertBelow: String(item?.alertBelow ?? 0), family: item?.family ?? '', variant: item?.variant ?? '', brand: item?.brand ?? '', h360Code: item?.h360Code ?? '' })
@@ -294,7 +313,7 @@ function EditItem({ item, onClose, canEdit = true, canStock = true }: { item: Eq
       }
     >
       <div className="flex flex-col gap-4">
-        {item && <StockSection item={item} canStock={canStock} />}
+        {item && <StockSection item={item} canStock={canStock} onConsume={onConsume ? () => onConsume(item._id) : undefined} />}
         <div className="flex items-center gap-4">
           <span className="flex size-28 flex-none items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-400">{preview ? <img src={preview} alt="" className="size-full object-cover" /> : <ImageOff size={30} />}</span>
           <div className="flex flex-col gap-2">
@@ -375,11 +394,11 @@ function EditItem({ item, onClose, canEdit = true, canStock = true }: { item: Eq
   )
 }
 
-type Move = { id: string; at: string; delta: number; balance: number | null; reason: 'OPENING' | 'RECEIVED' | 'VISIT' | 'ADJUST'; note: string; by: string | null; requestId: string | null; requestNo: string | null }
-const REASON = { OPENING: 'Opening stock', RECEIVED: 'Received', VISIT: 'Visit', ADJUST: 'Stock count' } as const
+type Move = { id: string; at: string; delta: number; balance: number | null; reason: 'OPENING' | 'RECEIVED' | 'VISIT' | 'ADJUST' | 'MANUAL'; note: string; by: string | null; requestId: string | null; requestNo: string | null }
+const REASON = { OPENING: 'Opening stock', RECEIVED: 'Received', VISIT: 'Visit', ADJUST: 'Stock count', MANUAL: 'Consumed' } as const
 
 /** The store part of the drawer: count now, "Received +", "Counted" (stock-take) and the history of moves. */
-function StockSection({ item, canStock = true }: { item: EquipmentDoc; canStock?: boolean }) {
+function StockSection({ item, canStock = true, onConsume }: { item: EquipmentDoc; canStock?: boolean; onConsume?: () => void }) {
   const router = useRouter()
   const toast = useToast()
   const [stock, setStock] = useState(item.stock ?? 0)
@@ -449,6 +468,11 @@ function StockSection({ item, canStock = true }: { item: EquipmentDoc; canStock?
         </div>
       </div>
       <input className="hc-input mt-2" placeholder="Note (optional) — e.g. H360 requisition or invoice no." value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
+      {onConsume && (
+        <button type="button" onClick={onConsume} className={btnClass('o', 'sm', 'mt-2 bg-white')}>
+          <PackageMinus size={14} /> Consume by hand (clinic, wastage, expired…)
+        </button>
+      )}
       </>
       )}
       <div className="mt-3 text-[12px] font-semibold text-slate-600">History</div>

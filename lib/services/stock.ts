@@ -10,15 +10,15 @@ import type { SessionUser } from '../auth'
 // Consumables recorded on a visit are taken out of the store automatically and given back when the visit's record is
 // corrected, cancelled or deleted. Equipment comes back after the visit, so it is never taken out.
 
-type Reason = 'OPENING' | 'RECEIVED' | 'VISIT' | 'ADJUST'
+type Reason = 'OPENING' | 'RECEIVED' | 'VISIT' | 'ADJUST' | 'MANUAL'
 type Actor = Pick<SessionUser, 'id' | 'name' | 'role'> | null
 
 /** Change an item's stock by `delta` (atomic) and log the move with the new balance. */
-export async function moveStock(itemId: unknown, delta: number, reason: Reason, opts: { requestId?: unknown; note?: string; by?: string } = {}) {
+export async function moveStock(itemId: unknown, delta: number, reason: Reason, opts: { requestId?: unknown; consumptionId?: unknown; note?: string; by?: string } = {}) {
   if (!delta) return null
   const item = await Equipment.findOneAndUpdate({ _id: itemId }, { $inc: { stock: delta } }, { new: true }).select('name unit stock alertBelow type').lean<any>()
   if (!item) return null
-  await StockMove.create({ itemId, delta, balance: item.stock, reason, requestId: opts.requestId, note: opts.note, by: opts.by })
+  await StockMove.create({ itemId, delta, balance: item.stock, reason, requestId: opts.requestId, consumptionId: opts.consumptionId, note: opts.note, by: opts.by })
   // used on a visit and now low / out: tell the admins (once per crossing)
   if (delta < 0) {
     const before = item.stock - delta
