@@ -28,7 +28,10 @@ export const LoanInput = z.object({
 export const LoanAction = z.discriminatedUnion('action', [
   z.object({ action: z.literal('return'), items: z.array(z.object({ itemId: z.string(), qty: z.coerce.number().int().min(0).max(100000) })).min(1), note: z.string().trim().max(200).optional() }),
   z.object({ action: z.literal('writeoff'), reason: z.string().trim().min(3, 'Say why').max(200) }),
+  z.object({ action: z.literal('undo-return'), index: z.coerce.number().int().min(0), reason: z.string().trim().min(3, 'Say why').max(200) }),
+  z.object({ action: z.literal('reopen'), reason: z.string().trim().min(3, 'Say why').max(200) }),
 ])
+export const LoanEdit = LoanInput.omit({ direction: true }).extend({ why: z.string().trim().min(3, 'Say why it is changed').max(200) })
 
 async function nextNo(direction: 'TAKEN' | 'GIVEN') {
   const d = new Date().toLocaleDateString('en-GB', { timeZone: 'Asia/Dhaka', year: '2-digit', month: '2-digit', day: '2-digit' }).split('/').reverse().join('')
@@ -80,11 +83,103 @@ export async function createLoan(input: z.infer<typeof LoanInput>, user: Session
   return { id: String(doc._id), no: doc.no, short }
 }
 
+/** open / partly returned / returned from what is still out (a written-off loan stays written off) */
+function restatus(loan: any) {
+  if (loan.status === 'WRITTEN_OFF') return
+  const left = loan.items.reduce((a: number, i: any) => a + outstanding(i), 0)
+  const back = loan.items.reduce((a: number, i: any) => a + (i.returnedQty ?? 0), 0)
+  loan.status = !left ? 'RETURNED' : back ? 'PARTLY_RETURNED' : 'OPEN'
+  loan.closedAt = !left ? loan.closedAt ?? new Date() : undefined
+}
+
+/**
+ * Correct a loan entered wrongly: partner (typed name / kind / phone), due date, note, items and quantities. A quantity
+ * can't go below what already came back. The stock is put right with correction moves; the loan keeps an edit log.
+ */
+export async function editLoan(id: string, input: z.infer<typeof LoanEdit>, user: SessionUser, meta: Meta = {}) {
+  const loan = await StoreLoan.findById(id)
+  if (!loan) throw notFound('Loan')
+  if (loan.status === 'WRITTEN_OFF') throw conflict('WRITTEN_OFF', `${loan.no} is written off — re-open it first`)
+  const taken = loan.direction === 'TAKEN'
+  const next = new Map<string, number>()
+  for (const x of input.items) next.set(x.itemId, (next.get(x.itemId) ?? 0) + x.qty)
+  const items = await Equipment.find({ _id: { $in: [...new Set([...next.keys(), ...loan.items.map((i: any) => String(i.itemId))])] } }).select('name unit').lean<any[]>()
+  if ([...next.keys()].some((k) => !items.find((i) => String(i._id) === k))) throw bad('An item is no longer in the store')
+  for (const i of loan.items) {
+    const now = next.get(String(i.itemId)) ?? 0
+    if (now < (i.returnedQty ?? 0)) throw bad(`${i.name}: ${i.returnedQty} already came back — it can't be less than that`)
+  }
+  let req: any = null
+  if (input.requestNo) {
+    req = await HomecareRequest.findOne({ requestNo: input.requestNo.toUpperCase(), deletedAt: null }).select('_id').lean<any>()
+    if (!req) throw bad(`No visit ${input.requestNo}`)
+  }
+  const before = { partner: { ...loan.partner.toObject?.() ?? loan.partner }, items: loan.items.map((i: any) => ({ name: i.name, qty: i.qty })), dueAt: loan.dueAt, note: loan.note }
+  const changes: string[] = []
+  const prev = new Map<string, any>(loan.items.map((i: any) => [String(i.itemId), i]))
+  for (const k of new Set([...next.keys(), ...prev.keys()])) {
+    const was = prev.get(k)?.qty ?? 0
+    const now = next.get(k) ?? 0
+    if (was === now) continue
+    const name = items.find((i) => String(i._id) === k)?.name ?? 'Item'
+    const d = now - was
+    await moveStock(k, taken ? d : -d, taken ? 'LOAN_IN' : 'LOAN_OUT', { loanId: loan._id, note: `Corrected ${loan.no} (${name}: was ${was}, now ${now}) · ${input.why}`, by: user.id })
+    changes.push(`${name} ${was} → ${now}`)
+  }
+  loan.items = [...next.entries()].map(([k, qty]) => {
+    const it = items.find((i) => String(i._id) === k)!
+    return { itemId: it._id, name: it.name, unit: it.unit, qty, returnedQty: prev.get(k)?.returnedQty ?? 0 }
+  })
+  if (loan.partner.name !== input.partner.name) changes.push(`with: ${loan.partner.name} → ${input.partner.name}`)
+  loan.partner = { kind: input.partner.kind, name: input.partner.name, phone: input.partner.phone || undefined, userId: input.partner.userId }
+  loan.dueAt = input.dueAt ? new Date(`${input.dueAt}T23:59:00+06:00`) : undefined
+  loan.note = input.note
+  loan.requestId = req?._id
+  restatus(loan)
+  loan.edits.push({ at: new Date(), by: user.id, why: input.why, before, after: { partner: loan.partner, items: loan.items.map((i: any) => ({ name: i.name, qty: i.qty })), dueAt: loan.dueAt, note: loan.note } })
+  loan.markModified('items')
+  await loan.save()
+  await audit(user, 'stock.loan_edit', 'store', loan._id, { before, after: { changes, why: input.why }, label: loan.no }, meta)
+  return { ok: true, no: loan.no, changes }
+}
+
 export async function loanAction(id: string, input: z.infer<typeof LoanAction>, user: SessionUser, meta: Meta = {}) {
   const loan = await StoreLoan.findById(id)
   if (!loan) throw notFound('Loan')
-  if (loan.status === 'RETURNED' || loan.status === 'WRITTEN_OFF') throw conflict('CLOSED', `${loan.no} is already ${loan.status === 'RETURNED' ? 'returned' : 'written off'}`)
   const taken = loan.direction === 'TAKEN'
+  if (input.action === 'reopen') {
+    if (loan.status !== 'WRITTEN_OFF') throw conflict('NOT_WRITTEN_OFF', `${loan.no} is not written off`)
+    loan.status = 'OPEN'
+    loan.writeOffReason = undefined
+    loan.closedAt = undefined
+    restatus(loan)
+    loan.edits.push({ at: new Date(), by: user.id, why: input.reason, before: { status: 'WRITTEN_OFF' }, after: { status: loan.status } })
+    await loan.save()
+    await audit(user, 'stock.loan_reopen', 'store', loan._id, { after: { no: loan.no, reason: input.reason }, label: loan.no }, meta)
+    return { ok: true, status: loan.status }
+  }
+  if (input.action === 'undo-return') {
+    const r = loan.returns[input.index]
+    if (!r) throw notFound('Return')
+    if (r.undoneAt) throw conflict('ALREADY_UNDONE', 'This return was already undone')
+    if (loan.status === 'WRITTEN_OFF') throw conflict('WRITTEN_OFF', `${loan.no} is written off — re-open it first`)
+    for (const x of r.items) {
+      const it = loan.items.find((i: any) => String(i.itemId) === String(x.itemId))
+      if (it) it.returnedQty = Math.max(0, (it.returnedQty ?? 0) - x.qty)
+      // the opposite of the return move: borrowed items we "gave back" are ours again / lent items "returned" are out again
+      await moveStock(x.itemId, taken ? x.qty : -x.qty, taken ? 'LOAN_RETURN_OUT' : 'LOAN_RETURN_IN', { loanId: loan._id, note: `Return undone · ${loan.no} · ${input.reason}`, by: user.id })
+    }
+    r.undoneAt = new Date()
+    r.undoneBy = user.id
+    r.undoReason = input.reason
+    restatus(loan)
+    loan.markModified('items')
+    loan.markModified('returns')
+    await loan.save()
+    await audit(user, 'stock.loan_return_undo', 'store', loan._id, { after: { no: loan.no, reason: input.reason, status: loan.status }, label: loan.no }, meta)
+    return { ok: true, status: loan.status }
+  }
+  if (loan.status === 'RETURNED' || loan.status === 'WRITTEN_OFF') throw conflict('CLOSED', `${loan.no} is already ${loan.status === 'RETURNED' ? 'returned' : 'written off'}`)
   if (input.action === 'writeoff') {
     loan.status = 'WRITTEN_OFF'
     loan.writeOffReason = input.reason
@@ -128,9 +223,11 @@ export type LoanRow = {
   note: string
   requestId: string | null
   by: string | null
-  returns: { at: string; by: string | null; items: { name: string; qty: number }[]; note: string }[]
+  returns: { index: number; at: string; by: string | null; items: { name: string; qty: number }[]; note: string; undone: boolean; undoReason: string | null }[]
   closedAt: string | null
   writeOffReason: string | null
+  edits: { at: string; by: string | null; why: string; summary: string }[]
+  requestNo?: string | null
 }
 
 export async function listLoans(f: { status?: string; direction?: string; partner?: string } = {}, limit = 300): Promise<LoanRow[]> {
@@ -141,7 +238,8 @@ export async function listLoans(f: { status?: string; direction?: string; partne
   else if (f.status === 'closed') q.status = { $in: ['RETURNED', 'WRITTEN_OFF'] }
   if (f.partner) q['partner.name'] = f.partner
   const rows = await StoreLoan.find(q).sort({ at: -1 }).limit(limit).lean<any[]>()
-  const users = await User.find({ _id: { $in: [...new Set(rows.flatMap((r) => [r.by, ...(r.returns ?? []).map((x: any) => x.by)]).filter(Boolean).map(String))] } }).select('name').lean<any[]>()
+  const users = await User.find({ _id: { $in: [...new Set(rows.flatMap((r) => [r.by, ...(r.returns ?? []).map((x: any) => x.by), ...(r.edits ?? []).map((x: any) => x.by)]).filter(Boolean).map(String))] } }).select('name').lean<any[]>()
+  const reqs = await HomecareRequest.find({ _id: { $in: rows.map((r) => r.requestId).filter(Boolean) } }).select('requestNo').lean<any[]>()
   const nameOf = (id: unknown) => users.find((u) => String(u._id) === String(id))?.name ?? null
   const now = Date.now()
   return rows.map((r) => {
@@ -159,9 +257,16 @@ export async function listLoans(f: { status?: string; direction?: string; partne
       note: r.note ?? '',
       requestId: r.requestId ? String(r.requestId) : null,
       by: nameOf(r.by),
-      returns: (r.returns ?? []).map((x: any) => ({ at: new Date(x.at).toISOString(), by: nameOf(x.by), items: x.items.map((y: any) => ({ name: r.items.find((i: any) => String(i.itemId) === String(y.itemId))?.name ?? 'Item', qty: y.qty })), note: x.note ?? '' })),
+      returns: (r.returns ?? []).map((x: any, index: number) => ({ index, at: new Date(x.at).toISOString(), by: nameOf(x.by), items: x.items.map((y: any) => ({ name: r.items.find((i: any) => String(i.itemId) === String(y.itemId))?.name ?? 'Item', qty: y.qty })), note: x.note ?? '', undone: !!x.undoneAt, undoReason: x.undoReason ?? null })),
       closedAt: r.closedAt ? new Date(r.closedAt).toISOString() : null,
       writeOffReason: r.writeOffReason ?? null,
+      edits: (r.edits ?? []).map((e: any) => ({
+        at: new Date(e.at).toISOString(),
+        by: nameOf(e.by),
+        why: e.why ?? '',
+        summary: e.before?.items && e.after?.items ? `${(e.before.items ?? []).map((i: any) => `${i.name} × ${i.qty}`).join(', ')} → ${(e.after.items ?? []).map((i: any) => `${i.name} × ${i.qty}`).join(', ')}${e.before.partner?.name && e.before.partner.name !== e.after.partner?.name ? ` · ${e.before.partner.name} → ${e.after.partner?.name}` : ''}` : `${e.before?.status ?? ''} → ${e.after?.status ?? ''}`,
+      })),
+      requestNo: reqs.find((q) => String(q._id) === String(r.requestId))?.requestNo ?? null,
     }
   })
 }

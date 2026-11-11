@@ -76,6 +76,51 @@ export async function createConsumption(input: z.infer<typeof ConsumptionInput>,
   return { id: String(doc._id), no: doc.no, short: doc.items.filter((i: any) => (items.find((x) => String(x._id) === String(i.itemId))?.stock ?? 0) < i.qty).map((i: any) => i.name) }
 }
 
+export const ConsumptionEdit = ConsumptionInput.extend({ why: z.string().trim().min(3, 'Say why it is changed').max(200) })
+
+/**
+ * Correct a consumption entered wrongly (items, quantities, reason, time, visit, note). History is kept: the stock is
+ * put right with correction moves for the difference, and the entry records who changed what and why.
+ */
+export async function editConsumption(id: string, input: z.infer<typeof ConsumptionEdit>, user: SessionUser, meta: Meta = {}) {
+  const doc = await StoreConsumption.findById(id)
+  if (!doc) throw notFound('Consumption')
+  if (doc.voidedAt) throw conflict('VOIDED', `${doc.no} was voided — it can't be changed`)
+  const next = new Map<string, number>()
+  for (const x of input.items) next.set(x.itemId, (next.get(x.itemId) ?? 0) + x.qty)
+  const prev = new Map<string, number>(doc.items.map((i: any) => [String(i.itemId), i.qty]))
+  const items = await Equipment.find({ _id: { $in: [...new Set([...next.keys(), ...prev.keys()])] } }).select('name unit').lean<any[]>()
+  if ([...next.keys()].some((k) => !items.find((i) => String(i._id) === k))) throw bad('An item is no longer in the store')
+  let req: any = null
+  if (input.requestNo) {
+    req = await HomecareRequest.findOne({ requestNo: input.requestNo.toUpperCase(), deletedAt: null }).select('requestNo patientSnapshot.name').lean<any>()
+    if (!req) throw bad(`No visit ${input.requestNo}`, { requestNo: 'Not found' })
+  }
+  const before = { items: doc.items.map((i: any) => ({ name: i.name, qty: i.qty })), reason: doc.reason, note: doc.note, at: doc.at, requestId: doc.requestId }
+  const changes: string[] = []
+  for (const k of new Set([...next.keys(), ...prev.keys()])) {
+    const was = prev.get(k) ?? 0
+    const now = next.get(k) ?? 0
+    if (was === now) continue
+    const name = items.find((i) => String(i._id) === k)?.name ?? 'Item'
+    await moveStock(k, -(now - was), 'MANUAL', { consumptionId: doc._id, note: `Corrected ${doc.no} (${name}: was ${was}, now ${now}) · ${input.why}`, by: user.id })
+    changes.push(`${name} ${was} → ${now}`)
+  }
+  doc.items = [...next.entries()].map(([k, qty]) => {
+    const it = items.find((i) => String(i._id) === k)!
+    return { itemId: it._id, name: it.name, unit: it.unit, qty }
+  })
+  doc.reason = input.reason
+  doc.note = input.note
+  if (input.at) doc.at = new Date(input.at)
+  doc.requestId = req?._id
+  doc.patientName = req?.patientSnapshot?.name
+  doc.edits.push({ at: new Date(), by: user.id, why: input.why, before, after: { items: doc.items.map((i: any) => ({ name: i.name, qty: i.qty })), reason: doc.reason, note: doc.note, at: doc.at } })
+  await doc.save()
+  await audit(user, 'stock.consume_edit', 'store', doc._id, { before, after: { items: changes, reason: input.reason, why: input.why }, label: doc.no }, meta)
+  return { ok: true, no: doc.no, changes }
+}
+
 /** Undo a consumption entered by mistake: the stock goes back, the entry stays (marked voided). */
 export async function voidConsumption(id: string, reason: string, user: SessionUser, meta: Meta = {}) {
   const doc = await StoreConsumption.findOneAndUpdate({ _id: id, voidedAt: null }, { $set: { voidedAt: new Date(), voidedBy: user.id, voidReason: reason } }, { new: true }).lean<any>()
@@ -98,9 +143,11 @@ export async function listConsumptions(f: { month?: string; reason?: string } = 
     q.at = { $gte: start, $lt: end }
   }
   const rows = await StoreConsumption.find(q).sort({ at: -1 }).limit(limit).lean<any[]>()
-  const users = await User.find({ _id: { $in: [...new Set(rows.flatMap((r) => [r.by, r.voidedBy]).filter(Boolean).map(String))] } }).select('name').lean<any[]>()
+  const users = await User.find({ _id: { $in: [...new Set(rows.flatMap((r) => [r.by, r.voidedBy, ...(r.edits ?? []).map((e: any) => e.by)]).filter(Boolean).map(String))] } }).select('name').lean<any[]>()
   const nameOf = (id: unknown) => users.find((u) => String(u._id) === String(id))?.name ?? null
+  const reqs = await HomecareRequest.find({ _id: { $in: rows.map((r) => r.requestId).filter(Boolean) } }).select('requestNo').lean<any[]>()
   return rows.map((r) => ({
+    requestNo: reqs.find((q) => String(q._id) === String(r.requestId))?.requestNo ?? null,
     id: String(r._id),
     no: r.no,
     at: new Date(r.at).toISOString(),
@@ -113,6 +160,7 @@ export async function listConsumptions(f: { month?: string; reason?: string } = 
     voidedAt: r.voidedAt ? new Date(r.voidedAt).toISOString() : null,
     voidedBy: nameOf(r.voidedBy),
     voidReason: r.voidReason ?? null,
+    edits: (r.edits ?? []).map((e: any) => ({ at: new Date(e.at).toISOString(), by: nameOf(e.by), why: e.why ?? '', before: (e.before?.items ?? []).map((i: any) => `${i.name} × ${i.qty}`).join(', '), after: (e.after?.items ?? []).map((i: any) => `${i.name} × ${i.qty}`).join(', ') })),
   }))
 }
 

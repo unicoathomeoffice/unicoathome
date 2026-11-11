@@ -4,7 +4,7 @@
 import { Fragment, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Loader2, Printer, Undo2, XCircle } from 'lucide-react'
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Loader2, Pencil, Printer, RotateCcw, Undo2, XCircle } from 'lucide-react'
 import { api, Drawer, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
@@ -25,6 +25,23 @@ export function LoanList({ rows, balances, items, filter, canManage }: { rows: L
   const router = useRouter()
   const [loan, setLoan] = useState<null | 'TAKEN' | 'GIVEN'>(null)
   const [ret, setRet] = useState<LoanRow | null>(null)
+  const [editing, setEditing] = useState<LoanRow | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const toast = useToast()
+  async function reopen(r: LoanRow) {
+    const why = prompt(`Re-open ${r.no}? Use this when written-off items turn up after all.\n\nWhy?`)
+    if (!why || why.trim().length < 3) return
+    setBusy(r.id)
+    try {
+      await api(`/store/loans/${r.id}`, { body: { action: 'reopen', reason: why.trim() } })
+      toast(`${r.no} re-opened`, 'ok')
+      router.refresh()
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setBusy(null)
+    }
+  }
   const nav = (patch: Record<string, string>) => {
     const p = new URLSearchParams({ tab: 'loans', ...filter, ...patch })
     for (const [k, v] of [...p.entries()]) if (!v) p.delete(k)
@@ -169,13 +186,46 @@ export function LoanList({ rows, balances, items, filter, canManage }: { rows: L
                       <td className="px-2 py-2.5">
                         <span className={cx('rounded-full px-2 py-0.5 text-[11.5px] font-bold', STATUS[r.status]?.[1])}>{STATUS[r.status]?.[0] ?? r.status}</span>
                         {r.writeOffReason && <div className="mt-0.5 text-[11.5px] text-slate-500">{r.writeOffReason}</div>}
+                        {r.edits.length > 0 && (
+                          <details className="mt-1 text-[11.5px]">
+                            <summary className="cursor-pointer font-semibold text-[#B45309]">Edited {r.edits.length}×</summary>
+                            <ul className="mt-0.5 text-slate-600">
+                              {r.edits.map((e, k) => (
+                                <li key={k}>
+                                  {when(e.at, true)}
+                                  {e.by ? ` · ${e.by}` : ''} — {e.why}
+                                  <span className="block text-slate-400">{e.summary}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        )}
                       </td>
                       <td className="px-2 py-2.5 text-right">
-                        {open && canManage && (
-                          <button type="button" className={btnClass('o', 'sm')} onClick={() => setRet(r)}>
-                            <Undo2 size={14} /> {r.direction === 'TAKEN' ? 'Give back' : 'Returned'}
-                          </button>
-                        )}
+                        <div className="flex flex-col items-end gap-1.5">
+                          {open && canManage && (
+                            <button type="button" className={btnClass('o', 'sm')} onClick={() => setRet(r)}>
+                              <Undo2 size={14} /> {r.direction === 'TAKEN' ? 'Give back' : 'Returned'}
+                            </button>
+                          )}
+                          {canManage && r.status !== 'WRITTEN_OFF' && (
+                            <span className="flex gap-3">
+                              <button type="button" onClick={() => setEditing(r)} className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-primary-700 hover:underline">
+                                <Pencil size={13} /> Edit
+                              </button>
+                              {r.returns.some((x) => !x.undone) && (
+                                <button type="button" onClick={() => setRet(r)} className="text-[12.5px] font-semibold text-slate-500 hover:underline">
+                                  Returns
+                                </button>
+                              )}
+                            </span>
+                          )}
+                          {canManage && r.status === 'WRITTEN_OFF' && (
+                            <button type="button" disabled={busy === r.id} onClick={() => reopen(r)} className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-primary-700 hover:underline">
+                              {busy === r.id ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Re-open
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   </Fragment>
@@ -187,6 +237,14 @@ export function LoanList({ rows, balances, items, filter, canManage }: { rows: L
       )}
       {loan && <LoanDrawer direction={loan} items={items} onClose={() => setLoan(null)} />}
       {ret && <ReturnDrawer loan={ret} onClose={() => setRet(null)} />}
+      {editing && (
+        <LoanDrawer
+          direction={editing.direction}
+          items={items}
+          onClose={() => setEditing(null)}
+          editing={{ id: editing.id, no: editing.no, direction: editing.direction, partner: editing.partner, items: editing.items.map((i) => ({ itemId: i.itemId, qty: i.qty, returnedQty: i.returnedQty })), dueAt: editing.dueAt, note: editing.note, requestNo: editing.requestNo ?? null }}
+        />
+      )}
     </div>
   )
 }
@@ -199,6 +257,21 @@ function ReturnDrawer({ loan, onClose }: { loan: LoanRow; onClose: () => void })
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState<null | 'return' | 'writeoff'>(null)
   const taken = loan.direction === 'TAKEN'
+  async function undo(index: number) {
+    const why = prompt('Undo this return? The items count as still out again.\n\nWhy?')
+    if (!why || why.trim().length < 3) return
+    setBusy('return')
+    try {
+      await api(`/store/loans/${loan.id}`, { body: { action: 'undo-return', index, reason: why.trim() } })
+      toast('Return undone', 'ok')
+      router.refresh()
+      onClose()
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setBusy(null)
+    }
+  }
   async function go(action: 'return' | 'writeoff') {
     let body: Record<string, unknown>
     if (action === 'writeoff') {
@@ -256,13 +329,26 @@ function ReturnDrawer({ loan, onClose }: { loan: LoanRow; onClose: () => void })
           <input className="hc-input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. returned by Sister Rina" />
         </label>
         {loan.returns.length > 0 && (
-          <div className="text-[12px] text-slate-500">
-            {loan.returns.map((x, k) => (
-              <div key={k}>
-                {when(x.at, true)} · {x.items.map((y) => `${y.name} × ${y.qty}`).join(', ')}
-                {x.by ? ` · ${x.by}` : ''}
-              </div>
-            ))}
+          <div>
+            <div className="mb-1 text-[12px] font-semibold text-slate-600">Returns so far</div>
+            <ul className="flex flex-col gap-1 text-[12.5px]">
+              {loan.returns.map((x) => (
+                <li key={x.index} className={cx('flex items-start gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5', x.undone && 'opacity-60')}>
+                  <span className="min-w-0 flex-1">
+                    <span className={cx(x.undone && 'line-through')}>
+                      {when(x.at, true)} · {x.items.map((y) => `${y.name} × ${y.qty}`).join(', ')}
+                    </span>
+                    {x.by ? <span className="text-slate-500"> · {x.by}</span> : null}
+                    {x.undone && <span className="block text-[11.5px] text-[#B91C1C]">Undone — {x.undoReason}</span>}
+                  </span>
+                  {!x.undone && (
+                    <button type="button" disabled={!!busy} onClick={() => undo(x.index)} className="flex-none text-[12px] font-semibold text-[#B91C1C] hover:underline">
+                      Undo
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>

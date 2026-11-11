@@ -575,8 +575,10 @@ function StockSection({ item, canStock = true, onConsume, onLoan }: { item: Equi
   const [moves, setMoves] = useState<Move[] | null>(null)
   const [recv, setRecv] = useState('')
   const [count, setCount] = useState('')
+  const [adj, setAdj] = useState('')
+  const [adjWhy, setAdjWhy] = useState('Counting mistake')
   const [note, setNote] = useState('')
-  const [busy, setBusy] = useState<null | 'receive' | 'count'>(null)
+  const [busy, setBusy] = useState<null | 'receive' | 'count' | 'adjust'>(null)
   const load = () =>
     api<{ items: Move[] }>(`/equipment/${item._id}/stock`)
       .then((r) => setMoves(r.items))
@@ -585,18 +587,21 @@ function StockSection({ item, canStock = true, onConsume, onLoan }: { item: Equi
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item._id])
-  async function go(action: 'receive' | 'count') {
-    const qty = Number(action === 'receive' ? recv : count)
+  async function go(action: 'receive' | 'count' | 'adjust') {
+    const qty = Number(action === 'receive' ? recv : action === 'count' ? count : adj)
     if (action === 'receive' && !(qty > 0)) return toast('Enter how many came in', 'err')
     if (action === 'count' && (count === '' || Number.isNaN(qty))) return toast('Enter the counted number', 'err')
+    if (action === 'adjust' && (!qty || Number.isNaN(qty))) return toast('Enter + or − how many (e.g. -2)', 'err')
     setBusy(action)
     try {
-      const r = await api<{ stock: number; delta: number }>(`/equipment/${item._id}/stock`, { body: { action, qty, note: note.trim() || undefined } })
+      const why = action === 'adjust' ? [adjWhy, note.trim()].filter(Boolean).join(' · ') : note.trim() || undefined
+      const r = await api<{ stock: number; delta: number }>(`/equipment/${item._id}/stock`, { body: { action, qty, note: why } })
       setStock(r.stock)
       setRecv('')
       setCount('')
+      setAdj('')
       setNote('')
-      toast(action === 'receive' ? `+${qty} ${item.unit} received · ${r.stock} in store` : r.delta ? `Count set to ${r.stock} (${r.delta > 0 ? '+' : ''}${r.delta})` : 'Count unchanged', 'ok')
+      toast(action === 'receive' ? `+${qty} ${item.unit} received · ${r.stock} in store` : action === 'adjust' ? `Adjusted ${qty > 0 ? '+' : ''}${qty} · ${r.stock} in store` : r.delta ? `Count set to ${r.stock} (${r.delta > 0 ? '+' : ''}${r.delta})` : 'Count unchanged', 'ok')
       load()
       router.refresh()
     } catch (e: any) {
@@ -637,7 +642,22 @@ function StockSection({ item, canStock = true, onConsume, onLoan }: { item: Equi
           </div>
         </div>
       </div>
-      <input className="hc-input mt-2" placeholder="Note (optional) — e.g. H360 requisition or invoice no." value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
+      {/* a quick correction with a reason (found, damaged, expired, a counting mistake…) */}
+      <div className="mt-2">
+        <span className="hc-label">Adjust ± with a reason</span>
+        <div className="flex gap-1.5">
+          <input className="hc-input w-20 min-w-0 text-center" inputMode="numeric" placeholder="±" value={adj} onChange={(e) => setAdj(e.target.value.replace(/[^\d-]/g, ''))} aria-label="Adjust by" />
+          <select className="hc-input min-w-0 flex-1" value={adjWhy} onChange={(e) => setAdjWhy(e.target.value)} aria-label="Reason">
+            {['Counting mistake', 'Found', 'Damaged', 'Expired', 'Wrong entry corrected', 'Other'].map((x) => (
+              <option key={x}>{x}</option>
+            ))}
+          </select>
+          <button type="button" disabled={!!busy} onClick={() => go('adjust')} className={btnClass('o', 'md', 'flex-none bg-white px-3')} title="Adjust the stock">
+            {busy === 'adjust' ? <Loader2 size={15} className="animate-spin" /> : 'Adjust'}
+          </button>
+        </div>
+      </div>
+      <input className="hc-input mt-2" placeholder="Note (optional) — e.g. H360 requisition or invoice no., what happened" value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
       <div className="mt-2 flex flex-wrap gap-1.5">
         {onConsume && (
           <button type="button" onClick={onConsume} className={btnClass('o', 'sm', 'bg-white')}>

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Download, Loader2, PackageMinus, Undo2 } from 'lucide-react'
+import { Download, Loader2, PackageMinus, Pencil, Undo2 } from 'lucide-react'
 import { api, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
@@ -22,6 +22,8 @@ export type ConsumptionRow = {
   voidedAt: string | null
   voidedBy: string | null
   voidReason: string | null
+  requestNo: string | null
+  edits: { at: string; by: string | null; why: string; before: string; after: string }[]
 }
 
 const REASON_LABEL = Object.fromEntries(REASONS) as Record<string, string>
@@ -31,6 +33,7 @@ export function ConsumptionList({ rows, items, month, reason, canManage }: { row
   const router = useRouter()
   const toast = useToast()
   const [consume, setConsume] = useState(false)
+  const [editing, setEditing] = useState<ConsumptionRow | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const live = rows.filter((r) => !r.voidedAt)
   const totalQty = live.reduce((a, r) => a + r.items.reduce((b, i) => b + i.qty, 0), 0)
@@ -117,9 +120,14 @@ export function ConsumptionList({ rows, items, month, reason, canManage }: { row
                   </span>
                 ) : (
                   canManage && (
-                    <button type="button" disabled={busy === r.id} onClick={() => voidIt(r)} className="ml-auto inline-flex items-center gap-1 text-[12.5px] font-semibold text-slate-500 hover:text-[#B91C1C]">
-                      {busy === r.id ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />} Void
-                    </button>
+                    <span className="ml-auto flex items-center gap-3">
+                      <button type="button" onClick={() => setEditing(r)} className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-primary-700 hover:underline">
+                        <Pencil size={13} /> Edit
+                      </button>
+                      <button type="button" disabled={busy === r.id} onClick={() => voidIt(r)} className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-slate-500 hover:text-[#B91C1C]">
+                        {busy === r.id ? <Loader2 size={13} className="animate-spin" /> : <Undo2 size={13} />} Void
+                      </button>
+                    </span>
                   )
                 )}
               </div>
@@ -131,11 +139,34 @@ export function ConsumptionList({ rows, items, month, reason, canManage }: { row
                 ))}
               </div>
               {r.note && <div className="mt-1.5 text-[12.5px] text-slate-500">{r.note}</div>}
+              {r.edits.length > 0 && (
+                <details className="mt-1.5 text-[12px]">
+                  <summary className="cursor-pointer font-semibold text-[#B45309]">Edited {r.edits.length}×</summary>
+                  <ul className="mt-1 flex flex-col gap-0.5 text-slate-600">
+                    {r.edits.map((e, k) => (
+                      <li key={k}>
+                        {when(e.at)}
+                        {e.by ? ` · ${e.by}` : ''} — {e.why}
+                        <span className="block text-slate-400">
+                          {e.before} → {e.after}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
             </div>
           ))}
         </div>
       )}
       {consume && <ConsumeDrawer items={items} onClose={() => setConsume(false)} />}
+      {editing && (
+        <ConsumeDrawer
+          items={items}
+          onClose={() => setEditing(null)}
+          editing={{ id: editing.id, no: editing.no, items: editing.items.map((i) => ({ itemId: i.itemId, qty: i.qty })), reason: editing.reason, note: editing.note, at: editing.at, requestNo: editing.requestNo }}
+        />
+      )}
     </div>
   )
 }

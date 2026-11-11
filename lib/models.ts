@@ -129,6 +129,8 @@ const StoreConsumptionSchema = new Schema<any>(
     voidedAt: Date,
     voidedBy: { type: ObjectId, ref: 'User' },
     voidReason: String,
+    // corrections: who changed what and why (the stock was put right with correction moves)
+    edits: [{ _id: false, at: Date, by: { type: ObjectId, ref: 'User' }, why: String, before: Schema.Types.Mixed, after: Schema.Types.Mixed }],
   },
   { timestamps: true },
 )
@@ -153,10 +155,12 @@ const StoreLoanSchema = new Schema<any>(
     note: String,
     requestId: { type: ObjectId, ref: 'HomecareRequest' },
     by: { type: ObjectId, ref: 'User' },
-    returns: [{ _id: false, at: Date, by: { type: ObjectId, ref: 'User' }, items: [{ _id: false, itemId: { type: ObjectId, ref: 'Equipment' }, qty: Number }], note: String }],
+    returns: [{ _id: false, at: Date, by: { type: ObjectId, ref: 'User' }, items: [{ _id: false, itemId: { type: ObjectId, ref: 'Equipment' }, qty: Number }], note: String, undoneAt: Date, undoneBy: { type: ObjectId, ref: 'User' }, undoReason: String }],
     closedAt: Date,
     writeOffReason: String,
     remindedAt: Date, // last overdue reminder
+    // corrections: who changed what and why (the stock was put right with correction moves)
+    edits: [{ _id: false, at: Date, by: { type: ObjectId, ref: 'User' }, why: String, before: Schema.Types.Mixed, after: Schema.Types.Mixed }],
   },
   { timestamps: true },
 )

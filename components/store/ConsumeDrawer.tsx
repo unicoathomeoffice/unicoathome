@@ -34,15 +34,19 @@ const nowLocal = () => {
   return d.toISOString().slice(0, 16)
 }
 
-export function ConsumeDrawer({ items, preset = [], onClose }: { items: ConsumeItem[]; preset?: string[]; onClose: () => void }) {
+/** an entry being corrected (Consumption tab → Edit) */
+export type EditConsumption = { id: string; no: string; items: { itemId: string; qty: number }[]; reason: string; note: string; at: string; requestNo: string | null }
+
+export function ConsumeDrawer({ items, preset = [], onClose, editing }: { items: ConsumeItem[]; preset?: string[]; onClose: () => void; editing?: EditConsumption }) {
   const router = useRouter()
   const toast = useToast()
-  const [lines, setLines] = useState<{ itemId: string; qty: number }[]>(preset.map((itemId) => ({ itemId, qty: 1 })))
+  const [lines, setLines] = useState<{ itemId: string; qty: number }[]>(editing ? editing.items.map((i) => ({ ...i })) : preset.map((itemId) => ({ itemId, qty: 1 })))
   const [q, setQ] = useState('')
-  const [reason, setReason] = useState<(typeof REASONS)[number][0]>('CLINIC')
-  const [requestNo, setRequestNo] = useState('')
-  const [note, setNote] = useState('')
-  const [at, setAt] = useState(nowLocal())
+  const [reason, setReason] = useState<(typeof REASONS)[number][0]>((editing?.reason as any) ?? 'CLINIC')
+  const [requestNo, setRequestNo] = useState(editing?.requestNo ?? '')
+  const [note, setNote] = useState(editing?.note ?? '')
+  const [at, setAt] = useState(editing ? new Date(new Date(editing.at).getTime() + 6 * 3600_000).toISOString().slice(0, 16) : nowLocal())
+  const [why, setWhy] = useState('')
   const [busy, setBusy] = useState(false)
   const byId = (id: string) => items.find((i) => i._id === id)
   const hits = useMemo(() => {
@@ -59,6 +63,24 @@ export function ConsumeDrawer({ items, preset = [], onClose }: { items: ConsumeI
 
   async function save() {
     if (!lines.length) return toast('Add at least one item', 'err')
+    if (editing) {
+      if (why.trim().length < 3) return toast('Say why it is changed', 'err')
+      setBusy(true)
+      try {
+        const r = await api<{ no: string; changes: string[] }>(`/store/consumptions/${editing.id}`, {
+          method: 'PATCH',
+          body: { items: lines, reason, requestNo: requestNo.trim() || undefined, note: note.trim() || undefined, at: new Date(`${at}:00+06:00`).toISOString(), why: why.trim() },
+        })
+        toast(`${r.no} corrected${r.changes.length ? ` · ${r.changes.join(', ')}` : ''}`, 'ok')
+        router.refresh()
+        onClose()
+      } catch (e: any) {
+        toast(e.message, 'err')
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
     setBusy(true)
     try {
       const r = await api<{ no: string; short: string[] }>('/store/consumptions', {
@@ -78,7 +100,7 @@ export function ConsumeDrawer({ items, preset = [], onClose }: { items: ConsumeI
     <Drawer
       open
       onClose={onClose}
-      title="Consume from store"
+      title={editing ? `Correct ${editing.no}` : 'Consume from store'}
       sub="Take items out by hand — used in clinic, wastage, expired… (also enter it in H360 Department Consumption)"
       width={520}
       footer={
@@ -87,7 +109,7 @@ export function ConsumeDrawer({ items, preset = [], onClose }: { items: ConsumeI
             Cancel
           </button>
           <button type="button" disabled={busy || !lines.length} className={btnClass('p')} onClick={save}>
-            {busy ? <Loader2 size={16} className="animate-spin" /> : <PackageMinus size={16} />} Consume {lines.reduce((a, l) => a + l.qty, 0) || ''}
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <PackageMinus size={16} />} {editing ? 'Save correction' : `Consume ${lines.reduce((a, l) => a + l.qty, 0) || ''}`}
           </button>
         </>
       }
@@ -186,6 +208,13 @@ export function ConsumeDrawer({ items, preset = [], onClose }: { items: ConsumeI
           <span className="hc-label">Note</span>
           <input className="hc-input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="e.g. dressing in OPD, broken pack, H360 consumption no." />
         </label>
+        {editing && (
+          <label>
+            <span className="hc-label">Why the change *</span>
+            <input className="hc-input border-[#FCD34D] bg-[#FFFBEB]" value={why} onChange={(e) => setWhy(e.target.value)} maxLength={200} placeholder="e.g. typed 5 instead of 3, wrong item, wrong department" />
+            <span className="mt-1 block text-[12px] text-slate-500">The stock is put right for the difference and the change is kept in the entry's history.</span>
+          </label>
+        )}
       </div>
     </Drawer>
   )

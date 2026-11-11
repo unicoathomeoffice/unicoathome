@@ -78,7 +78,7 @@ export async function syncVisitStockQuietly(requestId: unknown, user: Actor, opt
 }
 
 export const StockInput = z.object({
-  action: z.enum(['receive', 'count']),
+  action: z.enum(['receive', 'count', 'adjust']), // adjust: + / − qty with a required reason (found, damaged, mistake…)
   qty: z.coerce.number().int().min(-100000).max(1000000),
   note: z.string().trim().max(200).optional(),
 })
@@ -87,10 +87,11 @@ export const StockInput = z.object({
 export async function changeStock(itemId: string, input: z.infer<typeof StockInput>, user: SessionUser, meta: Meta = {}) {
   const item = await Equipment.findById(itemId).select('name stock unit').lean<any>()
   if (!item) throw notFound('Item')
-  const delta = input.action === 'receive' ? input.qty : input.qty - (item.stock ?? 0)
+  const delta = input.action === 'count' ? input.qty - (item.stock ?? 0) : input.qty
   if (input.action === 'receive' && input.qty <= 0) throw bad('Enter how many were received')
+  if (input.action === 'adjust' && (!input.qty || !input.note || input.note.length < 3)) throw bad('Enter + or − qty and the reason')
   if (!delta) return { stock: item.stock ?? 0, delta: 0 }
-  const after = await moveStock(itemId, delta, input.action === 'receive' ? 'RECEIVED' : 'ADJUST', { note: input.note || (input.action === 'receive' ? 'Received' : 'Stock count'), by: user.id })
+  const after = await moveStock(itemId, delta, input.action === 'receive' ? 'RECEIVED' : 'ADJUST', { note: input.action === 'adjust' ? `Adjusted · ${input.note}` : input.note || (input.action === 'receive' ? 'Received' : 'Stock count'), by: user.id })
   await audit(user, input.action === 'receive' ? 'stock.receive' : 'stock.adjust', 'equipment', itemId, { before: { stock: item.stock ?? 0 }, after: { stock: after?.stock, delta, note: input.note }, label: item.name }, meta)
   return { stock: after?.stock ?? 0, delta }
 }
