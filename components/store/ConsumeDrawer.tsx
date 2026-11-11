@@ -9,7 +9,16 @@ import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { groupItems } from '@/lib/store-groups'
 
-export type ConsumeItem = { _id: string; name: string; unit: string; stock?: number; family?: string; variant?: string; brand?: string; isActive?: boolean }
+export type ConsumeItem = { _id: string; name: string; unit: string; stock?: number; family?: string; variant?: string; brand?: string; isActive?: boolean; imageId?: string | null }
+
+/** small item picture (same URL as the store page) */
+function Thumb({ item, size = 28 }: { item: ConsumeItem; size?: number }) {
+  return (
+    <span className="flex flex-none items-center justify-center overflow-hidden rounded-md bg-slate-100 text-[9px] text-slate-400" style={{ width: size, height: size }}>
+      {item.imageId ? <img src={`/api/v1/equipment/${item._id}/image?v=${item.imageId}`} alt="" className="size-full object-cover" loading="lazy" /> : '—'}
+    </span>
+  )
+}
 
 export const REASONS = [
   ['CLINIC', 'Used in clinic / OPD'],
@@ -95,6 +104,7 @@ export function ConsumeDrawer({ items, preset = [], onClose }: { items: ConsumeI
                 g.members.length === 1 ? (
                   <li key={g.members[0]._id}>
                     <button type="button" className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-[14px] hover:bg-slate-50" onClick={() => add(g.members[0]._id)}>
+                      <Thumb item={g.members[0]} />
                       <span className="min-w-0 flex-1 truncate font-semibold">{g.members[0].name}</span>
                       <span className="text-[12px] text-slate-500">
                         {g.members[0].stock ?? 0} {g.members[0].unit} in store
@@ -108,7 +118,8 @@ export function ConsumeDrawer({ items, preset = [], onClose }: { items: ConsumeI
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {g.members.map((c) => (
-                        <button key={c._id} type="button" onClick={() => add(c._id)} title={c.name} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-[13px] hover:border-primary">
+                        <button key={c._id} type="button" onClick={() => add(c._id)} title={c.name} className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1 pl-1 pr-2.5 text-[13px] hover:border-primary">
+                          <Thumb item={c} />
                           <b>{c.variant || c.name}</b>
                           {c.brand && <span className="text-[11.5px] text-slate-500">{c.brand}</span>}
                           <span className="rounded bg-slate-200 px-1 text-[11.5px] font-bold">{c.stock ?? 0}</span>
@@ -129,6 +140,7 @@ export function ConsumeDrawer({ items, preset = [], onClose }: { items: ConsumeI
             const over = c && (c.stock ?? 0) < l.qty
             return (
               <li key={l.itemId} className="flex items-center gap-2.5 px-3 py-2.5">
+                {c && <Thumb item={c} size={36} />}
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-[14px] font-semibold">{c?.name ?? 'Item'}</div>
                   <div className={cx('text-[12px]', over ? 'font-semibold text-[#B45309]' : 'text-slate-500')}>

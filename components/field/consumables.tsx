@@ -119,7 +119,8 @@ export function ConsumablesEditor({ requestId, catalog, initial, editable, back,
                       {g.members.map((c) => {
                         const out = c.stock != null && c.stock <= 0
                         return (
-                          <button key={c._id} type="button" onClick={() => add(c._id)} title={c.name} className={cx('inline-flex min-h-10 items-center gap-1.5 rounded-lg border px-2.5 text-[13px]', out ? 'border-[#FECACA] bg-[#FEF2F2] text-slate-500' : 'border-slate-200 bg-slate-50 hover:border-primary')}>
+                          <button key={c._id} type="button" onClick={() => add(c._id)} title={c.name} className={cx('inline-flex min-h-10 items-center gap-1.5 rounded-lg border py-1 pl-1 pr-2.5 text-[13px]', out ? 'border-[#FECACA] bg-[#FEF2F2] text-slate-500' : 'border-slate-200 bg-slate-50 hover:border-primary')}>
+                            <ItemPicture item={c} size={30} />
                             <b className="text-slate-900">{c.variant || c.name}</b>
                             {c.brand && <span className="text-[11.5px] text-slate-500">{c.brand}</span>}
                             {c.stock != null && <span className={cx('rounded px-1 text-[11.5px] font-bold', out ? 'bg-[#FEE2E2] text-[#B91C1C]' : 'bg-[#DCFCE7] text-[#15803D]')}>{c.stock}</span>}

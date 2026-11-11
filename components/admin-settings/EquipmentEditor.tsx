@@ -11,6 +11,7 @@ import { btnClass, Tag } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { groupItems, parseItemName } from '@/lib/store-groups'
 import { ConsumeDrawer } from '@/components/store/ConsumeDrawer'
+import { usePasteFiles } from '@/components/client/paste'
 
 export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string }
 
@@ -33,8 +34,8 @@ export const equipmentImage = (e: { _id: string; imageId?: string | null }) => (
 export function ItemPicture({ item, size = 48, className }: { item: { _id: string; imageId?: string | null; name: string }; size?: number; className?: string }) {
   const src = equipmentImage(item)
   return (
-    <span className={cx('flex flex-none items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-slate-400', className)} style={{ width: size, height: size }}>
-      {src ? <img src={src} alt={item.name} className="size-full object-cover" loading="lazy" /> : <Package size={Math.round(size * 0.45)} />}
+    <span className={cx('flex flex-none items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-slate-400', className)} style={size ? { width: size, height: size } : undefined}>
+      {src ? <img src={src} alt={item.name} className="size-full object-cover" loading="lazy" /> : <Package size={size ? Math.round(size * 0.45) : 28} />}
     </span>
   )
 }
@@ -146,6 +147,9 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
       )}
       {edit && (
         <EditItem
+          key={edit === 'new' ? 'new' : edit._id}
+          siblings={edit !== 'new' && edit.family ? items.filter((x) => x.family === edit.family && x._id !== edit._id) : []}
+          onOpenSibling={(x) => setEdit(x)}
           item={edit === 'new' ? null : edit}
           onClose={() => setEdit(null)}
           canEdit={canEdit}
@@ -186,22 +190,21 @@ function FamilyCard({ family, members, onOpen }: { family: string; members: Equi
   const total = members.reduce((a, m) => a + Math.max(0, m.stock ?? 0), 0)
   const unit = members[0].unit
   const makers = [...new Set(members.map((m) => m.brand).filter(Boolean))]
-  const pic = members.find((m) => m.imageId) ?? members[0]
   const nOut = members.filter((m) => stockState(m) === 'out').length
+  const [all, setAll] = useState(false)
+  const shown = all ? members : members.slice(0, 8)
   return (
-    <div className="flex flex-col gap-2.5 rounded-card bg-white p-3 shadow-card sm:col-span-2 lg:col-span-1">
-      <div className="flex items-center gap-3">
-        <ItemPicture item={pic} size={52} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[15px] font-bold text-slate-900">{family}</div>
-          <div className="text-[12px] text-slate-500">
-            <b className="text-slate-800">{total}</b> {unit} in store · {members.length} sizes{makers.length ? ` · ${makers.join(', ')}` : ''}
-            {nOut > 0 && <span className="font-semibold text-[#B91C1C]"> · {nOut} out</span>}
-          </div>
+    <div className="flex flex-col gap-2.5 rounded-card bg-white p-3 shadow-card sm:col-span-2">
+      <div className="min-w-0">
+        <div className="truncate text-[15px] font-bold text-slate-900">{family}</div>
+        <div className="text-[12px] text-slate-500">
+          <b className="text-slate-800">{total}</b> {unit} in store · {members.length} sizes{makers.length ? ` · ${makers.join(', ')}` : ''}
+          {nOut > 0 && <span className="font-semibold text-[#B91C1C]"> · {nOut} out</span>}
         </div>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {members.map((m) => {
+      {/* one tile per size: its picture, size, company and stock */}
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-5">
+        {shown.map((m) => {
           const st = stockState(m)
           return (
             <button
@@ -210,23 +213,49 @@ function FamilyCard({ family, members, onOpen }: { family: string; members: Equi
               onClick={() => onOpen(m)}
               title={m.name}
               className={cx(
-                'inline-flex h-8 items-center gap-1.5 rounded-lg border px-2 text-[12.5px] transition hover:ring-1 hover:ring-primary',
-                st === 'out' ? 'border-[#FECACA] bg-[#FEF2F2]' : st === 'low' ? 'border-[#FDE68A] bg-[#FFFBEB]' : 'border-slate-200 bg-slate-50',
+                'group flex flex-col overflow-hidden rounded-lg border text-left transition hover:ring-2 hover:ring-primary/40',
+                st === 'out' ? 'border-[#FECACA]' : st === 'low' ? 'border-[#FDE68A]' : 'border-slate-200',
                 !m.isActive && 'opacity-50',
               )}
             >
-              <b className="text-slate-900">{m.variant || m.name}</b>
-              {m.brand && makers.length > 1 && <span className="text-slate-500">{m.brand}</span>}
-              <span className={cx('rounded px-1 text-[11.5px] font-bold', STOCK_TONE[st])}>{m.stock ?? 0}</span>
+              <span className="relative block aspect-square w-full bg-slate-100">
+                <ItemPicture item={m} size={0} className="!size-full rounded-none" />
+                <span className={cx('absolute right-1 top-1 rounded px-1.5 text-[11.5px] font-bold shadow-sm', STOCK_TONE[st])}>{m.stock ?? 0}</span>
+              </span>
+              <span className="px-1.5 py-1">
+                <b className="block truncate text-[12.5px] text-slate-900">{m.variant || m.name}</b>
+                {m.brand && <span className="block truncate text-[11px] text-slate-500">{m.brand}</span>}
+              </span>
             </button>
           )
         })}
       </div>
+      {members.length > 8 && (
+        <button type="button" onClick={() => setAll(!all)} className="self-start text-[12px] font-semibold text-primary-700 hover:underline">
+          {all ? 'Show fewer' : `+${members.length - 8} more sizes`}
+        </button>
+      )}
     </div>
   )
 }
 
-function EditItem({ item, onClose, canEdit = true, canStock = true, onConsume }: { item: EquipmentDoc | null; onClose: () => void; canEdit?: boolean; canStock?: boolean; onConsume?: (id: string) => void }) {
+function EditItem({
+  item,
+  onClose,
+  canEdit = true,
+  canStock = true,
+  onConsume,
+  siblings = [],
+  onOpenSibling,
+}: {
+  item: EquipmentDoc | null
+  onClose: () => void
+  canEdit?: boolean
+  canStock?: boolean
+  onConsume?: (id: string) => void
+  siblings?: EquipmentDoc[]
+  onOpenSibling?: (i: EquipmentDoc) => void
+}) {
   const router = useRouter()
   const toast = useToast()
   const [f, setF] = useState({ name: item?.name ?? '', type: item?.type ?? ('CONSUMABLE' as const), unit: item?.unit ?? 'pcs', notes: item?.notes ?? '', isActive: item?.isActive ?? true, alertBelow: String(item?.alertBelow ?? 0), family: item?.family ?? '', variant: item?.variant ?? '', brand: item?.brand ?? '', h360Code: item?.h360Code ?? '' })
@@ -234,6 +263,15 @@ function EditItem({ item, onClose, canEdit = true, canStock = true, onConsume }:
   const [preview, setPreview] = useState<string | null>(item ? equipmentImage(item) : null)
   const [busy, setBusy] = useState<null | 'save' | 'delete'>(null)
   const pick = useRef<HTMLInputElement>(null)
+  const noPic = siblings.filter((x) => !x.imageId).length
+  const [forFamily, setForFamily] = useState(false)
+  const takePicture = (x: File) => {
+    setFile(x)
+    setPreview(URL.createObjectURL(x))
+    if (noPic) setForFamily(true)
+  }
+  // paste (Ctrl+V) or drop a photo straight onto the drawer
+  const { over, dropProps } = usePasteFiles((files) => files[0] && takePicture(files[0]), { accept: ['image/*'] })
 
   async function save() {
     if (f.name.trim().length < 2) return toast('Enter the item name', 'err')
@@ -247,7 +285,32 @@ function EditItem({ item, onClose, canEdit = true, canStock = true, onConsume }:
         form.append('file', await compressImage(file, false))
         await api(`/equipment/${id}/image`, { form })
       }
+      // the same picture for the other sizes of the family that have none
+      if (forFamily && (file || item?.imageId) && f.family.trim()) {
+        const r = await api<{ count: number }>(`/equipment/${id}/image/family`, { body: {} })
+        if (r.count) toast(`Picture used for ${r.count} more size${r.count === 1 ? '' : 's'}`, 'ok')
+      }
       toast(item ? 'Item saved' : 'Item added', 'ok')
+      router.refresh()
+      onClose()
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setBusy(null)
+    }
+  }
+  /** store managers without catalog rights: only the picture is saved */
+  async function savePicture() {
+    if (!item) return
+    setBusy('save')
+    try {
+      if (file) {
+        const form = new FormData()
+        form.append('file', await compressImage(file, false))
+        await api(`/equipment/${item._id}/image`, { form })
+      }
+      if (forFamily && item.family) await api(`/equipment/${item._id}/image/family`, { body: {} })
+      toast('Picture saved', 'ok')
       router.refresh()
       onClose()
     } catch (e: any) {
@@ -304,8 +367,8 @@ function EditItem({ item, onClose, canEdit = true, canStock = true, onConsume }:
           <button type="button" className={btnClass('o')} onClick={onClose}>
             Cancel
           </button>
-          {canEdit && (
-            <button type="button" disabled={!!busy} className={btnClass('p')} onClick={save}>
+          {(canEdit || (canStock && (file || forFamily))) && (
+            <button type="button" disabled={!!busy} className={btnClass('p')} onClick={canEdit ? save : savePicture}>
               {busy === 'save' ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
             </button>
           )}
@@ -314,13 +377,33 @@ function EditItem({ item, onClose, canEdit = true, canStock = true, onConsume }:
     >
       <div className="flex flex-col gap-4">
         {item && <StockSection item={item} canStock={canStock} onConsume={onConsume ? () => onConsume(item._id) : undefined} />}
-        <div className="flex items-center gap-4">
+        {siblings.length > 0 && (
+          <div>
+            <div className="mb-1 text-[12px] font-semibold text-slate-600">Other sizes in {item?.family}</div>
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {siblings.map((x) => (
+                <button key={x._id} type="button" onClick={() => onOpenSibling?.(x)} title={x.name} className="flex w-[64px] flex-none flex-col items-center gap-0.5 rounded-lg p-1 hover:bg-slate-50">
+                  <ItemPicture item={x} size={52} />
+                  <span className="w-full truncate text-center text-[11px] font-semibold">{x.variant || x.name}</span>
+                  <span className={cx('rounded px-1 text-[10.5px] font-bold', STOCK_TONE[stockState(x)])}>{x.stock ?? 0}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div {...(dropProps as any)} className={cx('flex items-center gap-4 rounded-xl p-1', over && 'bg-primary-50 ring-2 ring-primary')}>
           <span className="flex size-28 flex-none items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-400">{preview ? <img src={preview} alt="" className="size-full object-cover" /> : <ImageOff size={30} />}</span>
           <div className="flex flex-col gap-2">
             <button type="button" className={btnClass('o', 'sm')} onClick={() => pick.current?.click()}>
               <Camera size={15} /> {preview ? 'Change picture' : 'Add picture'}
             </button>
-            <span className="text-[12px] text-slate-500">A clear photo of the item, so staff recognise it when packing.</span>
+            <span className="text-[12px] text-slate-500">A clear photo — or paste (Ctrl+V) / drop one here.</span>
+            {!!f.family.trim() && siblings.length > 0 && (preview || file) && (
+              <label className="flex items-center gap-2 text-[12.5px]">
+                <input type="checkbox" className="size-4 accent-[#0090CA]" checked={forFamily} onChange={(e) => setForFamily(e.target.checked)} />
+                Use for the other sizes{noPic ? ` without a picture (${noPic})` : ''}
+              </label>
+            )}
             <input
               ref={pick}
               type="file"
@@ -330,8 +413,7 @@ function EditItem({ item, onClose, canEdit = true, canStock = true, onConsume }:
                 const x = e.target.files?.[0]
                 e.target.value = ''
                 if (!x) return
-                setFile(x)
-                setPreview(URL.createObjectURL(x))
+                takePicture(x)
               }}
             />
           </div>
