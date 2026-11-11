@@ -12,6 +12,7 @@ import { ConsumptionList } from '@/components/store/ConsumptionList'
 import { listConsumptions } from '@/lib/services/store-consumption'
 import { StoreReconcile } from '@/components/store/StoreReconcile'
 import { LoanList } from '@/components/store/LoanList'
+import { MovesList } from '@/components/store/MovesList'
 import { listLoans, loanBalances, loansByItem } from '@/lib/services/store-loans'
 import { StoreLoan } from '@/lib/models'
 
@@ -23,7 +24,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   if (!can(user, 'requests.manage') && !can(user, 'store.manage')) redirect('/dashboard?denied=1')
   const sp = await searchParams
   const manage = can(user, 'store.manage')
-  const tab = manage && (sp.tab === 'consumption' || sp.tab === 'h360' || sp.tab === 'loans') ? sp.tab : 'items'
+  const tab = manage && (sp.tab === 'consumption' || sp.tab === 'h360' || sp.tab === 'loans' || sp.tab === 'moves') ? sp.tab : 'items'
   const openLoans = manage ? await StoreLoan.countDocuments({ status: { $in: ['OPEN', 'PARTLY_RETURNED'] } }) : 0
   const last = manage ? await Setting.findOne({ key: 'store:lastCompare' }).lean<any>() : null
   const items = await Equipment.find({}).sort(MASTER.equipment.sort).lean<any[]>()
@@ -34,9 +35,18 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
           { key: 'loans', label: 'Loans', href: '/store?tab=loans&status=open', count: openLoans || undefined },
           { key: 'h360', label: 'H360 match', href: '/store?tab=h360', count: last?.value?.differences ?? undefined },
           { key: 'consumption', label: 'Consumption', href: '/store?tab=consumption' },
+          { key: 'moves', label: 'Movements', href: '/store?tab=moves' },
         ]
       : []),
   ]
+  if (tab === 'moves') {
+    return (
+      <AdminPage title="Store" crumbs="Nursing Services – Family Medicine · every stock movement">
+        <Tabs items={tabs} active={tab} className="mb-4" />
+        <MovesList items={items.map((i) => ({ _id: String(i._id), name: i.name }))} />
+      </AdminPage>
+    )
+  }
   if (tab === 'loans') {
     const filter = { status: sp.status ?? 'open', direction: sp.direction ?? '', partner: sp.partner ?? '' }
     const [rows, balances] = await Promise.all([listLoans(filter), loanBalances()])

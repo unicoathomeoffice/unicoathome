@@ -117,3 +117,58 @@ export async function stockHistory(itemId: string, limit = 30) {
     }
   })
 }
+
+export const ReceiveInput = z.object({
+  items: z.array(z.object({ itemId: z.string().regex(/^[a-f0-9]{24}$/i), qty: z.coerce.number().int().min(1).max(1000000) })).min(1, 'Add at least one item').max(80),
+  ref: z.string().trim().max(60).optional(), // H360 indent / issue no, supplier invoice…
+  from: z.string().trim().max(80).optional(), // "Central store (H360 indent)", supplier
+  note: z.string().trim().max(200).optional(),
+})
+
+/** Several items received at once (H360 indent, supplier) — one RECEIVED move each, one audit row. */
+export async function receiveItems(input: z.infer<typeof ReceiveInput>, user: SessionUser, meta: Meta = {}) {
+  const merged = new Map<string, number>()
+  for (const x of input.items) merged.set(x.itemId, (merged.get(x.itemId) ?? 0) + x.qty)
+  const items = await Equipment.find({ _id: { $in: [...merged.keys()] } }).select('name').lean<any[]>()
+  if (items.length !== merged.size) throw bad('An item is no longer in the store')
+  const note = ['Received', input.from && `from ${input.from}`, input.ref && `ref ${input.ref}`, input.note].filter(Boolean).join(' · ')
+  for (const [id, qty] of merged) await moveStock(id, qty, 'RECEIVED', { note, by: user.id })
+  await audit(user, 'stock.receive', 'store', input.ref ?? 'receive', { after: { from: input.from, ref: input.ref, items: [...merged].map(([id, q]) => `${items.find((i) => String(i._id) === id)?.name} × ${q}`) } }, meta)
+  return { ok: true, count: merged.size }
+}
+
+/** The store ledger: every move with item, reason, balance, who and the visit / loan / consumption it belongs to. */
+export async function listMoves(f: { itemId?: string; reason?: string; from?: string; to?: string } = {}, limit = 500) {
+  const q: Record<string, unknown> = {}
+  if (f.itemId && /^[a-f0-9]{24}$/i.test(f.itemId)) q.itemId = f.itemId
+  if (f.reason) q.reason = f.reason === 'LOAN' ? { $in: ['LOAN_IN', 'LOAN_OUT', 'LOAN_RETURN_IN', 'LOAN_RETURN_OUT'] } : f.reason
+  const at: Record<string, Date> = {}
+  if (f.from && /^\d{4}-\d{2}-\d{2}$/.test(f.from)) at.$gte = new Date(`${f.from}T00:00:00+06:00`)
+  if (f.to && /^\d{4}-\d{2}-\d{2}$/.test(f.to)) at.$lt = new Date(new Date(`${f.to}T00:00:00+06:00`).getTime() + 86400_000)
+  if (Object.keys(at).length) q.at = at
+  const moves = await StockMove.find(q).sort({ at: -1 }).limit(limit).lean<any[]>()
+  const [items, users, reqs] = await Promise.all([
+    Equipment.find({ _id: { $in: [...new Set(moves.map((m) => String(m.itemId)))] } }).select('name unit').lean<any[]>(),
+    User.find({ _id: { $in: [...new Set(moves.map((m) => String(m.by ?? '')).filter(Boolean))] } }).select('name').lean<any[]>(),
+    HomecareRequest.find({ _id: { $in: [...new Set(moves.map((m) => String(m.requestId ?? '')).filter(Boolean))] } }).select('requestNo patientSnapshot.name').lean<any[]>(),
+  ])
+  return moves.map((m) => {
+    const it = items.find((i) => String(i._id) === String(m.itemId))
+    const r = reqs.find((x) => String(x._id) === String(m.requestId))
+    return {
+      id: String(m._id),
+      at: new Date(m.at).toISOString(),
+      itemId: String(m.itemId),
+      item: it?.name ?? 'Item',
+      unit: it?.unit ?? '',
+      delta: m.delta,
+      balance: m.balance ?? null,
+      reason: m.reason as string,
+      note: m.note ?? '',
+      by: users.find((u) => String(u._id) === String(m.by))?.name ?? null,
+      requestId: r ? String(r._id) : null,
+      requestNo: r?.requestNo ?? null,
+      patient: r?.patientSnapshot?.name ?? null,
+    }
+  })
+}

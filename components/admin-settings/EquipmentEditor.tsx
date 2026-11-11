@@ -16,6 +16,7 @@ import { ImageEditor } from '@/components/store/ImageEditor'
 import { ImageViewer } from '@/components/store/ImageViewer'
 import { AddItemChooser } from '@/components/store/AddItemChooser'
 import { LoanDrawer } from '@/components/store/LoanDrawer'
+import { ReceiveDrawer } from '@/components/store/ReceiveDrawer'
 
 export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string; lentOut?: number; borrowed?: number }
 
@@ -55,6 +56,7 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
   const [viewer, setViewer] = useState<EquipmentDoc | null>(null)
   const [adding, setAdding] = useState<null | { tab: 'h360' | 'store' | 'copy' | 'bulk'; copyFrom?: string }>(null)
   const [loan, setLoan] = useState<null | { direction: 'TAKEN' | 'GIVEN'; preset: string[] }>(null)
+  const [receiving, setReceiving] = useState(false)
   const canPic = canEdit || canStock
   const open = (i: EquipmentDoc) => (canEdit || canStock) && setEdit(i)
   const brands = useMemo(() => [...new Set(items.map((i) => i.brand).filter(Boolean) as string[])].sort(), [items])
@@ -123,6 +125,9 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
         </label>
         {canStock && (
           <>
+            <button type="button" className={btnClass('o')} onClick={() => setReceiving(true)}>
+              <PackagePlus size={16} /> Receive
+            </button>
             <button type="button" className={btnClass('o')} onClick={() => setConsume([])}>
               <PackageMinus size={16} /> Consume
             </button>
@@ -181,6 +186,7 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
         />
       )}
       {consume && <ConsumeDrawer items={items} preset={consume} onClose={() => setConsume(null)} />}
+      {receiving && <ReceiveDrawer items={items} onClose={() => setReceiving(false)} />}
       {loan && <LoanDrawer direction={loan.direction} preset={loan.preset} items={items} onClose={() => setLoan(null)} />}
       {adding && <AddItemChooser items={items} preset={adding} onClose={() => setAdding(null)} onBlank={canEdit ? () => (setAdding(null), setEdit('new')) : undefined} />}
       {viewer && <ImageViewer item={viewer} canEdit={canPic} siblings={viewer.family ? items.filter((x) => x.family === viewer.family && x._id !== viewer._id).length : 0} onClose={() => setViewer(null)} />}
