@@ -2,7 +2,7 @@
 import Link, { useLinkStatus } from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Suspense, use, useEffect, useState } from 'react'
-import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X, MapPinned, Receipt, Send } from 'lucide-react'
+import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X, MapPinned, Receipt, Send, Package } from 'lucide-react'
 import { cx } from '@/lib/format'
 import { api } from '@/components/client/api'
 import { OutboxBadge } from '@/components/client/WaReview'
@@ -21,6 +21,8 @@ const NAV: { href: string; label: string; icon: any; countKey?: string; perm?: P
   { href: '/staff', label: 'Staff', icon: UserRound, perm: 'users.read' },
   { href: '/reports', label: 'Reports', icon: BarChart3, perm: 'reports.view' },
   { href: '/claims', label: 'Claims', icon: Receipt, perm: 'approvals.decide' },
+  // the Family Medicine store (stock, sizes & companies, H360 match) — badge: items low or out of stock
+  { href: '/store', label: 'Store', icon: Package, countKey: 'store', perm: (p) => p.includes('requests.manage') || p.includes('store.manage') },
   { href: '/messages', label: 'Messages', icon: Mail, perm: (p) => p.includes('requests.readAll') && (p.includes('messages.send') || p.includes('reports.view')) },
   { href: '/outbox', label: 'WhatsApp outbox', icon: Send, countKey: 'outbox', perm: 'messages.approve' }, // messages waiting for approval
   { href: '/notifications', label: 'Notifications', icon: Bell, countKey: 'unread' },
@@ -32,7 +34,6 @@ const SETTINGS_SUB: { href: string; label: string; perm: Perm }[] = [
   { href: '/settings', label: 'General & integrations', perm: SETTINGS_HUB },
   { href: '/settings/designations', label: 'Designations & departments', perm: 'master.manage' },
   { href: '/settings/services', label: 'Service types', perm: 'requests.manage' },
-  { href: '/settings/equipment', label: 'Equipment & consumables', perm: 'requests.manage' },
   { href: '/settings/roles', label: 'Roles & permissions', perm: 'users.manage' },
   { href: '/settings/fleet', label: 'Fleet & drivers', perm: 'transport.manage' },
   { href: '/settings/zones', label: 'Zones, slots & rules', perm: 'requests.manage' },
@@ -163,7 +164,7 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Promise<Recor
 function Count({ counts, k }: { counts: Promise<Record<string, number>>; k: string }) {
   const count = use(counts)[k] ?? 0
   if (count <= 0) return null
-  return k === 'unread' ? (
+  return k === 'unread' || k === 'store' ? (
     <span className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#DC2626] px-1.5 text-[11px] font-bold">{count}</span>
   ) : (
     <span className="text-[12px] text-white/60">{count}</span>

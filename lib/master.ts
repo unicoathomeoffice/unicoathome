@@ -105,6 +105,10 @@ export const MASTER: Record<string, Master> = {
       unit: z.string().trim().min(1).max(20).default('pcs'),
       notes: z.string().max(300).optional(),
       alertBelow: z.number().int().min(0).max(100000).optional(), // low-stock level (the count itself changes only through stock moves)
+      family: z.string().trim().max(60).optional(), // "IV cannula" — items with the same family show together
+      variant: z.string().trim().max(40).optional(), // "22G"
+      brand: z.string().trim().max(40).optional(), // "B Braun"
+      h360Code: z.string().trim().max(30).optional(),
       isActive: z.boolean().default(true),
       sortOrder: z.number().default(0),
     }),

@@ -359,7 +359,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
             <h2 className="mb-2 text-base font-bold">Consumables used</h2>
             <ConsumablesEditor
               requestId={id}
-              catalog={plain(await Equipment.find({ type: 'CONSUMABLE' }).sort({ sortOrder: 1, name: 1 }).select('name unit imageId stock').lean<any[]>())}
+              catalog={plain(await Equipment.find({ type: 'CONSUMABLE' }).sort({ sortOrder: 1, name: 1 }).select('name unit imageId stock family variant brand').lean<any[]>())}
               initial={(r.visit?.consumables ?? []).filter((c: any) => c.itemId).map((c: any) => ({ itemId: String(c.itemId), qty: c.qty }))}
               editable={perms.manage}
               big={false}

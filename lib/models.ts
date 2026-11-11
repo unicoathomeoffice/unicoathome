@@ -80,6 +80,11 @@ const EquipmentSchema = new Schema<any>(
     // the store: how many are in stock now (lib/services/stock.ts keeps it, every change is a StockMove)
     stock: { type: Number, default: 0 },
     alertBelow: { type: Number, default: 0 }, // low-stock level (0 = no alert)
+    // smart grouping (lib/store-groups.ts): "IV cannula" · "22G" · "B Braun" — siblings share the family
+    family: String,
+    variant: String,
+    brand: String,
+    h360Code: { type: String, index: true }, // item code in H360 (Nursing Services - Family Medicine sub-store)
   },
   opts,
 )

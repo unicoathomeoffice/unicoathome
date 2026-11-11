@@ -474,7 +474,7 @@ function KitSection({ kit, setKit, catalog, canEdit }: { kit: KitRow[]; setKit: 
         </div>
         <div className="text-[12px] text-slate-500">
           Staff pack these before the journey · <b>Must take</b> blocks Start journey until packed ·{' '}
-          <a href="/settings/equipment" className="font-semibold text-primary-700 hover:underline">
+          <a href="/store" className="font-semibold text-primary-700 hover:underline">
             Manage items
           </a>
         </div>

@@ -8,8 +8,9 @@ import { Loader2, Minus, Plus, Search } from 'lucide-react'
 import { api, useToast } from '@/components/client'
 import { ItemPicture } from '@/components/admin-settings/EquipmentEditor'
 import { cx } from '@/lib/format'
+import { groupItems } from '@/lib/store-groups'
 
-export type CatalogRow = { _id: string; name: string; unit: string; imageId?: string | null; stock?: number }
+export type CatalogRow = { _id: string; name: string; unit: string; imageId?: string | null; stock?: number; family?: string; variant?: string; brand?: string }
 type Line = { itemId: string; qty: number }
 
 export function ConsumablesEditor({ requestId, catalog, initial, editable, back, big = true }: { requestId: string; catalog: CatalogRow[]; initial: Line[]; editable: boolean; back?: string; big?: boolean }) {
@@ -20,7 +21,17 @@ export function ConsumablesEditor({ requestId, catalog, initial, editable, back,
   const [busy, setBusy] = useState(false)
   const byId = (id: string) => catalog.find((c) => c._id === id)
   const dirty = JSON.stringify(lines) !== JSON.stringify(initial)
-  const hits = useMemo(() => (q.trim() ? catalog.filter((c) => !lines.some((l) => l.itemId === c._id) && c.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8) : []), [q, catalog, lines])
+  // search by item, family, size or company ("cannula 22", "braun"); a family's sizes come back as one row of chips
+  const hits = useMemo(() => {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    if (!words.length) return []
+    const found = catalog.filter((c) => !lines.some((l) => l.itemId === c._id) && words.every((w) => [c.name, c.family, c.variant, c.brand].some((f) => (f ?? '').toLowerCase().includes(w))))
+    return groupItems(found).slice(0, 8)
+  }, [q, catalog, lines])
+  const add = (id: string) => {
+    setLines((x) => [...x, { itemId: id, qty: 1 }])
+    setQ('')
+  }
   // what the store can still give this visit: its stock plus what this visit already took (saved before)
   const avail = (id: string) => {
     const st = byId(id)?.stock
@@ -89,22 +100,36 @@ export function ConsumablesEditor({ requestId, catalog, initial, editable, back,
           </label>
           {!!hits.length && (
             <ul className="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-lg">
-              {hits.map((c) => (
-                <li key={c._id}>
-                  <button
-                    type="button"
-                    className="flex min-h-12 w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] hover:bg-slate-50"
-                    onClick={() => {
-                      setLines((x) => [...x, { itemId: c._id, qty: 1 }])
-                      setQ('')
-                    }}
-                  >
-                    <ItemPicture item={c} size={34} />
-                    <span className="min-w-0 flex-1 truncate font-semibold">{c.name}</span>
-                    <span className={cx('text-[12px]', c.stock != null && c.stock <= 0 ? 'font-semibold text-[#B91C1C]' : 'text-slate-500')}>{c.stock != null ? `${c.stock} ${c.unit} in store` : c.unit}</span>
-                  </button>
-                </li>
-              ))}
+              {hits.map((g) =>
+                g.members.length === 1 ? (
+                  <li key={g.members[0]._id}>
+                    <button type="button" className="flex min-h-12 w-full items-center gap-2.5 px-3 py-2 text-left text-[14px] hover:bg-slate-50" onClick={() => add(g.members[0]._id)}>
+                      <ItemPicture item={g.members[0]} size={34} />
+                      <span className="min-w-0 flex-1 truncate font-semibold">{g.members[0].name}</span>
+                      <span className={cx('text-[12px]', g.members[0].stock != null && g.members[0].stock <= 0 ? 'font-semibold text-[#B91C1C]' : 'text-slate-500')}>{g.members[0].stock != null ? `${g.members[0].stock} ${g.members[0].unit} in store` : g.members[0].unit}</span>
+                    </button>
+                  </li>
+                ) : (
+                  <li key={g.family} className="px-3 py-2">
+                    <div className="mb-1.5 flex items-center gap-2 text-[14px] font-semibold">
+                      <ItemPicture item={g.members[0]} size={28} /> {g.family}
+                      <span className="text-[12px] font-normal text-slate-500">· pick the size</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {g.members.map((c) => {
+                        const out = c.stock != null && c.stock <= 0
+                        return (
+                          <button key={c._id} type="button" onClick={() => add(c._id)} title={c.name} className={cx('inline-flex min-h-10 items-center gap-1.5 rounded-lg border px-2.5 text-[13px]', out ? 'border-[#FECACA] bg-[#FEF2F2] text-slate-500' : 'border-slate-200 bg-slate-50 hover:border-primary')}>
+                            <b className="text-slate-900">{c.variant || c.name}</b>
+                            {c.brand && <span className="text-[11.5px] text-slate-500">{c.brand}</span>}
+                            {c.stock != null && <span className={cx('rounded px-1 text-[11.5px] font-bold', out ? 'bg-[#FEE2E2] text-[#B91C1C]' : 'bg-[#DCFCE7] text-[#15803D]')}>{c.stock}</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </li>
+                ),
+              )}
             </ul>
           )}
         </div>

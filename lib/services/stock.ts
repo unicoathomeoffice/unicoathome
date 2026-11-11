@@ -29,7 +29,7 @@ export async function moveStock(itemId: unknown, delta: number, reason: Reason, 
           type: 'SYSTEM',
           title: item.stock <= 0 ? `${item.name} — out of stock` : `${item.name} low — ${item.stock} ${item.unit} left`,
           body: 'Store · Equipment & consumables',
-          url: '/settings/equipment',
+          url: '/store',
           priority: item.stock <= 0 ? 'high' : 'normal',
         }),
       )

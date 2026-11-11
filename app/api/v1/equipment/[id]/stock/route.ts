@@ -17,5 +17,5 @@ export const POST = route<{ id: string }>(
     if (!isOid(params.id)) throw bad('Invalid item')
     return changeStock(params.id, await body(req, StockInput), user, clientMeta(req, user))
   },
-  { perm: 'master.manage' },
+  { perm: 'store.manage' },
 )

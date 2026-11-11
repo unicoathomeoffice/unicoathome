@@ -20,6 +20,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   'transport.drive': 'Drive: pick-up / drop / return stamps',
   'messages.send': 'Send email / WhatsApp from a record',
   'messages.approve': 'Approve WhatsApp (Outbox: preview, edit, send)',
+  'store.manage': 'Store: receive, count, consume by hand, match with H360',
   'reports.view': 'Reports & export',
   'audit.view': 'Audit log',
   'approvals.decide': 'Approvals (petty cash, reschedules, new users)',

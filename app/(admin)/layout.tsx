@@ -1,5 +1,5 @@
 import { requireWebUser } from '@/lib/auth'
-import { HomecareRequest } from '@/lib/models'
+import { Equipment, HomecareRequest } from '@/lib/models'
 import { unreadCount } from '@/lib/unread'
 import { ROLE_LABEL, ACTIVE_STATUSES, permissionsFor } from '@/lib/constants'
 import { Sidebar } from '@/components/admin/Sidebar'
@@ -13,7 +13,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const counts = Promise.all([
     HomecareRequest.countDocuments({ status: { $in: ACTIVE_STATUSES }, deletedAt: null }),
     unreadCount(user.id), // shared with AdminPage's bell — one query per request
-  ]).then(([open, unread]) => ({ open, unread }))
+    // store items low (at / below their alert level) or out of stock
+    Equipment.countDocuments({ isActive: { $ne: false }, $or: [{ stock: { $lte: 0 } }, { $expr: { $and: [{ $gt: ['$alertBelow', 0] }, { $lte: ['$stock', '$alertBelow'] }] } }] }),
+  ]).then(([open, unread, store]) => ({ open, unread, store }))
   // admins approve every WhatsApp: the "Review & send" window opens after any click that created messages
   const review = can(user, 'messages.approve') && (await getSettings()).whatsapp.approval !== 'OFF'
   return (

@@ -9,8 +9,9 @@ import { Camera, ClipboardCheck, EyeOff, ImageOff, Loader2, Package, PackagePlus
 import { api, compressImage, Drawer, Segmented, Toggle, useToast } from '@/components/client'
 import { btnClass, Tag } from '@/components/ui'
 import { cx } from '@/lib/format'
+import { groupItems, parseItemName } from '@/lib/store-groups'
 
-export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number }
+export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string }
 
 /** out ≤ 0 · low ≤ alert level · ok */
 export const stockState = (i: { stock?: number; alertBelow?: number }) => ((i.stock ?? 0) <= 0 ? 'out' : (i.alertBelow ?? 0) > 0 && (i.stock ?? 0) <= (i.alertBelow ?? 0) ? 'low' : 'ok')
@@ -37,15 +38,26 @@ export function ItemPicture({ item, size = 48, className }: { item: { _id: strin
   )
 }
 
-export function EquipmentEditor({ items, canEdit }: { items: EquipmentDoc[]; canEdit: boolean }) {
+export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items: EquipmentDoc[]; canEdit: boolean; canStock?: boolean }) {
   const [q, setQ] = useState('')
   const [type, setType] = useState<'ALL' | 'EQUIPMENT' | 'CONSUMABLE' | 'LOW'>('ALL')
+  const [brand, setBrand] = useState('')
+  const [view, setView] = useState<'GROUPED' | 'ALL'>('GROUPED')
   const [hidden, setHidden] = useState(false)
   const [edit, setEdit] = useState<EquipmentDoc | 'new' | null>(null)
-  const shown = useMemo(
-    () => items.filter((i) => (hidden || i.isActive) && (type === 'ALL' || (type === 'LOW' ? stockState(i) !== 'ok' : i.type === type)) && (!q.trim() || i.name.toLowerCase().includes(q.trim().toLowerCase()))),
-    [items, q, type, hidden],
-  )
+  const open = (i: EquipmentDoc) => (canEdit || canStock) && setEdit(i)
+  const brands = useMemo(() => [...new Set(items.map((i) => i.brand).filter(Boolean) as string[])].sort(), [items])
+  const shown = useMemo(() => {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean)
+    return items.filter(
+      (i) =>
+        (hidden || i.isActive) &&
+        (type === 'ALL' || (type === 'LOW' ? stockState(i) !== 'ok' : i.type === type)) &&
+        (!brand || i.brand === brand) &&
+        words.every((w) => [i.name, i.family, i.variant, i.brand, i.h360Code].some((f) => (f ?? '').toLowerCase().includes(w))),
+    )
+  }, [items, q, type, brand, hidden])
+  const groups = useMemo(() => groupItems(shown), [shown])
   const active = items.filter((i) => i.isActive)
   const nLow = active.filter((i) => stockState(i) === 'low').length
   const nOut = active.filter((i) => stockState(i) === 'out').length
@@ -53,7 +65,7 @@ export function EquipmentEditor({ items, canEdit }: { items: EquipmentDoc[]; can
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-600">
         <span>
-          <b className="text-slate-900">{active.length}</b> items in the store
+          <b className="text-slate-900">{active.length}</b> items
         </span>
         <span>
           <b className="text-slate-900">{active.reduce((a, i) => a + Math.max(0, i.stock ?? 0), 0).toLocaleString('en-US')}</b> units in stock
@@ -65,20 +77,38 @@ export function EquipmentEditor({ items, canEdit }: { items: EquipmentDoc[]; can
       <div className="flex flex-wrap items-center gap-3">
         <label className="relative min-w-[220px] flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="hc-input pl-9" placeholder="Search items" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="hc-input pl-9" placeholder="Search — item, size, company or H360 code (e.g. cannula 22G, braun)" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
         <Segmented
           value={type}
           onChange={setType}
           items={[
-            { value: 'ALL', label: `All · ${items.filter((i) => i.isActive).length}` },
+            { value: 'ALL', label: `All · ${active.length}` },
             { value: 'CONSUMABLE', label: 'Consumables' },
             { value: 'EQUIPMENT', label: 'Equipment' },
             { value: 'LOW', label: `Low / out · ${nLow + nOut}` },
           ]}
         />
+        {brands.length > 0 && (
+          <select className="hc-input w-auto" value={brand} onChange={(e) => setBrand(e.target.value)} aria-label="Company">
+            <option value="">All companies</option>
+            {brands.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        )}
+        <Segmented
+          value={view}
+          onChange={setView}
+          items={[
+            { value: 'GROUPED', label: 'By family' },
+            { value: 'ALL', label: 'All items' },
+          ]}
+        />
         <label className="flex items-center gap-2 text-[13px] text-slate-600">
-          <Toggle on={hidden} onChange={setHidden} label="Show hidden items" /> Show hidden
+          <Toggle on={hidden} onChange={setHidden} label="Show hidden items" /> Hidden
         </label>
         {canEdit && (
           <button type="button" className={btnClass('p')} onClick={() => setEdit('new')}>
@@ -90,33 +120,97 @@ export function EquipmentEditor({ items, canEdit }: { items: EquipmentDoc[]; can
         <div className="rounded-card bg-white px-6 py-12 text-center text-[14px] text-slate-500 shadow-card">
           {items.length ? 'No items match.' : 'No items yet — add the instruments and consumables your teams take on visits (e.g. IV cannula, gloves, BP machine).'}
         </div>
+      ) : view === 'GROUPED' ? (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          {groups.map((g) =>
+            g.members.length === 1 ? (
+              <ItemCard key={g.members[0]._id} i={g.members[0]} onOpen={open} clickable={canEdit || canStock} />
+            ) : (
+              <FamilyCard key={g.family} family={g.family} members={g.members} onOpen={open} />
+            ),
+          )}
+        </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {shown.map((i) => (
-            <button key={i._id} type="button" onClick={() => canEdit && setEdit(i)} className={cx('flex items-center gap-3 rounded-card bg-white p-3 text-left shadow-card', canEdit && 'hover:ring-1 hover:ring-primary', !i.isActive && 'opacity-60')}>
-              <ItemPicture item={i} size={64} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14.5px] font-bold text-slate-900">{i.name}</span>
-                <span className="mt-1 flex flex-wrap items-center gap-1.5">
-                  <StockChip item={i} />
-                  <Tag tone={i.type === 'EQUIPMENT' ? 'indigo' : 'blue'}>{i.type === 'EQUIPMENT' ? 'Equipment' : 'Consumable'}</Tag>
-                  {!i.isActive && <Tag tone="slate">Hidden</Tag>}
-                </span>
-                {!!i.inUse && <span className="mt-0.5 block text-[11.5px] text-slate-400">Used in {i.inUse} service / visit record{i.inUse === 1 ? '' : 's'}</span>}
-              </span>
-            </button>
+            <ItemCard key={i._id} i={i} onOpen={open} clickable={canEdit || canStock} />
           ))}
         </div>
       )}
-      {edit && <EditItem item={edit === 'new' ? null : edit} onClose={() => setEdit(null)} />}
+      {edit && <EditItem item={edit === 'new' ? null : edit} onClose={() => setEdit(null)} canEdit={canEdit} canStock={canStock} />}
     </div>
   )
 }
 
-function EditItem({ item, onClose }: { item: EquipmentDoc | null; onClose: () => void }) {
+function ItemCard({ i, onOpen, clickable }: { i: EquipmentDoc; onOpen: (i: EquipmentDoc) => void; clickable: boolean }) {
+  return (
+    <button type="button" onClick={() => onOpen(i)} className={cx('flex items-center gap-3 rounded-card bg-white p-3 text-left shadow-card', clickable && 'hover:ring-1 hover:ring-primary', !i.isActive && 'opacity-60')}>
+      <ItemPicture item={i} size={64} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14.5px] font-bold text-slate-900" title={i.name}>
+          {i.name}
+        </span>
+        <span className="mt-1 flex flex-wrap items-center gap-1.5">
+          <StockChip item={i} />
+          <Tag tone={i.type === 'EQUIPMENT' ? 'indigo' : 'blue'}>{i.type === 'EQUIPMENT' ? 'Equipment' : 'Consumable'}</Tag>
+          {i.brand && <span className="text-[11.5px] font-semibold text-slate-500">{i.brand}</span>}
+          {!i.isActive && <Tag tone="slate">Hidden</Tag>}
+        </span>
+        {!!i.inUse && <span className="mt-0.5 block text-[11.5px] text-slate-400">Used in {i.inUse} service / visit record{i.inUse === 1 ? '' : 's'}</span>}
+      </span>
+    </button>
+  )
+}
+
+/** One family (e.g. IV cannula) with a chip per size: "22G · B Braun · 3". Click a chip for that item. */
+function FamilyCard({ family, members, onOpen }: { family: string; members: EquipmentDoc[]; onOpen: (i: EquipmentDoc) => void }) {
+  const total = members.reduce((a, m) => a + Math.max(0, m.stock ?? 0), 0)
+  const unit = members[0].unit
+  const makers = [...new Set(members.map((m) => m.brand).filter(Boolean))]
+  const pic = members.find((m) => m.imageId) ?? members[0]
+  const nOut = members.filter((m) => stockState(m) === 'out').length
+  return (
+    <div className="flex flex-col gap-2.5 rounded-card bg-white p-3 shadow-card sm:col-span-2 lg:col-span-1">
+      <div className="flex items-center gap-3">
+        <ItemPicture item={pic} size={52} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[15px] font-bold text-slate-900">{family}</div>
+          <div className="text-[12px] text-slate-500">
+            <b className="text-slate-800">{total}</b> {unit} in store · {members.length} sizes{makers.length ? ` · ${makers.join(', ')}` : ''}
+            {nOut > 0 && <span className="font-semibold text-[#B91C1C]"> · {nOut} out</span>}
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {members.map((m) => {
+          const st = stockState(m)
+          return (
+            <button
+              key={m._id}
+              type="button"
+              onClick={() => onOpen(m)}
+              title={m.name}
+              className={cx(
+                'inline-flex h-8 items-center gap-1.5 rounded-lg border px-2 text-[12.5px] transition hover:ring-1 hover:ring-primary',
+                st === 'out' ? 'border-[#FECACA] bg-[#FEF2F2]' : st === 'low' ? 'border-[#FDE68A] bg-[#FFFBEB]' : 'border-slate-200 bg-slate-50',
+                !m.isActive && 'opacity-50',
+              )}
+            >
+              <b className="text-slate-900">{m.variant || m.name}</b>
+              {m.brand && makers.length > 1 && <span className="text-slate-500">{m.brand}</span>}
+              <span className={cx('rounded px-1 text-[11.5px] font-bold', STOCK_TONE[st])}>{m.stock ?? 0}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function EditItem({ item, onClose, canEdit = true, canStock = true }: { item: EquipmentDoc | null; onClose: () => void; canEdit?: boolean; canStock?: boolean }) {
   const router = useRouter()
   const toast = useToast()
-  const [f, setF] = useState({ name: item?.name ?? '', type: item?.type ?? ('CONSUMABLE' as const), unit: item?.unit ?? 'pcs', notes: item?.notes ?? '', isActive: item?.isActive ?? true, alertBelow: String(item?.alertBelow ?? 0) })
+  const [f, setF] = useState({ name: item?.name ?? '', type: item?.type ?? ('CONSUMABLE' as const), unit: item?.unit ?? 'pcs', notes: item?.notes ?? '', isActive: item?.isActive ?? true, alertBelow: String(item?.alertBelow ?? 0), family: item?.family ?? '', variant: item?.variant ?? '', brand: item?.brand ?? '', h360Code: item?.h360Code ?? '' })
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(item ? equipmentImage(item) : null)
   const [busy, setBusy] = useState<null | 'save' | 'delete'>(null)
@@ -126,7 +220,7 @@ function EditItem({ item, onClose }: { item: EquipmentDoc | null; onClose: () =>
     if (f.name.trim().length < 2) return toast('Enter the item name', 'err')
     setBusy('save')
     try {
-      const body = { name: f.name.trim(), type: f.type, unit: f.unit.trim() || 'pcs', notes: f.notes.trim() || undefined, isActive: f.isActive, alertBelow: Math.max(0, Math.round(Number(f.alertBelow) || 0)) }
+      const body = { name: f.name.trim(), type: f.type, unit: f.unit.trim() || 'pcs', notes: f.notes.trim() || undefined, isActive: f.isActive, alertBelow: Math.max(0, Math.round(Number(f.alertBelow) || 0)), family: f.family.trim(), variant: f.variant.trim(), brand: f.brand.trim(), h360Code: f.h360Code.trim() }
       const id = item ? item._id : (await api<{ id: string }>('/master/equipment', { body })).id
       if (item) await api(`/master/equipment/${item._id}`, { method: 'PATCH', body })
       if (file) {
@@ -183,7 +277,7 @@ function EditItem({ item, onClose }: { item: EquipmentDoc | null; onClose: () =>
       width={460}
       footer={
         <>
-          {item && (
+          {item && canEdit && (
             <button type="button" disabled={!!busy} onClick={remove} className={cx(btnClass('o'), 'mr-auto text-[#B91C1C]')}>
               {busy === 'delete' ? <Loader2 size={16} className="animate-spin" /> : item.inUse ? <EyeOff size={16} /> : <Trash2 size={16} />} {item.inUse ? 'Hide' : 'Delete'}
             </button>
@@ -191,14 +285,16 @@ function EditItem({ item, onClose }: { item: EquipmentDoc | null; onClose: () =>
           <button type="button" className={btnClass('o')} onClick={onClose}>
             Cancel
           </button>
-          <button type="button" disabled={!!busy} className={btnClass('p')} onClick={save}>
-            {busy === 'save' ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
-          </button>
+          {canEdit && (
+            <button type="button" disabled={!!busy} className={btnClass('p')} onClick={save}>
+              {busy === 'save' ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save
+            </button>
+          )}
         </>
       }
     >
       <div className="flex flex-col gap-4">
-        {item && <StockSection item={item} />}
+        {item && <StockSection item={item} canStock={canStock} />}
         <div className="flex items-center gap-4">
           <span className="flex size-28 flex-none items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-400">{preview ? <img src={preview} alt="" className="size-full object-cover" /> : <ImageOff size={30} />}</span>
           <div className="flex flex-col gap-2">
@@ -225,6 +321,20 @@ function EditItem({ item, onClose }: { item: EquipmentDoc | null; onClose: () =>
           <span className="hc-label">Name *</span>
           <input className="hc-input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. IV cannula 22G" />
         </label>
+        <div className="rounded-lg bg-slate-50 p-3">
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="text-[12.5px] font-semibold text-slate-600">Family · size · company — sizes of one family show together</span>
+            <button type="button" className="text-[12px] font-semibold text-primary-700 hover:underline" onClick={() => setF((x) => ({ ...x, ...parseItemName(x.name) }))}>
+              Suggest from name
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <input className="hc-input" value={f.family} onChange={(e) => setF({ ...f, family: e.target.value })} placeholder="IV cannula" aria-label="Family" />
+            <input className="hc-input" value={f.variant} onChange={(e) => setF({ ...f, variant: e.target.value })} placeholder="22G" aria-label="Size" />
+            <input className="hc-input" value={f.brand} onChange={(e) => setF({ ...f, brand: e.target.value })} placeholder="B Braun" aria-label="Company" />
+          </div>
+          <input className="hc-input mt-2" value={f.h360Code} onChange={(e) => setF({ ...f, h360Code: e.target.value })} placeholder="H360 item code, e.g. 26898373" aria-label="H360 item code" />
+        </div>
         <div>
           <span className="hc-label">Type</span>
           <Segmented
@@ -269,7 +379,7 @@ type Move = { id: string; at: string; delta: number; balance: number | null; rea
 const REASON = { OPENING: 'Opening stock', RECEIVED: 'Received', VISIT: 'Visit', ADJUST: 'Stock count' } as const
 
 /** The store part of the drawer: count now, "Received +", "Counted" (stock-take) and the history of moves. */
-function StockSection({ item }: { item: EquipmentDoc }) {
+function StockSection({ item, canStock = true }: { item: EquipmentDoc; canStock?: boolean }) {
   const router = useRouter()
   const toast = useToast()
   const [stock, setStock] = useState(item.stock ?? 0)
@@ -316,6 +426,8 @@ function StockSection({ item }: { item: EquipmentDoc }) {
       <div className={cx('mt-0.5 text-[30px] font-bold leading-tight', st === 'out' ? 'text-[#B91C1C]' : st === 'low' ? 'text-[#B45309]' : 'text-slate-900')}>
         {stock} <span className="text-[15px] font-semibold text-slate-500">{item.unit}</span>
       </div>
+      {canStock && (
+      <>
       <div className="mt-2.5 grid grid-cols-2 gap-2">
         <div>
           <span className="hc-label">Received</span>
@@ -337,6 +449,8 @@ function StockSection({ item }: { item: EquipmentDoc }) {
         </div>
       </div>
       <input className="hc-input mt-2" placeholder="Note (optional) — e.g. H360 requisition or invoice no." value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
+      </>
+      )}
       <div className="mt-3 text-[12px] font-semibold text-slate-600">History</div>
       {!moves ? (
         <Loader2 size={15} className="mt-1 animate-spin text-slate-400" />
