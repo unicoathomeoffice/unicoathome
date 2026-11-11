@@ -6,12 +6,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Camera, ClipboardCheck, EyeOff, ImageOff, Loader2, Package, PackageMinus, PackagePlus, Plus, Save, Search, Trash2 } from 'lucide-react'
-import { api, compressImage, Drawer, Segmented, Toggle, useToast } from '@/components/client'
+import { api, Drawer, Segmented, Toggle, useToast } from '@/components/client'
 import { btnClass, Tag } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { groupItems, parseItemName } from '@/lib/store-groups'
 import { ConsumeDrawer } from '@/components/store/ConsumeDrawer'
 import { usePasteFiles } from '@/components/client/paste'
+import { ImageEditor } from '@/components/store/ImageEditor'
+import { ImageViewer } from '@/components/store/ImageViewer'
 
 export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string }
 
@@ -48,6 +50,8 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
   const [hidden, setHidden] = useState(false)
   const [edit, setEdit] = useState<EquipmentDoc | 'new' | null>(null)
   const [consume, setConsume] = useState<string[] | null>(null)
+  const [viewer, setViewer] = useState<EquipmentDoc | null>(null)
+  const canPic = canEdit || canStock
   const open = (i: EquipmentDoc) => (canEdit || canStock) && setEdit(i)
   const brands = useMemo(() => [...new Set(items.map((i) => i.brand).filter(Boolean) as string[])].sort(), [items])
   const shown = useMemo(() => {
@@ -132,16 +136,16 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {groups.map((g) =>
             g.members.length === 1 ? (
-              <ItemCard key={g.members[0]._id} i={g.members[0]} onOpen={open} clickable={canEdit || canStock} />
+              <ItemCard key={g.members[0]._id} i={g.members[0]} onOpen={open} onPicture={setViewer} clickable={canEdit || canStock} />
             ) : (
-              <FamilyCard key={g.family} family={g.family} members={g.members} onOpen={open} />
+              <FamilyCard key={g.family} family={g.family} members={g.members} onOpen={open} onPicture={setViewer} />
             ),
           )}
         </div>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
           {shown.map((i) => (
-            <ItemCard key={i._id} i={i} onOpen={open} clickable={canEdit || canStock} />
+            <ItemCard key={i._id} i={i} onOpen={open} onPicture={setViewer} clickable={canEdit || canStock} />
           ))}
         </div>
       )}
@@ -161,14 +165,24 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
         />
       )}
       {consume && <ConsumeDrawer items={items} preset={consume} onClose={() => setConsume(null)} />}
+      {viewer && <ImageViewer item={viewer} canEdit={canPic} siblings={viewer.family ? items.filter((x) => x.family === viewer.family && x._id !== viewer._id).length : 0} onClose={() => setViewer(null)} />}
     </div>
   )
 }
 
-function ItemCard({ i, onOpen, clickable }: { i: EquipmentDoc; onOpen: (i: EquipmentDoc) => void; clickable: boolean }) {
+function ItemCard({ i, onOpen, onPicture, clickable }: { i: EquipmentDoc; onOpen: (i: EquipmentDoc) => void; onPicture: (i: EquipmentDoc) => void; clickable: boolean }) {
   return (
     <button type="button" onClick={() => onOpen(i)} className={cx('flex items-center gap-3 rounded-card bg-white p-3 text-left shadow-card', clickable && 'hover:ring-1 hover:ring-primary', !i.isActive && 'opacity-60')}>
-      <ItemPicture item={i} size={64} />
+      <span
+        role="button"
+        tabIndex={0}
+        title={i.imageId ? 'View picture' : 'Add a picture'}
+        onClick={(e) => (e.stopPropagation(), onPicture(i))}
+        onKeyDown={(e) => e.key === 'Enter' && (e.stopPropagation(), onPicture(i))}
+        className="rounded-lg transition hover:ring-2 hover:ring-primary/50"
+      >
+        <ItemPicture item={i} size={64} />
+      </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14.5px] font-bold text-slate-900" title={i.name}>
           {i.name}
@@ -186,7 +200,7 @@ function ItemCard({ i, onOpen, clickable }: { i: EquipmentDoc; onOpen: (i: Equip
 }
 
 /** One family (e.g. IV cannula) with a chip per size: "22G · B Braun · 3". Click a chip for that item. */
-function FamilyCard({ family, members, onOpen }: { family: string; members: EquipmentDoc[]; onOpen: (i: EquipmentDoc) => void }) {
+function FamilyCard({ family, members, onOpen, onPicture }: { family: string; members: EquipmentDoc[]; onOpen: (i: EquipmentDoc) => void; onPicture: (i: EquipmentDoc) => void }) {
   const total = members.reduce((a, m) => a + Math.max(0, m.stock ?? 0), 0)
   const unit = members[0].unit
   const makers = [...new Set(members.map((m) => m.brand).filter(Boolean))]
@@ -218,7 +232,14 @@ function FamilyCard({ family, members, onOpen }: { family: string; members: Equi
                 !m.isActive && 'opacity-50',
               )}
             >
-              <span className="relative block aspect-square w-full bg-slate-100">
+              <span
+                role="button"
+                tabIndex={0}
+                title={m.imageId ? 'View picture' : 'Add a picture'}
+                onClick={(e) => (e.stopPropagation(), onPicture(m))}
+                onKeyDown={(e) => e.key === 'Enter' && (e.stopPropagation(), onPicture(m))}
+                className="relative block aspect-square w-full bg-slate-100"
+              >
                 <ItemPicture item={m} size={0} className="!size-full rounded-none" />
                 <span className={cx('absolute right-1 top-1 rounded px-1.5 text-[11.5px] font-bold shadow-sm', STOCK_TONE[st])}>{m.stock ?? 0}</span>
               </span>
@@ -270,8 +291,9 @@ function EditItem({
     setPreview(URL.createObjectURL(x))
     if (noPic) setForFamily(true)
   }
-  // paste (Ctrl+V) or drop a photo straight onto the drawer
-  const { over, dropProps } = usePasteFiles((files) => files[0] && takePicture(files[0]), { accept: ['image/*'] })
+  // every picture goes through the editor (crop, auto-clean): chosen, pasted (Ctrl+V), dropped or the current one
+  const [editing, setEditing] = useState<null | { file?: File; url?: string | null; paste?: boolean }>(null)
+  const { over, dropProps } = usePasteFiles((files) => files[0] && setEditing({ file: files[0] }), { accept: ['image/*'], enabled: !editing })
 
   async function save() {
     if (f.name.trim().length < 2) return toast('Enter the item name', 'err')
@@ -282,7 +304,7 @@ function EditItem({
       if (item) await api(`/master/equipment/${item._id}`, { method: 'PATCH', body })
       if (file) {
         const form = new FormData()
-        form.append('file', await compressImage(file, false))
+        form.append('file', file)
         await api(`/equipment/${id}/image`, { form })
       }
       // the same picture for the other sizes of the family that have none
@@ -306,7 +328,7 @@ function EditItem({
     try {
       if (file) {
         const form = new FormData()
-        form.append('file', await compressImage(file, false))
+        form.append('file', file)
         await api(`/equipment/${item._id}/image`, { form })
       }
       if (forFamily && item.family) await api(`/equipment/${item._id}/image/family`, { body: {} })
@@ -392,12 +414,24 @@ function EditItem({
           </div>
         )}
         <div {...(dropProps as any)} className={cx('flex items-center gap-4 rounded-xl p-1', over && 'bg-primary-50 ring-2 ring-primary')}>
-          <span className="flex size-28 flex-none items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-400">{preview ? <img src={preview} alt="" className="size-full object-cover" /> : <ImageOff size={30} />}</span>
+          <button type="button" onClick={() => setEditing(preview ? { url: preview } : {})} title={preview ? 'Crop / clean this picture' : 'Add a picture'} className="flex size-28 flex-none items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-400 hover:ring-2 hover:ring-primary/50">
+            {preview ? <img src={preview} alt="" className="size-full object-cover" /> : <ImageOff size={30} />}
+          </button>
           <div className="flex flex-col gap-2">
-            <button type="button" className={btnClass('o', 'sm')} onClick={() => pick.current?.click()}>
-              <Camera size={15} /> {preview ? 'Change picture' : 'Add picture'}
-            </button>
-            <span className="text-[12px] text-slate-500">A clear photo — or paste (Ctrl+V) / drop one here.</span>
+            <div className="flex flex-wrap gap-1.5">
+              <button type="button" className={btnClass('o', 'sm')} onClick={() => setEditing({})}>
+                <Camera size={15} /> {preview ? 'Change' : 'Add picture'}
+              </button>
+              <button type="button" className={btnClass('o', 'sm')} onClick={() => setEditing({ paste: true })}>
+                Paste
+              </button>
+              {preview && (
+                <button type="button" className={btnClass('o', 'sm')} onClick={() => setEditing({ url: preview })}>
+                  Crop / clean
+                </button>
+              )}
+            </div>
+            <span className="text-[12px] text-slate-500">Crop, auto white background, saved small & sharp (AVIF). Ctrl+V or drop works too.</span>
             {!!f.family.trim() && siblings.length > 0 && (preview || file) && (
               <label className="flex items-center gap-2 text-[12.5px]">
                 <input type="checkbox" className="size-4 accent-[#0090CA]" checked={forFamily} onChange={(e) => setForFamily(e.target.checked)} />
@@ -413,7 +447,7 @@ function EditItem({
                 const x = e.target.files?.[0]
                 e.target.value = ''
                 if (!x) return
-                takePicture(x)
+                setEditing({ file: x })
               }}
             />
           </div>
@@ -472,6 +506,19 @@ function EditItem({
           <Toggle on={f.isActive} onChange={(v) => setF({ ...f, isActive: v })} label="Active" />
         </label>
       </div>
+      {editing && (
+        <ImageEditor
+          title={`Picture · ${f.name || 'new item'}`}
+          initial={editing.file ?? null}
+          initialUrl={editing.url ?? null}
+          autoPaste={!!editing.paste}
+          onUse={(x) => {
+            takePicture(x)
+            setEditing(null)
+          }}
+          onCancel={() => setEditing(null)}
+        />
+      )}
     </Drawer>
   )
 }
