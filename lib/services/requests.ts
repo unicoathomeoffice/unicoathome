@@ -654,6 +654,7 @@ export async function cancel(r: any, input: z.infer<typeof CancelInput>, user: S
   r.cancellation = { reason: input.reason, by: user.id, at: new Date() }
   stopTracking(r)
   await r.save()
+  await (await import('./stock')).syncVisitStockQuietly(r._id, user, { giveBack: true }, meta) // consumables go back to the store
   const only = notifySet(input.notify)
   await audit(user, 'request.cancel', 'request', r._id, { before: { status: from }, after: { status: 'CANCELLED', reason: input.reason, ...(only && { whatsappTo: [...only] }) }, label: r.requestNo }, meta)
   background(async () => {
@@ -900,6 +901,7 @@ export async function saveNotes(r: any, input: z.infer<typeof NotesInput>, user:
   r.set('visit.notes.updatedAt', new Date())
   await r.save()
   await audit(user, 'visit.notes', 'request', r._id, { after: { notesUpdated: true }, label: r.requestNo }, meta)
+  if (input.consumables) await (await import('./stock')).syncVisitStockQuietly(r._id, user, {}, meta) // store follows the record
 }
 
 export const MedicationInput = z.object({ drug: z.string().min(1), dose: z.string().optional(), route: z.string().optional(), time: z.string().optional() })

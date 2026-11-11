@@ -117,5 +117,8 @@ export async function saveConsumables(r: any, input: z.infer<typeof ConsumablesI
   const freeText = prev.filter((p) => !p.itemId)
   await HomecareRequest.updateOne({ _id: r._id }, { $set: { 'visit.consumables': [...catalogRows, ...freeText] } })
   await audit(user, 'visit.consumables', 'request', r._id, { after: { items: catalogRows.map((c) => `${c.item} × ${c.qty}`) }, label: r.requestNo }, meta)
-  return { ok: true, count: catalogRows.length }
+  // the store gives exactly what was used: taken out now, put back if a correction lowers it
+  const { syncVisitStockQuietly } = await import('./stock')
+  const store = await syncVisitStockQuietly(r._id, user, {}, meta)
+  return { ok: true, count: catalogRows.length, store }
 }

@@ -30,7 +30,8 @@ export async function deleteRequests(input: z.infer<typeof DeleteRequestsInput>,
   const now = new Date()
   for (const r of rows) {
     await HomecareRequest.updateOne({ _id: r._id, deletedAt: null }, { $set: { deletedAt: now, deletedBy: user.id, deleteReason: input.reason, 'tracking.active': false } })
-    await MessageLog.updateMany({ requestId: r._id, status: 'QUEUED' }, { $set: { status: 'SKIPPED', error: 'Request deleted' }, $push: { events: { status: 'SKIPPED', at: now, note: 'Request deleted' } } })
+    await MessageLog.updateMany({ requestId: r._id, status: { $in: ['QUEUED', 'PENDING'] } }, { $set: { status: 'SKIPPED', error: 'Request deleted' }, $push: { events: { status: 'SKIPPED', at: now, note: 'Request deleted' } } })
+    await (await import('./stock')).syncVisitStockQuietly(r._id, user, { giveBack: true }, meta) // consumables go back to the store
     await audit(user, 'request.delete', 'request', r._id, { before: { status: r.status, invoiceNo: r.billing?.invoiceNo }, after: { deleted: true, reason: input.reason }, label: r.requestNo }, meta)
   }
   return { deleted: rows.map((r) => r.requestNo) }

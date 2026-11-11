@@ -77,10 +77,31 @@ const EquipmentSchema = new Schema<any>(
     isActive: { type: Boolean, default: true },
     sortOrder: { type: Number, default: 0 },
     createdBy: { type: ObjectId, ref: 'User' },
+    // the store: how many are in stock now (lib/services/stock.ts keeps it, every change is a StockMove)
+    stock: { type: Number, default: 0 },
+    alertBelow: { type: Number, default: 0 }, // low-stock level (0 = no alert)
   },
   opts,
 )
 export const Equipment = model('Equipment', EquipmentSchema, 'equipment_items')
+
+/** Store ledger, append-only: every change of an item's stock and why (opening, received, used on a visit, count). */
+const StockMoveSchema = new Schema<any>(
+  {
+    itemId: { type: ObjectId, ref: 'Equipment', required: true },
+    delta: { type: Number, required: true }, // + in, − out
+    balance: Number, // stock after this move
+    reason: { type: String, enum: ['OPENING', 'RECEIVED', 'VISIT', 'ADJUST'], required: true },
+    requestId: { type: ObjectId, ref: 'HomecareRequest' }, // VISIT: the visit the consumables were used on
+    note: String,
+    by: { type: ObjectId, ref: 'User' },
+    at: { type: Date, default: Date.now },
+  },
+  { timestamps: false },
+)
+StockMoveSchema.index({ itemId: 1, at: -1 })
+StockMoveSchema.index({ requestId: 1, itemId: 1 }, { partialFilterExpression: { requestId: { $exists: true } } })
+export const StockMove = model('StockMove', StockMoveSchema, 'stock_moves')
 
 // ---------------------------------------------------------------- users
 const UserSchema = new Schema<any>(

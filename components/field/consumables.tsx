@@ -1,6 +1,7 @@
 'use client'
 // "Consumables used" on a visit: pre-filled with the service's usual use (Settings → Services → Bag & consumables);
-// staff adjust with − / + and add anything else from the catalog. Feeds the consumables report.
+// staff adjust with − / + and add anything else from the catalog. Feeds the consumables report, and saving takes the
+// used quantity out of the store (lib/services/stock.ts) — "in store" shows what is left.
 import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Loader2, Minus, Plus, Search } from 'lucide-react'
@@ -8,7 +9,7 @@ import { api, useToast } from '@/components/client'
 import { ItemPicture } from '@/components/admin-settings/EquipmentEditor'
 import { cx } from '@/lib/format'
 
-export type CatalogRow = { _id: string; name: string; unit: string; imageId?: string | null }
+export type CatalogRow = { _id: string; name: string; unit: string; imageId?: string | null; stock?: number }
 type Line = { itemId: string; qty: number }
 
 export function ConsumablesEditor({ requestId, catalog, initial, editable, back, big = true }: { requestId: string; catalog: CatalogRow[]; initial: Line[]; editable: boolean; back?: string; big?: boolean }) {
@@ -20,6 +21,11 @@ export function ConsumablesEditor({ requestId, catalog, initial, editable, back,
   const byId = (id: string) => catalog.find((c) => c._id === id)
   const dirty = JSON.stringify(lines) !== JSON.stringify(initial)
   const hits = useMemo(() => (q.trim() ? catalog.filter((c) => !lines.some((l) => l.itemId === c._id) && c.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8) : []), [q, catalog, lines])
+  // what the store can still give this visit: its stock plus what this visit already took (saved before)
+  const avail = (id: string) => {
+    const st = byId(id)?.stock
+    return st == null ? null : st + (initial.find((l) => l.itemId === id)?.qty ?? 0)
+  }
   const setQty = (id: string, d: number) => setLines((x) => x.map((l) => (l.itemId === id ? { ...l, qty: Math.max(0, Math.min(999, l.qty + d)) } : l)))
 
   async function save() {
@@ -47,7 +53,16 @@ export function ConsumablesEditor({ requestId, catalog, initial, editable, back,
               <ItemPicture item={{ _id: l.itemId, imageId: c?.imageId, name: c?.name ?? '' }} size={big ? 52 : 40} />
               <div className="min-w-0 flex-1">
                 <div className={cx('font-semibold text-slate-800', big ? 'text-[15px]' : 'text-[14px]')}>{c?.name ?? 'Item'}</div>
-                <div className="text-[12px] text-slate-500">per {c?.unit ?? 'pcs'}{l.qty === 0 ? ' · not used (removed on save)' : ''}</div>
+                <div className="text-[12px] text-slate-500">
+                  per {c?.unit ?? 'pcs'}
+                  {l.qty === 0 ? ' · not used (removed on save)' : ''}
+                  {avail(l.itemId) != null && (
+                    <span className={cx(l.qty > (avail(l.itemId) ?? 0) ? 'font-semibold text-[#B45309]' : '')}>
+                      {' · '}
+                      {Math.max(0, (avail(l.itemId) ?? 0) - l.qty)} left in store{l.qty > (avail(l.itemId) ?? 0) ? ` (only ${Math.max(0, avail(l.itemId) ?? 0)} were in store)` : ''}
+                    </span>
+                  )}
+                </div>
               </div>
               {editable ? (
                 <span className="flex flex-none items-center gap-1.5">
@@ -86,7 +101,7 @@ export function ConsumablesEditor({ requestId, catalog, initial, editable, back,
                   >
                     <ItemPicture item={c} size={34} />
                     <span className="min-w-0 flex-1 truncate font-semibold">{c.name}</span>
-                    <span className="text-[12px] text-slate-500">{c.unit}</span>
+                    <span className={cx('text-[12px]', c.stock != null && c.stock <= 0 ? 'font-semibold text-[#B91C1C]' : 'text-slate-500')}>{c.stock != null ? `${c.stock} ${c.unit} in store` : c.unit}</span>
                   </button>
                 </li>
               ))}

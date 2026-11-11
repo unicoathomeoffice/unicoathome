@@ -1,0 +1,119 @@
+import 'server-only'
+import { z } from 'zod'
+import { Equipment, HomecareRequest, StockMove, User } from '../models'
+import { audit, type Meta } from '../audit'
+import { bad, notFound } from '../api'
+import { background, notifyRoles } from '../messaging'
+import type { SessionUser } from '../auth'
+
+// The store (Settings → Equipment & consumables): each item's stock count, kept by an append-only ledger (StockMove).
+// Consumables recorded on a visit are taken out of the store automatically and given back when the visit's record is
+// corrected, cancelled or deleted. Equipment comes back after the visit, so it is never taken out.
+
+type Reason = 'OPENING' | 'RECEIVED' | 'VISIT' | 'ADJUST'
+type Actor = Pick<SessionUser, 'id' | 'name' | 'role'> | null
+
+/** Change an item's stock by `delta` (atomic) and log the move with the new balance. */
+export async function moveStock(itemId: unknown, delta: number, reason: Reason, opts: { requestId?: unknown; note?: string; by?: string } = {}) {
+  if (!delta) return null
+  const item = await Equipment.findOneAndUpdate({ _id: itemId }, { $inc: { stock: delta } }, { new: true }).select('name unit stock alertBelow type').lean<any>()
+  if (!item) return null
+  await StockMove.create({ itemId, delta, balance: item.stock, reason, requestId: opts.requestId, note: opts.note, by: opts.by })
+  // used on a visit and now low / out: tell the admins (once per crossing)
+  if (delta < 0) {
+    const before = item.stock - delta
+    const low = item.alertBelow > 0 ? item.alertBelow : 0
+    if ((item.stock <= low && before > low) || (item.stock <= 0 && before > 0))
+      background(() =>
+        notifyRoles(['HC_ADMIN', 'SUPER_ADMIN'], {
+          type: 'SYSTEM',
+          title: item.stock <= 0 ? `${item.name} — out of stock` : `${item.name} low — ${item.stock} ${item.unit} left`,
+          body: 'Store · Equipment & consumables',
+          url: '/settings/equipment',
+          priority: item.stock <= 0 ? 'high' : 'normal',
+        }),
+      )
+  }
+  return item
+}
+
+/**
+ * Make the store match what a visit used: for every catalog consumable on the visit, the store has given exactly the
+ * recorded quantity (more recorded → taken out, less / removed → put back). Safe to call any number of times.
+ * `giveBack`: the visit no longer counts (cancelled / deleted) — everything it took goes back.
+ */
+export async function syncVisitStock(requestId: unknown, user: Actor, opts: { giveBack?: boolean } = {}, meta: Meta = {}) {
+  const r = await HomecareRequest.findById(requestId).select('requestNo patientSnapshot.name visit.consumables').lean<any>()
+  if (!r) return []
+  const want = new Map<string, number>()
+  if (!opts.giveBack) for (const c of r.visit?.consumables ?? []) if (c.itemId && c.qty > 0) want.set(String(c.itemId), (want.get(String(c.itemId)) ?? 0) + c.qty)
+  const taken = await StockMove.aggregate([{ $match: { requestId: r._id, reason: 'VISIT' } }, { $group: { _id: '$itemId', out: { $sum: '$delta' } } }])
+  const ids = [...new Set([...want.keys(), ...taken.map((t) => String(t._id))])]
+  if (!ids.length) return []
+  const items = await Equipment.find({ _id: { $in: ids } }).select('name type unit').lean<any[]>()
+  const changes: string[] = []
+  for (const id of ids) {
+    const item = items.find((i) => String(i._id) === id)
+    if (!item) continue
+    const already = -(taken.find((t) => String(t._id) === id)?.out ?? 0) // how many this visit has taken so far
+    const target = item.type === 'CONSUMABLE' ? (want.get(id) ?? 0) : 0 // equipment comes back: never taken
+    const diff = target - already
+    if (!diff) continue
+    const note = `${diff > 0 ? 'Used on visit' : opts.giveBack ? 'Given back (visit cancelled / deleted)' : 'Corrected on visit'} · ${r.patientSnapshot?.name ?? r.requestNo}`
+    await moveStock(id, -diff, 'VISIT', { requestId: r._id, note, by: user?.id })
+    changes.push(`${item.name} ${diff > 0 ? '−' : '+'}${Math.abs(diff)}`)
+  }
+  if (changes.length) await audit(user, 'stock.visit', 'request', r._id, { after: { store: changes }, label: r.requestNo }, meta)
+  return changes
+}
+
+/** Never throws — a store hiccup must not stop the visit record from saving. */
+export async function syncVisitStockQuietly(requestId: unknown, user: Actor, opts: { giveBack?: boolean } = {}, meta: Meta = {}) {
+  try {
+    return await syncVisitStock(requestId, user, opts, meta)
+  } catch (e) {
+    console.error('[stock]', e)
+    return []
+  }
+}
+
+export const StockInput = z.object({
+  action: z.enum(['receive', 'count']),
+  qty: z.coerce.number().int().min(-100000).max(1000000),
+  note: z.string().trim().max(200).optional(),
+})
+
+/** Admin: "Received +N" (new stock in) or "Counted N" (stock-take: sets the count, the difference is logged). */
+export async function changeStock(itemId: string, input: z.infer<typeof StockInput>, user: SessionUser, meta: Meta = {}) {
+  const item = await Equipment.findById(itemId).select('name stock unit').lean<any>()
+  if (!item) throw notFound('Item')
+  const delta = input.action === 'receive' ? input.qty : input.qty - (item.stock ?? 0)
+  if (input.action === 'receive' && input.qty <= 0) throw bad('Enter how many were received')
+  if (!delta) return { stock: item.stock ?? 0, delta: 0 }
+  const after = await moveStock(itemId, delta, input.action === 'receive' ? 'RECEIVED' : 'ADJUST', { note: input.note || (input.action === 'receive' ? 'Received' : 'Stock count'), by: user.id })
+  await audit(user, input.action === 'receive' ? 'stock.receive' : 'stock.adjust', 'equipment', itemId, { before: { stock: item.stock ?? 0 }, after: { stock: after?.stock, delta, note: input.note }, label: item.name }, meta)
+  return { stock: after?.stock ?? 0, delta }
+}
+
+/** The last moves of an item, with who and which visit. */
+export async function stockHistory(itemId: string, limit = 30) {
+  const moves = await StockMove.find({ itemId }).sort({ at: -1 }).limit(limit).lean<any[]>()
+  const [users, reqs] = await Promise.all([
+    User.find({ _id: { $in: [...new Set(moves.map((m) => String(m.by ?? '')).filter(Boolean))] } }).select('name').lean<any[]>(),
+    HomecareRequest.find({ _id: { $in: [...new Set(moves.map((m) => String(m.requestId ?? '')).filter(Boolean))] } }).select('requestNo patientSnapshot.name').lean<any[]>(),
+  ])
+  return moves.map((m) => {
+    const q = reqs.find((x) => String(x._id) === String(m.requestId))
+    return {
+      id: String(m._id),
+      at: new Date(m.at).toISOString(),
+      delta: m.delta,
+      balance: m.balance ?? null,
+      reason: m.reason as Reason,
+      note: m.note ?? '',
+      by: users.find((u) => String(u._id) === String(m.by))?.name ?? null,
+      requestId: q ? String(q._id) : null,
+      requestNo: q?.requestNo ?? null,
+    }
+  })
+}

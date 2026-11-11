@@ -16,7 +16,7 @@ export default async function Consumables({ params }: { params: Promise<{ id: st
   const { id } = await params
   const { r, team, user } = await loadVisit(id)
   const kit: any[] = await ensureKit(r)
-  const catalog = await Equipment.find({ type: 'CONSUMABLE', isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('name unit imageId').lean<any[]>()
+  const catalog = await Equipment.find({ type: 'CONSUMABLE', isActive: { $ne: false } }).sort({ sortOrder: 1, name: 1 }).select('name unit imageId stock').lean<any[]>()
   const saved = (r.visit?.consumables ?? []).filter((c: any) => c.itemId)
   const initial = saved.length
     ? saved.map((c: any) => ({ itemId: String(c.itemId), qty: c.qty }))

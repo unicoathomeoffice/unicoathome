@@ -1,14 +1,29 @@
 'use client'
 // Settings → Equipment & consumables: the catalog the services' bags are built from (Settings → Services) — name,
-// picture, equipment (comes back) or consumable (used up), unit. Items in use can only be hidden, not deleted.
-import { useMemo, useRef, useState } from 'react'
+// picture, equipment (comes back) or consumable (used up), unit — and the store: how many are in stock. Consumables
+// recorded on visits are taken out of the stock automatically (lib/services/stock.ts). Items in use can only be hidden.
+import { useEffect, useMemo, useRef, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Camera, EyeOff, ImageOff, Loader2, Package, Plus, Save, Search, Trash2 } from 'lucide-react'
+import { Camera, ClipboardCheck, EyeOff, ImageOff, Loader2, Package, PackagePlus, Plus, Save, Search, Trash2 } from 'lucide-react'
 import { api, compressImage, Drawer, Segmented, Toggle, useToast } from '@/components/client'
 import { btnClass, Tag } from '@/components/ui'
 import { cx } from '@/lib/format'
 
-export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number }
+export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number }
+
+/** out ≤ 0 · low ≤ alert level · ok */
+export const stockState = (i: { stock?: number; alertBelow?: number }) => ((i.stock ?? 0) <= 0 ? 'out' : (i.alertBelow ?? 0) > 0 && (i.stock ?? 0) <= (i.alertBelow ?? 0) ? 'low' : 'ok')
+const STOCK_TONE = { out: 'bg-[#FEE2E2] text-[#B91C1C]', low: 'bg-[#FEF3C7] text-[#B45309]', ok: 'bg-[#DCFCE7] text-[#15803D]' } as const
+
+export function StockChip({ item, className }: { item: { stock?: number; alertBelow?: number; unit: string }; className?: string }) {
+  const st = stockState(item)
+  return (
+    <span className={cx('inline-flex h-[22px] items-center gap-1 whitespace-nowrap rounded-full px-2 text-[11.5px] font-semibold', STOCK_TONE[st], className)} title="In the store now">
+      <b className="text-[13px]">{item.stock ?? 0}</b> {item.unit} in store{st === 'out' ? ' · out' : st === 'low' ? ' · low' : ''}
+    </span>
+  )
+}
 
 const UNITS = ['pcs', 'pair', 'set', 'box', 'pack', 'roll', 'bottle', 'vial', 'ampoule', 'ml', 'tube', 'strip']
 export const equipmentImage = (e: { _id: string; imageId?: string | null }) => (e.imageId ? `/api/v1/equipment/${e._id}/image?v=${e.imageId}` : null)
@@ -24,15 +39,29 @@ export function ItemPicture({ item, size = 48, className }: { item: { _id: strin
 
 export function EquipmentEditor({ items, canEdit }: { items: EquipmentDoc[]; canEdit: boolean }) {
   const [q, setQ] = useState('')
-  const [type, setType] = useState<'ALL' | 'EQUIPMENT' | 'CONSUMABLE'>('ALL')
+  const [type, setType] = useState<'ALL' | 'EQUIPMENT' | 'CONSUMABLE' | 'LOW'>('ALL')
   const [hidden, setHidden] = useState(false)
   const [edit, setEdit] = useState<EquipmentDoc | 'new' | null>(null)
   const shown = useMemo(
-    () => items.filter((i) => (hidden || i.isActive) && (type === 'ALL' || i.type === type) && (!q.trim() || i.name.toLowerCase().includes(q.trim().toLowerCase()))),
+    () => items.filter((i) => (hidden || i.isActive) && (type === 'ALL' || (type === 'LOW' ? stockState(i) !== 'ok' : i.type === type)) && (!q.trim() || i.name.toLowerCase().includes(q.trim().toLowerCase()))),
     [items, q, type, hidden],
   )
+  const active = items.filter((i) => i.isActive)
+  const nLow = active.filter((i) => stockState(i) === 'low').length
+  const nOut = active.filter((i) => stockState(i) === 'out').length
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-600">
+        <span>
+          <b className="text-slate-900">{active.length}</b> items in the store
+        </span>
+        <span>
+          <b className="text-slate-900">{active.reduce((a, i) => a + Math.max(0, i.stock ?? 0), 0).toLocaleString('en-US')}</b> units in stock
+        </span>
+        {nLow > 0 && <span className="font-semibold text-[#B45309]">{nLow} low</span>}
+        {nOut > 0 && <span className="font-semibold text-[#B91C1C]">{nOut} out of stock</span>}
+        <span className="text-slate-400">· consumables used on visits are taken out automatically</span>
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <label className="relative min-w-[220px] flex-1">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -45,6 +74,7 @@ export function EquipmentEditor({ items, canEdit }: { items: EquipmentDoc[]; can
             { value: 'ALL', label: `All · ${items.filter((i) => i.isActive).length}` },
             { value: 'CONSUMABLE', label: 'Consumables' },
             { value: 'EQUIPMENT', label: 'Equipment' },
+            { value: 'LOW', label: `Low / out · ${nLow + nOut}` },
           ]}
         />
         <label className="flex items-center gap-2 text-[13px] text-slate-600">
@@ -68,8 +98,8 @@ export function EquipmentEditor({ items, canEdit }: { items: EquipmentDoc[]; can
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14.5px] font-bold text-slate-900">{i.name}</span>
                 <span className="mt-1 flex flex-wrap items-center gap-1.5">
+                  <StockChip item={i} />
                   <Tag tone={i.type === 'EQUIPMENT' ? 'indigo' : 'blue'}>{i.type === 'EQUIPMENT' ? 'Equipment' : 'Consumable'}</Tag>
-                  <span className="text-[12px] text-slate-500">per {i.unit}</span>
                   {!i.isActive && <Tag tone="slate">Hidden</Tag>}
                 </span>
                 {!!i.inUse && <span className="mt-0.5 block text-[11.5px] text-slate-400">Used in {i.inUse} service / visit record{i.inUse === 1 ? '' : 's'}</span>}
@@ -86,7 +116,7 @@ export function EquipmentEditor({ items, canEdit }: { items: EquipmentDoc[]; can
 function EditItem({ item, onClose }: { item: EquipmentDoc | null; onClose: () => void }) {
   const router = useRouter()
   const toast = useToast()
-  const [f, setF] = useState({ name: item?.name ?? '', type: item?.type ?? ('CONSUMABLE' as const), unit: item?.unit ?? 'pcs', notes: item?.notes ?? '', isActive: item?.isActive ?? true })
+  const [f, setF] = useState({ name: item?.name ?? '', type: item?.type ?? ('CONSUMABLE' as const), unit: item?.unit ?? 'pcs', notes: item?.notes ?? '', isActive: item?.isActive ?? true, alertBelow: String(item?.alertBelow ?? 0) })
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(item ? equipmentImage(item) : null)
   const [busy, setBusy] = useState<null | 'save' | 'delete'>(null)
@@ -96,7 +126,7 @@ function EditItem({ item, onClose }: { item: EquipmentDoc | null; onClose: () =>
     if (f.name.trim().length < 2) return toast('Enter the item name', 'err')
     setBusy('save')
     try {
-      const body = { name: f.name.trim(), type: f.type, unit: f.unit.trim() || 'pcs', notes: f.notes.trim() || undefined, isActive: f.isActive }
+      const body = { name: f.name.trim(), type: f.type, unit: f.unit.trim() || 'pcs', notes: f.notes.trim() || undefined, isActive: f.isActive, alertBelow: Math.max(0, Math.round(Number(f.alertBelow) || 0)) }
       const id = item ? item._id : (await api<{ id: string }>('/master/equipment', { body })).id
       if (item) await api(`/master/equipment/${item._id}`, { method: 'PATCH', body })
       if (file) {
@@ -168,6 +198,7 @@ function EditItem({ item, onClose }: { item: EquipmentDoc | null; onClose: () =>
       }
     >
       <div className="flex flex-col gap-4">
+        {item && <StockSection item={item} />}
         <div className="flex items-center gap-4">
           <span className="flex size-28 flex-none items-center justify-center overflow-hidden rounded-xl bg-slate-100 text-slate-400">{preview ? <img src={preview} alt="" className="size-full object-cover" /> : <ImageOff size={30} />}</span>
           <div className="flex flex-col gap-2">
@@ -215,6 +246,11 @@ function EditItem({ item, onClose }: { item: EquipmentDoc | null; onClose: () =>
           </datalist>
         </label>
         <label>
+          <span className="hc-label">Low-stock alert below</span>
+          <input className="hc-input" inputMode="numeric" value={f.alertBelow} onChange={(e) => setF({ ...f, alertBelow: e.target.value.replace(/\D/g, '') })} placeholder="0 = no alert" />
+          <span className="mt-1 block text-[12px] text-slate-500">When visits bring it down to this number, admins get a notification.</span>
+        </label>
+        <label>
           <span className="hc-label">Notes</span>
           <textarea className="hc-input" rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="Size, brand, where it is kept…" />
         </label>
@@ -226,5 +262,114 @@ function EditItem({ item, onClose }: { item: EquipmentDoc | null; onClose: () =>
         </label>
       </div>
     </Drawer>
+  )
+}
+
+type Move = { id: string; at: string; delta: number; balance: number | null; reason: 'OPENING' | 'RECEIVED' | 'VISIT' | 'ADJUST'; note: string; by: string | null; requestId: string | null; requestNo: string | null }
+const REASON = { OPENING: 'Opening stock', RECEIVED: 'Received', VISIT: 'Visit', ADJUST: 'Stock count' } as const
+
+/** The store part of the drawer: count now, "Received +", "Counted" (stock-take) and the history of moves. */
+function StockSection({ item }: { item: EquipmentDoc }) {
+  const router = useRouter()
+  const toast = useToast()
+  const [stock, setStock] = useState(item.stock ?? 0)
+  const [moves, setMoves] = useState<Move[] | null>(null)
+  const [recv, setRecv] = useState('')
+  const [count, setCount] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState<null | 'receive' | 'count'>(null)
+  const load = () =>
+    api<{ items: Move[] }>(`/equipment/${item._id}/stock`)
+      .then((r) => setMoves(r.items))
+      .catch(() => setMoves([]))
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item._id])
+  async function go(action: 'receive' | 'count') {
+    const qty = Number(action === 'receive' ? recv : count)
+    if (action === 'receive' && !(qty > 0)) return toast('Enter how many came in', 'err')
+    if (action === 'count' && (count === '' || Number.isNaN(qty))) return toast('Enter the counted number', 'err')
+    setBusy(action)
+    try {
+      const r = await api<{ stock: number; delta: number }>(`/equipment/${item._id}/stock`, { body: { action, qty, note: note.trim() || undefined } })
+      setStock(r.stock)
+      setRecv('')
+      setCount('')
+      setNote('')
+      toast(action === 'receive' ? `+${qty} ${item.unit} received · ${r.stock} in store` : r.delta ? `Count set to ${r.stock} (${r.delta > 0 ? '+' : ''}${r.delta})` : 'Count unchanged', 'ok')
+      load()
+      router.refresh()
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setBusy(null)
+    }
+  }
+  const st = stockState({ stock, alertBelow: item.alertBelow })
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-[12px] font-semibold uppercase tracking-[.05em] text-slate-500">In the store</span>
+        {item.type === 'EQUIPMENT' && <span className="text-[11.5px] text-slate-500">Equipment comes back — not taken out on visits</span>}
+      </div>
+      <div className={cx('mt-0.5 text-[30px] font-bold leading-tight', st === 'out' ? 'text-[#B91C1C]' : st === 'low' ? 'text-[#B45309]' : 'text-slate-900')}>
+        {stock} <span className="text-[15px] font-semibold text-slate-500">{item.unit}</span>
+      </div>
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
+        <div>
+          <span className="hc-label">Received</span>
+          <div className="flex gap-1.5">
+            <input className="hc-input min-w-0" inputMode="numeric" placeholder="+ qty" value={recv} onChange={(e) => setRecv(e.target.value.replace(/\D/g, ''))} />
+            <button type="button" disabled={!!busy} onClick={() => go('receive')} className={btnClass('p', 'md', 'flex-none px-3')} title="Add to stock">
+              {busy === 'receive' ? <Loader2 size={15} className="animate-spin" /> : <PackagePlus size={15} />}
+            </button>
+          </div>
+        </div>
+        <div>
+          <span className="hc-label">Counted (stock-take)</span>
+          <div className="flex gap-1.5">
+            <input className="hc-input min-w-0" inputMode="numeric" placeholder={String(stock)} value={count} onChange={(e) => setCount(e.target.value.replace(/[^\d-]/g, ''))} />
+            <button type="button" disabled={!!busy} onClick={() => go('count')} className={btnClass('o', 'md', 'flex-none bg-white px-3')} title="Set the count">
+              {busy === 'count' ? <Loader2 size={15} className="animate-spin" /> : <ClipboardCheck size={15} />}
+            </button>
+          </div>
+        </div>
+      </div>
+      <input className="hc-input mt-2" placeholder="Note (optional) — e.g. H360 requisition or invoice no." value={note} onChange={(e) => setNote(e.target.value)} maxLength={200} />
+      <div className="mt-3 text-[12px] font-semibold text-slate-600">History</div>
+      {!moves ? (
+        <Loader2 size={15} className="mt-1 animate-spin text-slate-400" />
+      ) : !moves.length ? (
+        <div className="mt-1 text-[12.5px] text-slate-400">No moves yet</div>
+      ) : (
+        <ul className="mt-1 max-h-[220px] divide-y divide-slate-200 overflow-y-auto rounded-lg bg-white ring-1 ring-slate-200">
+          {moves.map((m) => (
+            <li key={m.id} className="flex items-center gap-2.5 px-2.5 py-1.5 text-[12.5px]">
+              <span className={cx('w-12 flex-none text-right font-bold', m.delta < 0 ? 'text-[#B91C1C]' : 'text-[#15803D]')}>
+                {m.delta > 0 ? '+' : ''}
+                {m.delta}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">
+                  <b>{REASON[m.reason]}</b>
+                  {m.note ? ` · ${m.note}` : ''}
+                  {m.requestId && (
+                    <Link href={`/requests/${m.requestId}`} className="ml-1 text-primary-700 hover:underline">
+                      {m.requestNo}
+                    </Link>
+                  )}
+                </span>
+                <span className="block text-[11px] text-slate-400">
+                  {new Date(m.at).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })}
+                  {m.by ? ` · ${m.by}` : ''}
+                </span>
+              </span>
+              <span className="flex-none text-slate-500">= {m.balance ?? '—'}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
