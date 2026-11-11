@@ -1,5 +1,5 @@
 import 'server-only'
-import { getH360Config, h360, H360Error } from './h360'
+import { getH360Config, h360, H360Error, type H360Profile } from './h360'
 import { forget, memo } from './memo'
 
 // H360's service / test / procedure catalog with prices — the same search as typing in H360's billing "Service" box.
@@ -9,26 +9,34 @@ import { forget, memo } from './memo'
 // path that isn't a known search endpoint, so a mistake can't turn into an H360 invoice.
 
 // '/doctor-info-autocomplete' is the Roster page's "Employee Search" (employee_ind=1): lib/h360-staff.ts
-const READ_ONLY_POSTS = new Set(['/get-item-name-v1', '/patient-info-autocomplete', '/hospital-patient-search', '/doctor-info-autocomplete'])
+// '/inventory/search_stock_ledger_list_subStore' + '/inventory/stock_details' are the Sub Store Stock Ledger's Search and
+// per-item transactions (read-only report): lib/h360-store.ts
+const READ_ONLY_POSTS = new Set(['/get-item-name-v1', '/patient-info-autocomplete', '/hospital-patient-search', '/doctor-info-autocomplete', '/inventory/search_stock_ledger_list_subStore', '/inventory/stock_details'])
 
 /** POST to an H360 *search* endpoint only (form-encoded, AJAX headers, CSRF). Anything else throws. */
-export async function readOnlyPost(path: string, fields: Record<string, string>, retry = true): Promise<Response> {
+export async function readOnlyPost(path: string, fields: Record<string, string>, retry = true, as: H360Profile = 'main'): Promise<Response> {
   if (!READ_ONLY_POSTS.has(path)) throw new Error(`H360 is read-only for this app: ${path} is not an allowed search`)
-  const res = await h360(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8', 'x-csrf-token': await token(), 'x-requested-with': 'XMLHttpRequest', accept: 'application/json' },
-    body: new URLSearchParams(fields).toString(),
-  })
+  const t = await token(as)
+  const res = await h360(
+    path,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded; charset=UTF-8', 'x-csrf-token': t, 'x-requested-with': 'XMLHttpRequest', accept: 'application/json, text/html' },
+      body: new URLSearchParams({ _token: t, ...fields }).toString(),
+    },
+    as,
+  )
   if ((res.status === 419 || res.status === 401) && retry) {
-    forget('h360i:csrf')
-    return readOnlyPost(path, fields, false)
+    forget(`h360i:csrf:${as}`)
+    return readOnlyPost(path, fields, false, as)
   }
   return res
 }
 
-function token() {
-  return memo('h360i:csrf', 30 * 60_000, async () => {
-    const html = await (await h360('/uhl/patient-list', { headers: { 'x-requested-with': 'XMLHttpRequest' } })).text()
+/** CSRF token of the login's session — from a page that login can open (store login: the stock ledger). */
+function token(as: H360Profile = 'main') {
+  return memo(`h360i:csrf:${as}`, 30 * 60_000, async () => {
+    const html = await (await h360(as === 'store' ? '/inventory/stock-ledger-subStore' : '/uhl/patient-list', { headers: { 'x-requested-with': 'XMLHttpRequest' } }, as)).text()
     const t = html.match(/name="_token"\s+value="([^"]+)"/)?.[1] ?? html.match(/csrf-token"\s+content="([^"]+)"/)?.[1]
     if (!t) throw new H360Error('PARSE', 'H360 page has no CSRF token')
     return t

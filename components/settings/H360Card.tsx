@@ -1,28 +1,31 @@
 'use client'
-// Settings → Integrations → H360 (hospital HIS). Super admin saves the login HomeCare uses to read H360 (patient search,
-// later bills and prices). Stored encrypted on the server; the password is never shown again.
+// Settings → Integrations → H360 (hospital HIS). Super admin saves the two logins HomeCare uses to read H360: the main
+// one (patients, bills, staff, tests) and the store one (Family Medicine Sub Store Stock Ledger). Stored encrypted; the
+// password is never shown again — type a new one any time the H360 password changes.
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, Loader2, PlugZap, Save, Trash2, XCircle } from 'lucide-react'
+import { CheckCircle2, Loader2, Package, PlugZap, Save, Trash2, XCircle } from 'lucide-react'
 import { api, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 
 type Status = { configured: boolean; savedAt: string | null; ok?: boolean; at?: string; error?: string | null; username: string | null; baseUrl: string }
 
-export function H360Card({ initial }: { initial: Status }) {
+export function H360Card({ initial, profile = 'main' }: { initial: Status; profile?: 'main' | 'store' }) {
+  const store = profile === 'store'
+  const qs = store ? '?profile=store' : ''
   const router = useRouter()
   const toast = useToast()
   const [v, setV] = useState({ baseUrl: initial.baseUrl, username: initial.username ?? '', password: '' })
   const [sample, setSample] = useState('')
   const [busy, setBusy] = useState<null | 'save' | 'test' | 'remove'>(null)
-  const [result, setResult] = useState<null | { ok: boolean; error?: string; found?: number | null; first?: string | null; endpoint?: string }>(null)
+  const [result, setResult] = useState<null | { ok: boolean; error?: string; found?: number | null; first?: string | null; endpoint?: string; store?: string; totalQty?: number; usingMain?: boolean }>(null)
   const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '')
 
   async function save() {
     setBusy('save')
     try {
-      await api('/integrations/h360', { body: { baseUrl: v.baseUrl.trim(), username: v.username.trim(), password: v.password || undefined } })
-      toast('H360 login saved', 'ok')
+      await api(`/integrations/h360${qs}`, { body: { baseUrl: v.baseUrl.trim(), username: v.username.trim(), password: v.password || undefined } })
+      toast(store ? 'H360 store login saved' : 'H360 login saved', 'ok')
       setV((x) => ({ ...x, password: '' }))
       router.refresh()
     } catch (e: any) {
@@ -35,7 +38,7 @@ export function H360Card({ initial }: { initial: Status }) {
     setBusy('test')
     setResult(null)
     try {
-      const r = await api<typeof result>('/integrations/h360', { body: { test: true, sample: sample.trim() || undefined } })
+      const r = await api<typeof result>(`/integrations/h360${qs}`, { body: { test: true, sample: sample.trim() || undefined } })
       setResult(r)
       router.refresh()
     } catch (e: any) {
@@ -45,10 +48,10 @@ export function H360Card({ initial }: { initial: Status }) {
     }
   }
   async function remove() {
-    if (!confirm('Remove the saved H360 login? Live H360 search stops working.')) return
+    if (!confirm(store ? 'Remove the store login? The store match then uses the main H360 login.' : 'Remove the saved H360 login? Live H360 search stops working.')) return
     setBusy('remove')
     try {
-      await api('/integrations/h360', { method: 'DELETE' })
+      await api(`/integrations/h360${qs}`, { method: 'DELETE' })
       toast('H360 login removed', 'ok')
       setV({ baseUrl: initial.baseUrl, username: '', password: '' })
       router.refresh()
@@ -62,11 +65,16 @@ export function H360Card({ initial }: { initial: Status }) {
   return (
     <section className="flex flex-col rounded-card bg-white p-5 shadow-card">
       <div className="mb-1 flex items-center gap-2">
-        <PlugZap size={18} className="text-primary-700" />
-        <h2 className="text-base font-bold">H360 hospital system</h2>
+        {store ? <Package size={18} className="text-primary-700" /> : <PlugZap size={18} className="text-primary-700" />}
+        <h2 className="text-base font-bold">{store ? 'H360 · store / inventory login' : 'H360 · main login'}</h2>
         {initial.configured && (initial.ok ? <span className="ml-auto rounded-full bg-[#DCFCE7] px-2 py-0.5 text-[11.5px] font-bold text-[#15803D]">Connected</span> : initial.ok === false ? <span className="ml-auto rounded-full bg-[#FEE2E2] px-2 py-0.5 text-[11.5px] font-bold text-[#B91C1C]">Login failed</span> : null)}
       </div>
-      <p className="text-[13px] text-slate-500">HomeCare signs in to H360 with this account to search patients live by UHID, mobile or name (read-only). Use a separate H360 user for HomeCare, not a personal login.</p>
+      <p className="text-[13px] text-slate-500">
+        {store
+          ? 'Reads the Sub Store Stock Ledger of Nursing Services – Family Medicine to match the HomeCare store (read-only). Use an H360 user with Inventory access. Not saved = the main login is used.'
+          : 'Searches patients live by UHID, mobile or name, reads bills, staff and the tests list (read-only). Use a separate H360 user for HomeCare, not a personal login.'}
+        {' '}When the H360 password changes, type the new one here and Save.
+      </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <label className="sm:col-span-2">
           <span className="hc-label">H360 address</span>
@@ -92,24 +100,27 @@ export function H360Card({ initial }: { initial: Status }) {
         <button type="button" className={btnClass('p', 'md')} disabled={!!busy || !v.username.trim() || (!initial.configured && !v.password)} onClick={save}>
           {busy === 'save' ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} Save login
         </button>
-        {initial.configured && (
+        {(initial.configured || store) && (
           <>
-            <input className="hc-input h-10 w-[200px]" value={sample} onChange={(e) => setSample(e.target.value)} placeholder="Test search (UHID / mobile)" />
+            {!store && <input className="hc-input h-10 w-[200px]" value={sample} onChange={(e) => setSample(e.target.value)} placeholder="Test search (UHID / mobile)" />}
             <button type="button" className={btnClass('o', 'md')} disabled={!!busy} onClick={test}>
               {busy === 'test' ? <Loader2 size={16} className="animate-spin" /> : <PlugZap size={16} />} Test connection
             </button>
-            <button type="button" className={btnClass('ghost', 'md', 'text-[#B91C1C]')} disabled={!!busy} onClick={remove}>
-              <Trash2 size={16} /> Remove
-            </button>
+            {initial.configured && (
+              <button type="button" className={btnClass('ghost', 'md', 'text-[#B91C1C]')} disabled={!!busy} onClick={remove}>
+                <Trash2 size={16} /> Remove
+              </button>
+            )}
           </>
         )}
       </div>
       {result && (
         <div className={`mt-3 rounded-lg px-3 py-2.5 text-[13px] ${result.ok ? 'bg-[#F0FDF4] text-[#15803D]' : 'bg-[#FEE2E2] text-[#B91C1C]'}`}>
           <div className="flex items-center gap-2 font-semibold">
-            {result.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />} {result.ok ? 'Signed in to H360' : result.error}
+            {result.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />} {result.ok ? (store ? `Read ${result.found} items · ${result.store} · total ${result.totalQty}` : 'Signed in to H360') : result.error}
           </div>
-          {result.ok && (
+          {result.ok && store && result.usingMain && <div className="mt-1 text-[12px] text-slate-600">Using the main login — save a store login above to use a separate H360 user.</div>}
+          {result.ok && !store && (
             <div className="mt-1 text-[12px] text-slate-600">
               Live search via {result.endpoint ?? 'H360'}
               {result.found != null ? <> · test search found {result.found}{result.first ? ` — ${result.first}` : ''}</> : ' · type a UHID or mobile in the box to test a search'}

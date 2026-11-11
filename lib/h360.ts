@@ -22,33 +22,51 @@ export class H360Error extends Error {
   }
 }
 
-// ---------------------------------------------------------------- saved login
-export async function getH360Config(): Promise<H360Config | null> {
-  const row = await IntegrationSecret.findById('h360').select('+encrypted').lean<any>()
+// ---------------------------------------------------------------- saved logins
+// Two H360 logins, each saved encrypted by a super admin (Settings → Integrations → H360) and changeable any time:
+//   main  — patients, bills, staff search, tests catalog
+//   store — the Family Medicine store (Sub Store Stock Ledger); falls back to main when not saved
+export type H360Profile = 'main' | 'store'
+const KEY: Record<H360Profile, { cfg: string; session: string; status: string }> = {
+  main: { cfg: 'h360', session: 'h360:session', status: 'h360:status' },
+  store: { cfg: 'h360:store', session: 'h360:store:session', status: 'h360:store:status' },
+}
+
+/** The login saved for exactly this profile (no fallback) — for the settings card. */
+export async function ownConfig(profile: H360Profile): Promise<H360Config | null> {
+  const row = await IntegrationSecret.findById(KEY[profile].cfg).select('+encrypted').lean<any>()
   return row ? decryptIntegration<H360Config>(row.encrypted, AAD) : null
 }
-export async function saveH360Config(c: H360Config, userId: string) {
-  await IntegrationSecret.updateOne({ _id: 'h360' }, { encrypted: encryptIntegration(c, AAD), updatedBy: userId }, { upsert: true })
-  await IntegrationSecret.deleteOne({ _id: 'h360:session' })
-  jar = null
+/** The login for a profile — the store login falls back to the main one when it isn't saved. */
+export async function getH360Config(profile: H360Profile = 'main'): Promise<H360Config | null> {
+  return (await ownConfig(profile)) ?? (profile === 'store' ? ownConfig('main') : null)
 }
-export async function clearH360Config() {
-  await IntegrationSecret.deleteMany({ _id: { $in: ['h360', 'h360:session'] } })
-  jar = null
+/** Which saved login a profile really uses (store → main when the store login isn't saved). */
+async function effective(profile: H360Profile): Promise<H360Profile> {
+  return profile === 'store' && !(await IntegrationSecret.exists({ _id: KEY.store.cfg })) ? 'main' : profile
+}
+export async function saveH360Config(c: H360Config, userId: string, profile: H360Profile = 'main') {
+  await IntegrationSecret.updateOne({ _id: KEY[profile].cfg }, { encrypted: encryptIntegration(c, AAD), updatedBy: userId }, { upsert: true })
+  await IntegrationSecret.deleteOne({ _id: KEY[profile].session })
+  jars.delete(profile)
+}
+export async function clearH360Config(profile: H360Profile = 'main') {
+  await IntegrationSecret.deleteMany({ _id: { $in: [KEY[profile].cfg, KEY[profile].session] } })
+  jars.delete(profile)
 }
 /** last test / login result, for the settings card (no secrets) */
-export async function h360Status() {
-  const [cfg, st] = await Promise.all([IntegrationSecret.findById('h360').select('updatedAt updatedBy').lean<any>(), Setting.findOne({ key: 'h360:status' }).lean<any>()])
-  return { configured: !!cfg, savedAt: cfg?.updatedAt ?? null, ...(st?.value ?? {}) } as { configured: boolean; savedAt: Date | null; ok?: boolean; at?: Date; error?: string; username?: string; baseUrl?: string }
+export async function h360Status(profile: H360Profile = 'main') {
+  const [cfg, st] = await Promise.all([IntegrationSecret.findById(KEY[profile].cfg).select('updatedAt updatedBy').lean<any>(), Setting.findOne({ key: KEY[profile].status }).lean<any>()])
+  return { configured: !!cfg, savedAt: cfg?.updatedAt ?? null, ...(st?.value ?? {}) } as { configured: boolean; savedAt: Date | null; ok?: boolean; at?: Date; error?: string; username?: string; baseUrl?: string; found?: number | null }
 }
-async function setStatus(v: Record<string, unknown>) {
-  await Setting.updateOne({ key: 'h360:status' }, { value: { ...v, at: new Date() } }, { upsert: true })
+async function setStatus(v: Record<string, unknown>, profile: H360Profile = 'main') {
+  await Setting.updateOne({ key: KEY[profile].status }, { value: { ...v, at: new Date() } }, { upsert: true })
 }
 
 // ---------------------------------------------------------------- cookie jar + sign-in
 type Jar = { base: string; cookies: Record<string, string>; until: number }
-let jar: Jar | null = null
-let signingIn: Promise<Jar> | null = null
+const jars = new Map<H360Profile, Jar>()
+const signingIn = new Map<H360Profile, Promise<Jar>>()
 
 const cookieHeader = (j: Jar) => Object.entries(j.cookies).map(([k, v]) => `${k}=${v}`).join('; ')
 function absorb(j: Jar, res: Response) {
@@ -74,8 +92,8 @@ async function raw(j: Jar, path: string, init: RequestInit = {}) {
 }
 const isLoginRedirect = (res: Response) => res.status >= 300 && res.status < 400 && /\/login\b/.test(res.headers.get('location') ?? '')
 
-async function signIn(): Promise<Jar> {
-  const cfg = await getH360Config()
+async function signIn(profile: H360Profile = 'main'): Promise<Jar> {
+  const cfg = await ownConfig(profile)
   if (!cfg) throw new H360Error('NOT_CONFIGURED', 'H360 login is not set — a super admin can add it in Settings → Integrations')
   const j: Jar = { base: cfg.baseUrl.replace(/\/+$/, ''), cookies: {}, until: 0 }
   const page = await raw(j, '/login')
@@ -86,36 +104,47 @@ async function signIn(): Promise<Jar> {
   const to = res.headers.get('location') ?? ''
   if (res.status === 419) throw new H360Error('AUTH', 'H360 refused the sign-in (session token expired) — try again')
   if (!(res.status >= 300 && res.status < 400) || /\/login\b/.test(to)) {
-    await setStatus({ ok: false, error: 'H360 login failed — check the user name and password', username: cfg.username, baseUrl: j.base })
-    throw new H360Error('AUTH', 'H360 login failed — check the user name and password in Settings → Integrations')
+    await setStatus({ ok: false, error: 'H360 login failed — check the user name and password', username: cfg.username, baseUrl: j.base }, profile)
+    throw new H360Error('AUTH', `H360 ${profile === 'store' ? 'store ' : ''}login failed — check the user name and password in Settings → Integrations`)
   }
   if (to) await raw(j, to) // land on the dashboard so the session is fully set
   j.until = Date.now() + 9 * 3600_000
-  await IntegrationSecret.updateOne({ _id: 'h360:session' }, { encrypted: encryptIntegration(j, AAD) }, { upsert: true })
+  await IntegrationSecret.updateOne({ _id: KEY[profile].session }, { encrypted: encryptIntegration(j, AAD) }, { upsert: true })
   return j
 }
 
-async function session(fresh = false): Promise<Jar> {
-  if (!fresh && jar && jar.until > Date.now()) return jar
+async function session(fresh = false, profile: H360Profile = 'main'): Promise<Jar> {
+  const cur = jars.get(profile)
+  if (!fresh && cur && cur.until > Date.now()) return cur
   if (!fresh) {
-    const row = await IntegrationSecret.findById('h360:session').select('+encrypted').lean<any>()
+    const row = await IntegrationSecret.findById(KEY[profile].session).select('+encrypted').lean<any>()
     if (row) {
       try {
         const j = decryptIntegration<Jar>(row.encrypted, AAD)
-        if (j.until > Date.now()) return (jar = j)
+        if (j.until > Date.now()) {
+          jars.set(profile, j)
+          return j
+        }
       } catch {}
     }
   }
-  signingIn ??= signIn().finally(() => (signingIn = null))
-  return (jar = await signingIn)
+  let p = signingIn.get(profile)
+  if (!p) {
+    p = signIn(profile).finally(() => signingIn.delete(profile))
+    signingIn.set(profile, p)
+  }
+  const j = await p
+  jars.set(profile, j)
+  return j
 }
 
-/** GET/POST inside H360, signing in again once if the session has expired. */
-export async function h360(path: string, init: RequestInit = {}) {
-  let j = await session()
+/** GET/POST inside H360 (as the given login), signing in again once if the session has expired. */
+export async function h360(path: string, init: RequestInit = {}, as: H360Profile = 'main') {
+  const profile = await effective(as)
+  let j = await session(false, profile)
   let res = await raw(j, path, init)
   if (isLoginRedirect(res) || res.status === 401 || res.status === 419) {
-    j = await session(true)
+    j = await session(true, profile)
     res = await raw(j, path, init)
   }
   if (isLoginRedirect(res)) throw new H360Error('AUTH', 'H360 session could not be opened')
@@ -339,9 +368,9 @@ async function searchPatientsByList(q: string): Promise<H360Patient[]> {
 export async function testH360(sample?: string) {
   const cfg = await getH360Config()
   try {
-    jar = null
+    jars.delete('main')
     forget('h360:')
-    await IntegrationSecret.deleteOne({ _id: 'h360:session' })
+    await IntegrationSecret.deleteOne({ _id: KEY.main.session })
     await session(true)
     await csrfToken()
     let found: number | null = null
@@ -466,4 +495,22 @@ export async function billPdf(b: Pick<H360Bill, 'invoiceNo' | 'trx' | 'type'>): 
   const at = buf.indexOf('%PDF')
   if (at < 0 || at > 1024) throw new H360Error('PARSE', 'H360 did not return a PDF for this bill')
   return at ? buf.subarray(at) : buf // H360 prints a stray newline before the PDF header
+}
+
+/** Settings → Integrations → Store login → Test: sign in as the store login and read the Family Medicine sub-store. */
+export async function testH360Store() {
+  const profile = await effective('store')
+  const cfg = await getH360Config('store')
+  try {
+    jars.delete(profile)
+    await IntegrationSecret.deleteOne({ _id: KEY[profile].session })
+    await session(true, profile)
+    const { fetchSubStoreStock } = await import('./h360-store')
+    const r = await fetchSubStoreStock({ fresh: true })
+    await setStatus({ ok: true, username: cfg?.username, baseUrl: cfg?.baseUrl, error: null, found: r.items.length }, 'store')
+    return { ok: true, found: r.items.length, store: r.storeName, totalQty: r.totalQty, usingMain: profile === 'main' }
+  } catch (e: any) {
+    await setStatus({ ok: false, username: cfg?.username, baseUrl: cfg?.baseUrl, error: e?.message ?? String(e) }, 'store')
+    return { ok: false, error: e?.message ?? String(e) }
+  }
 }

@@ -16,7 +16,7 @@ import { canOpenSettings, hasRole } from '@/lib/constants'
 import { H360Card } from '@/components/settings/H360Card'
 import { WaSafetyCard } from '@/components/settings/WaSafetyCard'
 import { safetyStatus } from '@/lib/wa/guard'
-import { DEFAULT_H360_URL, getH360Config, h360Status } from '@/lib/h360'
+import { DEFAULT_H360_URL, ownConfig, h360Status } from '@/lib/h360'
 
 export const metadata: Metadata = { title: 'Settings & integrations' }
 
@@ -91,12 +91,10 @@ export default async function SettingsPage() {
         />
 
         {hasRole(user, 'SUPER_ADMIN') && (
-          <H360Card
-            initial={plain(await (async () => {
-              const [st, cfg] = await Promise.all([h360Status(), getH360Config().catch(() => null)])
-              return { ...st, username: cfg?.username ?? null, baseUrl: cfg?.baseUrl ?? DEFAULT_H360_URL } as any
-            })())}
-          />
+          <>
+            <H360Login profile="main" />
+            <H360Login profile="store" />
+          </>
         )}
 
         <WhatsAppCard initial={plain(s.whatsapp)} envCountry={process.env.WA_DEFAULT_COUNTRY ?? '880'} status={JSON.parse(JSON.stringify(await (await import('@/lib/wa/service')).waStatus()))} /* Baileys loads only on this page */ autoSend={s.whatsapp.autoSend !== false} />
@@ -174,4 +172,10 @@ export default async function SettingsPage() {
       </div>
     </AdminPage>
   )
+}
+
+/** One of the two saved H360 logins (main · store), with its last check — never the password. */
+async function H360Login({ profile }: { profile: 'main' | 'store' }) {
+  const [st, cfg] = await Promise.all([h360Status(profile), ownConfig(profile).catch(() => null)])
+  return <H360Card profile={profile} initial={plain({ ...st, username: cfg?.username ?? null, baseUrl: cfg?.baseUrl ?? DEFAULT_H360_URL } as any)} />
 }
