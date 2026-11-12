@@ -113,8 +113,12 @@ export async function templateVars(r: any, staffId?: unknown) {
         token ? shortLink(`/t/${token}`, { kind: 'TRACK', requestId: r._id, ttlDays: 3 }) : '',
       ])
     : ['', '', '']
+  // the hospital UHID, when the patient has one (older requests: from the patient record)
+  const uhid = String(r.patientSnapshot?.uhid || (r.patientId ? (await Patient.findById(r.patientId).select('uhid').lean<any>())?.uhid ?? '' : '')).trim()
   return {
     patientName: r.patientSnapshot?.name,
+    uhid,
+    uhidTag: uhid ? ` · UHID ${uhid}` : '',
     requestNo: r.requestNo,
     serviceType: (r.services ?? []).map((x: any) => x.name).join(', '),
     date: r.scheduledAt ? fmtDate(r.scheduledAt) : r.preferred?.date ?? '',
