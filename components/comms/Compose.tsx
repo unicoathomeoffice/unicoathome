@@ -16,7 +16,7 @@ export function ComposeButton({ requestId, contact, whatsappLive }: { requestId:
   const [open, setOpen] = useState(false)
   const [channel, setChannel] = useState<'WHATSAPP' | 'EMAIL'>(contact.phone ? 'WHATSAPP' : 'EMAIL')
   const [subject, setSubject] = useState('')
-  const [text, setText] = useState(`Dear ${contact.name ?? 'patient'},\n\n`)
+  const [text, setText] = useState(`Respected Sir/Madam,\n\n`)
   const [busy, setBusy] = useState(false)
 
   async function send() {
@@ -28,7 +28,7 @@ export function ComposeButton({ requestId, contact, whatsappLive }: { requestId:
         toast('WhatsApp opened with your message — tap Send there', 'ok')
       } else toast(r.channel === 'EMAIL' ? 'Email queued' : 'WhatsApp message queued', 'ok')
       setOpen(false)
-      setText(`Dear ${contact.name ?? 'patient'},\n\n`)
+      setText(`Respected Sir/Madam,\n\n`)
       setSubject('')
       router.refresh()
     } catch (e: any) {

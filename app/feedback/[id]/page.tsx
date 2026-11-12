@@ -50,7 +50,7 @@ export default async function FeedbackPage({ params }: { params: Promise<{ id: s
             <div className="text-[12px] font-semibold uppercase tracking-[.08em] text-slate-500">Home care · feedback</div>
             {asking && (
               <h1 className="mt-1 text-[22px] font-bold leading-tight">
-                {first ? `Dear ${first},` : 'Hello,'}
+                {'Respected Sir/Madam,'}
                 <br />
                 <span className="text-[17px] font-semibold text-slate-600">how was your home care visit{visitDate ? ` on ${fmtDate(visitDate)}` : ''}?</span>
               </h1>

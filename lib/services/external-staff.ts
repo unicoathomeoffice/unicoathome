@@ -71,9 +71,8 @@ export async function grantAppLogin(u: any, user: SessionUser, meta: Meta = {}):
   const to = u.whatsapp || (/^0\d{10}$/.test(u.phone ?? '') ? u.phone : null)
   if (to) {
     const { queueWhatsApp } = await import('../wa/service')
-    const first = String(u.name).replace(/^(Dr\.?|Md\.?|Mst\.?)\s+/i, '').split(' ')[0]
     const text = [
-      `Dear ${first}, you have been added to Unico @ Home (home care) as supporting staff.`,
+      `Respected Sir/Madam, you have been added to Unico @ Home (home care) as supporting staff.`,
       `Open the HomeCare app: ${baseUrl()}/m/login`,
       `Employee ID: ${u.employeeId}`,
       `Temporary PIN: ${pin}`,

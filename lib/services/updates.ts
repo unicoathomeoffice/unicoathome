@@ -27,7 +27,7 @@ export async function buildVisitUpdate(requestId: unknown, opts: { forPatient?: 
   const lines: string[] = []
   const services = (r.services ?? []).map((s: any) => s.name).join(', ')
   if (opts.forPatient) {
-    lines.push(`Dear ${r.patientSnapshot?.name}, here is a summary of today's home visit.`)
+    lines.push(`Respected Sir/Madam, here is a summary of today's home visit.`)
   } else {
     lines.push(`${['COMPLETED', 'CLOSED'].includes(r.status) ? '✅' : 'ℹ️'} ${services}`)
     lines.push(`Patient: ${r.patientSnapshot?.name}${r.patientSnapshot?.ageYears != null ? ` (${ageGender(r.patientSnapshot.ageYears, r.patientSnapshot.gender)})` : ''}${r.patientSnapshot?.area ? ` · ${r.patientSnapshot.area}` : ''}`)
