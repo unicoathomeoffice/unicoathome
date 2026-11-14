@@ -39,8 +39,9 @@ export const equipmentImage = (e: { _id: string; imageId?: string | null }) => (
 export function ItemPicture({ item, size = 48, className }: { item: { _id: string; imageId?: string | null; name: string }; size?: number; className?: string }) {
   const src = equipmentImage(item)
   return (
-    <span className={cx('flex flex-none items-center justify-center overflow-hidden rounded-lg bg-slate-100 text-slate-400', className)} style={size ? { width: size, height: size } : undefined}>
-      {src ? <img src={src} alt={item.name} className="size-full object-cover" loading="lazy" /> : <Package size={size ? Math.round(size * 0.45) : 28} />}
+    <span className={cx('flex flex-none items-center justify-center overflow-hidden rounded-lg text-slate-400', src ? 'bg-white' : 'bg-slate-100', className)} style={size ? { width: size, height: size } : undefined}>
+      {/* contain: the whole item shows, whatever its shape (a tall syringe never stretches the card) */}
+      {src ? <img src={src} alt={item.name} className="size-full object-contain" loading="lazy" /> : <Package size={size ? Math.round(size * 0.45) : 28} />}
     </span>
   )
 }
@@ -276,7 +277,7 @@ function FamilyCard({ family, members, onOpen, onPicture, onAddSize }: { family:
                 title={m.imageId ? 'View picture' : 'Add a picture'}
                 onClick={(e) => (e.stopPropagation(), onPicture(m))}
                 onKeyDown={(e) => e.key === 'Enter' && (e.stopPropagation(), onPicture(m))}
-                className="relative block aspect-square w-full bg-slate-100"
+                className="relative block aspect-square w-full overflow-hidden bg-slate-100"
               >
                 <ItemPicture item={m} size={0} className="!size-full rounded-none" />
                 <PicBadge item={m} />

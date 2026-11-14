@@ -120,6 +120,17 @@ async function toAvif(input: Buffer): Promise<{ data: Buffer; mime: string; ext:
     const trimmed = await img.clone().trim({ background: '#ffffff', threshold: 14 }).png().toBuffer({ resolveWithObject: true })
     if (trimmed.info.width > 40 && trimmed.info.height > 40) img = sharp(trimmed.data)
   } catch {}
+  // every item picture ends up square: the item centred on white with a small margin, so a tall syringe or a wide
+  // box looks the same size on the cards as everything else
+  try {
+    const flat = await img.png().toBuffer({ resolveWithObject: true })
+    const { width: w, height: h } = flat.info
+    const S = Math.round(Math.max(w, h) * 1.1)
+    const left = Math.floor((S - w) / 2)
+    const top = Math.floor((S - h) / 2)
+    // rendered here: sharp would otherwise apply extend after the resize below
+    img = sharp(await sharp(flat.data).extend({ left, right: S - w - left, top, bottom: S - h - top, background: '#ffffff' }).png().toBuffer())
+  } catch {}
   const fit = img.resize({ width: 1000, height: 1000, fit: 'inside', withoutEnlargement: true })
   try {
     return { data: await fit.clone().avif({ quality: 55, effort: 4 }).toBuffer(), mime: 'image/avif', ext: 'avif' }
