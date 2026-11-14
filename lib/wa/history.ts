@@ -3,25 +3,32 @@ import { HomecareRequest, MessageLog, Patient, User } from '../models'
 import { ROLE_LABEL } from '../constants'
 import { waNumber } from '../messaging'
 import { refreshPending } from './outbox'
+import { isSpecialKey } from './inbound-parse'
 
-// The WhatsApp inbox (/outbox): every WhatsApp the app has written, as one chat per phone number — waiting for
-// approval, sent, delivered, read, failed or discarded — with the full history of each message (MessageLog.events).
+// The WhatsApp inbox (/outbox): a WhatsApp Web of the linked number. One chat per person (phone digits), group (g:…)
+// or hidden number (lid:…): what the app wrote (waiting for approval, sent, delivered, read, failed, not sent), what
+// people sent us (lib/wa/inbound.ts) and what was typed on the phone — with the full history of each message.
 
 const WA = { channel: 'WHATSAPP' } as const
 /** Delivered / read receipts are recorded from this moment on; older sent messages have no delivery report. */
 export const RECEIPTS_SINCE = new Date('2026-11-14T05:00:00Z')
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-export type ChatFilter = 'all' | 'waiting' | 'sent' | 'failed' | 'discarded'
+export type ChatFilter = 'all' | 'waiting' | 'sent' | 'failed' | 'discarded' | 'unread' | 'groups'
 export type ChatRow = {
   to: string
   name: string
   role: string | null
-  last: { text: string; status: string; at: string; file: string | null }
+  isGroup: boolean
+  last: { text: string; status: string; at: string; file: string | null; incoming: boolean; fromName: string | null; kind: string | null; deleted: boolean }
   waiting: number
   failed: number
+  unread: number
   total: number
 }
+/** A chat key from a URL / input: people → phone digits; groups and hidden numbers keep their key. */
+export const chatKey = (to: string) => (isSpecialKey(to) ? to : waNumber(to))
+const fallbackName = (to: string) => (to.startsWith('g:') ? 'WhatsApp group' : to.startsWith('lid:') ? 'WhatsApp contact' : `+${to}`)
 export type Contact = { to: string; name: string; role: string | null; href: string | null }
 
 /** The spellings a number may be saved with on staff / patient records. */
@@ -79,6 +86,12 @@ export async function listChats(opts: { q?: string; filter?: ChatFilter; limit?:
         status: { $first: '$status' },
         at: { $first: '$at' },
         file: { $first: '$fileName' },
+        dir: { $first: '$direction' },
+        fromName: { $first: '$fromName' },
+        kind: { $first: '$kind' },
+        deleted: { $first: '$deletedAt' },
+        isGroup: { $max: { $ifNull: ['$isGroup', false] } },
+        unread: { $sum: { $cond: [{ $and: [{ $eq: ['$direction', 'IN'] }, { $not: ['$seenAt'] }] }, 1, 0] } },
         total: { $sum: 1 },
         waiting: { $sum: { $cond: [{ $eq: ['$status', 'PENDING'] }, 1, 0] } },
         failed: { $sum: { $cond: [{ $eq: ['$status', 'FAILED'] }, 1, 0] } },
@@ -90,19 +103,24 @@ export async function listChats(opts: { q?: string; filter?: ChatFilter; limit?:
     { $limit: 600 },
   ])
   const f = opts.filter ?? 'all'
-  const kept = rows.filter((r) => (f === 'waiting' ? r.waiting > 0 : f === 'failed' ? r.failed > 0 : f === 'sent' ? r.sent > 0 : f === 'discarded' ? r.skipped > 0 : true))
-  const who = await whoIs(kept.map((r) => r._id))
+  const kept = rows.filter((r) =>
+    f === 'waiting' ? r.waiting > 0 : f === 'failed' ? r.failed > 0 : f === 'sent' ? r.sent > 0 : f === 'discarded' ? r.skipped > 0 : f === 'unread' ? r.unread > 0 : f === 'groups' ? r.isGroup || String(r._id).startsWith('g:') : true,
+  )
+  const who = await whoIs(kept.map((r) => r._id).filter((k: string) => !isSpecialKey(k)))
   return kept
     .map((r) => {
       const c = who.get(r._id)
       const named = r.name || r.names.find(Boolean)
+      const group = r.isGroup || String(r._id).startsWith('g:')
       return {
         to: r._id as string,
-        name: c?.name ?? named ?? `+${r._id}`,
-        role: c?.role ?? null,
-        last: { text: String(r.text ?? ''), status: r.status, at: new Date(r.at).toISOString(), file: r.file ?? null },
+        name: c?.name ?? named ?? fallbackName(r._id),
+        role: c?.role ?? (group ? 'Group' : null),
+        isGroup: group,
+        last: { text: String(r.text ?? ''), status: r.status, at: new Date(r.at).toISOString(), file: r.file ?? null, incoming: r.dir === 'IN', fromName: r.fromName ?? null, kind: r.kind ?? null, deleted: !!r.deleted },
         waiting: r.waiting,
         failed: r.failed,
+        unread: r.unread,
         total: r.total,
       }
     })
@@ -122,6 +140,15 @@ export type ThreadMsg = {
   /** sent before delivery tracking started: a single ✓ is all there will ever be */
   untracked: boolean
   error: string | null
+  incoming: boolean
+  fromPhone: boolean // typed on the linked phone itself
+  kind: string | null
+  mime: string | null
+  from: string | null // group: who wrote it
+  fromName: string | null
+  reactions: { by: string; emoji: string }[]
+  deleted: boolean
+  seen: boolean // incoming: opened in our inbox
   file: string | null
   attachmentId: string | null
   templateKey: string | null
@@ -135,7 +162,7 @@ export type ThreadMsg = {
 
 /** The messages to one number, oldest → newest (50 at a time, `before` = load earlier). */
 export async function chatThread(to: string, opts: { before?: string | null; limit?: number } = {}) {
-  const n = waNumber(to)
+  const n = chatKey(to)
   await refreshPending({ to: n }).catch(() => 0)
   const limit = Math.min(opts.limit ?? 50, 200)
   const before = opts.before ? new Date(opts.before) : null
@@ -150,7 +177,7 @@ export async function chatThread(to: string, opts: { before?: string | null; lim
   const [users, reqs, who] = await Promise.all([
     User.find({ _id: { $in: [...new Set([...ids('initiatedBy'), ...ids('approvedBy'), ...ids('editedBy')])] } }).select('name').lean<any[]>(),
     HomecareRequest.find({ _id: { $in: [...new Set(ids('requestId'))] } }).select('requestNo patientSnapshot.name services.name scheduledAt status').lean<any[]>(),
-    whoIs([n]),
+    isSpecialKey(n) ? new Map<string, Contact>() : whoIs([n]),
   ])
   const name = (id: unknown) => (id ? users.find((u) => String(u._id) === String(id))?.name ?? null : null)
   const fmt = (d?: Date) => (d ? new Date(d).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) : '')
@@ -165,7 +192,16 @@ export async function chatThread(to: string, opts: { before?: string | null; lim
       sentAt: m.sentAt ? new Date(m.sentAt).toISOString() : null,
       deliveredAt: m.deliveredAt ? new Date(m.deliveredAt).toISOString() : null,
       readAt: m.readAt ? new Date(m.readAt).toISOString() : null,
-      untracked: ['SENT', 'SENT_CONFIRMED'].includes(m.status) && new Date(m.sentAt ?? m.at) < RECEIPTS_SINCE,
+      untracked: m.direction !== 'IN' && m.origin !== 'PHONE' && ['SENT', 'SENT_CONFIRMED'].includes(m.status) && new Date(m.sentAt ?? m.at) < RECEIPTS_SINCE,
+      incoming: m.direction === 'IN',
+      fromPhone: m.origin === 'PHONE',
+      kind: m.kind ?? null,
+      mime: m.mime ?? null,
+      from: m.from ?? null,
+      fromName: m.fromName ?? null,
+      reactions: (m.reactions ?? []).map((x: any) => ({ by: String(x.by ?? ''), emoji: String(x.emoji ?? '') })),
+      deleted: !!m.deletedAt,
+      seen: !!m.seenAt,
       error: m.error ?? null,
       file: m.attachmentId || m.fileName ? m.fileName ?? 'file' : null,
       attachmentId: m.attachmentId ? String(m.attachmentId) : null,
@@ -180,6 +216,6 @@ export async function chatThread(to: string, opts: { before?: string | null; lim
   })
   const latestName = rows.find((m) => m.toName)?.toName ?? (await MessageLog.findOne({ ...WA, to: n, toName: { $nin: [null, ''] } }).sort({ at: -1 }).select('toName').lean<any>())?.toName
   const c = who.get(n)
-  const contact: Contact = { to: n, name: c?.name ?? latestName ?? `+${n}`, role: c?.role ?? null, href: c?.href ?? null }
+  const contact: Contact = { to: n, name: c?.name ?? latestName ?? fallbackName(n), role: c?.role ?? (n.startsWith('g:') ? 'Group' : null), href: c?.href ?? null }
   return { contact, items, hasMore }
 }

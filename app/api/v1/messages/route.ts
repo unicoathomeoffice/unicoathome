@@ -6,7 +6,7 @@ import { plain } from '@/lib/db'
 export const GET = route(
   async ({ req }) => {
     const p = qp(req)
-    const f: Record<string, any> = {}
+    const f: Record<string, any> = { direction: { $ne: 'IN' } } // incoming WhatsApp: /whatsapp/chats
     if (p.get('channel')) f.channel = { $in: p.get('channel')!.split(',') }
     if (p.get('status')) f.status = { $in: p.get('status')!.split(',') }
     if (p.get('requestId')) f.requestId = p.get('requestId')
@@ -14,7 +14,7 @@ export const GET = route(
     const items = await MessageLog.find(f).select('-renderedHtml').sort({ at: -1 }).limit(Math.min(Number(p.get('limit') ?? 100), 500)).lean<any[]>()
     const users = await User.find({ _id: { $in: items.map((i) => i.initiatedBy).filter(Boolean) } }).select('name').lean<any[]>()
     for (const i of items) i.initiatedByName = users.find((u) => String(u._id) === String(i.initiatedBy))?.name ?? 'System'
-    const counts = await MessageLog.aggregate([{ $group: { _id: '$channel', n: { $sum: 1 } } }])
+    const counts = await MessageLog.aggregate([{ $match: { direction: { $ne: 'IN' } } }, { $group: { _id: '$channel', n: { $sum: 1 } } }])
     return { items: plain(items), counts: Object.fromEntries(counts.map((c) => [c._id, c.n])) }
   },
   { roles: ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER'] },

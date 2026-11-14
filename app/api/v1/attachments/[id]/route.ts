@@ -3,7 +3,7 @@ import { Attachment, HomecareRequest, isOid } from '@/lib/models'
 import { canView } from '@/lib/services/requests'
 import { audit } from '@/lib/audit'
 import { readBlob, deleteBlob } from '@/lib/storage'
-import { isCoordinator } from '@/lib/constants'
+import { can, isCoordinator } from '@/lib/constants'
 
 /** GET /api/v1/attachments/:id — streams the file after an access check (private Blob or inline MongoDB). */
 export const GET = route<{ id: string }>(async ({ user, params }) => {
@@ -16,6 +16,8 @@ export const GET = route<{ id: string }>(async ({ user, params }) => {
   }
   // e-signatures, claim forms and receipts: only their owner and coordinators may open them
   if (['SIGNATURE', 'CLAIM', 'RECEIPT'].includes(a.kind) && a.ownerType === 'USER' && String(a.ownerId) !== user.id && !isCoordinator(user)) throw forbidden()
+  // photos / documents people sent on WhatsApp: only admins who handle WhatsApp
+  if (a.kind === 'WHATSAPP' && !can(user, 'messages.approve')) throw forbidden()
   const headers = { 'content-type': a.mime, 'content-disposition': `inline; filename="${encodeURIComponent(a.filename ?? 'file')}"`, 'cache-control': 'private, max-age=3600' }
   if (a.storage === 'blob' && a.blobUrl) {
     const b = await readBlob(a.blobUrl)

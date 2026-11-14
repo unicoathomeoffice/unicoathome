@@ -324,7 +324,7 @@ export async function messagesCsv(p: { channel?: string | null; status?: string 
     if (p.from && YMD.test(p.from)) f.at.$gte = dayRange(p.from).start
     if (p.to && YMD.test(p.to)) f.at.$lt = dayRange(p.to).end
   }
-  const items = await MessageLog.find(f).select('-renderedHtml').sort({ at: -1 }).limit(10000).lean<any[]>()
+  const items = await MessageLog.find({ ...f, direction: { $ne: 'IN' } }).select('-renderedHtml').sort({ at: -1 }).limit(10000).lean<any[]>()
   const users = await User.find({ _id: { $in: items.map((i) => i.initiatedBy).filter(Boolean) } }).select('name').lean<any[]>()
   const reqs = await HomecareRequest.find({ _id: { $in: items.map((i) => i.requestId).filter(Boolean) } }).select('requestNo').lean<any[]>()
   const head = ['Time', 'Channel', 'Provider', 'To', 'Recipient name', 'Template', 'Subject', 'Status', 'Attempts', 'Error', 'Initiated by', 'Request no', 'Text']

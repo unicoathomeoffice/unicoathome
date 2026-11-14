@@ -5,6 +5,8 @@ import { getSettings } from '../settings'
 import { waBatch } from './context'
 import { background, stripRequestNo, waNumber } from '../messaging'
 import { acquireLock, connect, type Conn } from './client'
+import { finishInbound, settleInbound } from './inbound'
+import { isSpecialKey, jidOf } from './inbound-parse'
 import { isPaired, mongoAuthState, pairedPhone } from './auth-state'
 import { linkState } from './status'
 import { allowance, calmDown, checkFresh, contactState, inQuietHours, isDuplicate, isInternalAlert, isPushback, needsOptOutFooter, OPT_OUT_FOOTER, optOut, pausedUntil, priorityOf, rand, recipientRoom, rememberCheck, sleep, STOP_RX, tooLate, tripBreaker, typingMs } from './guard'
@@ -32,7 +34,8 @@ export async function waStatus() {
  *  photo as an image) and `text` becomes its caption. Delivery follows the sending-safety rules (lib/wa/guard.ts). */
 export async function queueWhatsApp(input: { to: string; toName?: string; text: string; templateKey?: string; requestId?: unknown; patientId?: unknown; initiatedBy?: string; attachmentId?: unknown; fileName?: string; priority?: number; approved?: boolean }) {
   input = { ...input, text: stripRequestNo(input.text ?? ''), fileName: input.fileName ? stripRequestNo(input.fileName).replace(/-+(?=\.)/, '') : undefined }
-  const to = waNumber(input.to)
+  // people: phone digits · groups (g:…) and hidden numbers (lid:…) keep their chat key (lib/wa/inbound-parse.ts)
+  const to = isSpecialKey(input.to ?? '') ? input.to : waNumber(input.to)
   const c = to ? await contactState(to) : null
   const blocked = !to ? 'No valid number' : c?.optOut ? 'Opted out (replied STOP)' : c?.exists === false && checkFresh(c) ? 'Not on WhatsApp' : null
   // nothing goes out without an admin: the message waits in the Outbox (approved = tests / already approved by a person)
@@ -144,10 +147,10 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
         continue
       }
       if (!isInternalAlert(m.templateKey) && !(await recipientRoom(m.to, cfg))) continue // this person had enough for now: later
-      const jid = `${m.to}@s.whatsapp.net`
+      const jid = jidOf(m.to)
       try {
         // only real WhatsApp numbers (messaging numbers that aren't on WhatsApp is a ban signal)
-        if (cfg.checkNumbers) {
+        if (cfg.checkNumbers && !isSpecialKey(m.to)) {
           const c = await contactState(m.to)
           if (!checkFresh(c)) {
             const [hit] = (await sock.onWhatsApp(jid)) ?? []
@@ -215,8 +218,10 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
     if (/logged this device out/i.test(msg)) await tripBreaker('WhatsApp logged this device out — scan the QR again')
     return { sent, failed, skipped: msg }
   } finally {
+    await settleInbound().catch(() => {})
     conn?.close()
     await lock.release()
+    await finishInbound().catch(() => 0)
   }
 }
 
@@ -324,30 +329,43 @@ export async function* pairWhatsApp(opts: { phone?: string } = {}): AsyncGenerat
  * Delivered / read ticks between sends: connect for a few seconds so WhatsApp hands over the receipts it held for us
  * (lib/wa/receipts.ts records them), then close. Skipped while a send session runs — that one collects them anyway.
  */
-export async function syncReceipts(opts: { waitMs?: number } = {}): Promise<{ ok: boolean; changed: number; skipped?: string }> {
-  if (!(await isPaired())) return { ok: false, changed: 0, skipped: 'WhatsApp is not linked' }
+export async function syncInbox(opts: { waitMs?: number; minGapMs?: number } = {}): Promise<{ ok: boolean; changed: number; received: number; skipped?: string }> {
+  const none = (skipped: string) => ({ ok: false, changed: 0, received: 0, skipped })
+  if (!(await isPaired())) return none('WhatsApp is not linked')
+  if (await pausedUntil()) return none('paused') // safety pause / circuit breaker: stay away
+  // one check session at a time for everyone, however many tabs or admins have the page open
+  const gap = opts.minGapMs ?? 110_000
+  const claimed = await WaAuth.updateOne({ _id: 'meta', $or: [{ inboxSyncAt: { $exists: false } }, { inboxSyncAt: { $lt: new Date(Date.now() - gap) } }] }, { $set: { inboxSyncAt: new Date() } }).catch(() => null)
+  if (!claimed?.modifiedCount) return none('recent')
   const lock = await acquireLock(40_000)
-  if (!lock) return { ok: false, changed: 0, skipped: 'busy' }
+  if (!lock) return none('busy')
   let conn: Conn | undefined
+  let received = 0
   try {
     const { takeChanged } = await import('./receipts')
     takeChanged()
     await setMeta({ receiptsAt: new Date() }) // claim first, so other tabs don't start a second session
     conn = await connect({ timeoutMs: 20_000 })
     if ((await conn.ready) !== 'open') throw new Error('Connection did not open')
-    await sleep(opts.waitMs ?? 12_000)
-    await sleep(1_500) // let the last database writes finish
+    await sleep(opts.waitMs ?? 12_000) // WhatsApp hands over held messages and receipts
+    await settleInbound(10_000)
+    await sleep(800) // let the last database writes finish
     await setMeta({ receiptsAt: new Date(), verifiedAt: new Date() })
-    return { ok: true, changed: takeChanged() }
+    const changed = takeChanged()
+    received = await finishInbound().catch(() => 0)
+    return { ok: true, changed, received }
   } catch (e: any) {
     const msg = String(e?.message ?? e)
     await markIfLoggedOut(msg)
-    return { ok: false, changed: 0, skipped: msg }
+    return none(msg)
   } finally {
     conn?.close()
     await lock.release()
+    if (!received) await finishInbound().catch(() => 0) // error path: still report what came in
   }
 }
+/** @deprecated use syncInbox — kept for the old /whatsapp/receipts route */
+export const syncReceipts = syncInbox
 
 /** When the receipts were last collected (null = never). */
 export const receiptsAt = async () => ((await getMeta()).receiptsAt as Date | undefined) ?? null
@@ -362,6 +380,7 @@ export async function checkWhatsApp(): Promise<{ ok: boolean; error?: string }> 
     const r = await conn.ready
     if (r !== 'open') throw new Error('Connection did not open')
     await setMeta({ verifiedAt: new Date(), needsRescan: null, needsRescanReason: null, lastError: null })
+    await sleep(3_000) // collect what WhatsApp held for us while we're here
     return { ok: true }
   } catch (e: any) {
     const msg = String(e?.message ?? e)
@@ -369,8 +388,10 @@ export async function checkWhatsApp(): Promise<{ ok: boolean; error?: string }> 
     await setMeta({ lastError: msg.slice(0, 300), lastErrorAt: new Date() })
     return { ok: false, error: msg }
   } finally {
+    await settleInbound().catch(() => {})
     conn?.close()
     await lock.release()
+    await finishInbound().catch(() => 0)
   }
 }
 

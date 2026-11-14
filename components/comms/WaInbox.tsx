@@ -1,16 +1,27 @@
 'use client'
-// The WhatsApp inbox (/outbox, phone /m/admin/outbox) — looks and works like WhatsApp: chats on the left (one per
-// number, those with messages waiting for approval on top), the conversation on the right with the whole history of
-// every message: waiting, sent ✓, delivered ✓✓, read (blue ✓✓), failed (Retry) or not sent. Waiting messages are
-// edited / sent / discarded right in the chat, and an admin can type a new message. Data: lib/wa/history.ts.
+// The WhatsApp inbox (/outbox, phone /m/admin/outbox) — a WhatsApp Web of the linked number: chats on the left (people
+// and groups; waiting-for-approval on top; unread badges), the conversation on the right — what people sent us (photos,
+// documents), what the app sent (waiting, sent ✓, delivered ✓✓, read blue ✓✓, failed → Retry, not sent) and what was
+// typed on the phone. Waiting messages are edited / sent / discarded in the chat; an admin can reply. While the page is
+// open it checks WhatsApp for new messages about every 2 minutes (one shared, safe session). Data: lib/wa/history.ts.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ArrowLeft, Ban, Check, CheckCheck, ChevronDown, Clock3, ExternalLink, FileText, Info, Loader2, MessageCircle, Pencil, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Trash2, UserRound, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Ban, Check, CheckCheck, ChevronDown, Clock3, ExternalLink, FileText, Info, Loader2, MessageCircle, Pencil, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Smartphone, Trash2, UserRound, Users, X } from 'lucide-react'
 import { api, useToast } from '@/components/client'
 import { outboxChanged } from '@/components/client/WaReview'
 import { cx, phone as fmtPhone } from '@/lib/format'
 
-export type ChatRow = { to: string; name: string; role: string | null; last: { text: string; status: string; at: string; file: string | null }; waiting: number; failed: number; total: number }
+export type ChatRow = {
+  to: string
+  name: string
+  role: string | null
+  isGroup: boolean
+  last: { text: string; status: string; at: string; file: string | null; incoming: boolean; fromName: string | null; kind: string | null; deleted: boolean }
+  waiting: number
+  failed: number
+  unread: number
+  total: number
+}
 type Contact = { to: string; name: string; role: string | null; href: string | null }
 type Msg = {
   id: string
@@ -23,6 +34,15 @@ type Msg = {
   readAt: string | null
   untracked: boolean
   error: string | null
+  incoming: boolean
+  fromPhone: boolean
+  kind: string | null
+  mime: string | null
+  from: string | null
+  fromName: string | null
+  reactions: { by: string; emoji: string }[]
+  deleted: boolean
+  seen: boolean
   file: string | null
   attachmentId: string | null
   templateKey: string | null
@@ -34,7 +54,8 @@ type Msg = {
   visit: { id: string; label: string; requestNo: string; status: string } | null
 }
 type Thread = { contact: Contact; items: Msg[]; hasMore: boolean }
-type Filter = 'all' | 'waiting' | 'sent' | 'failed' | 'discarded'
+type Filter = 'all' | 'unread' | 'groups' | 'waiting' | 'sent' | 'failed' | 'discarded'
+const POLL_MS = 120_000 // check WhatsApp for new messages while the page is open (± jitter, one shared session)
 
 const TZ = 'Asia/Dhaka'
 const dayKey = (iso: string | number) => new Date(iso).toLocaleDateString('en-CA', { timeZone: TZ })
@@ -91,12 +112,82 @@ function Ticks({ status, size = 15 }: { status: string; size?: number }) {
   return <Ban size={size - 2} className="text-slate-400" aria-label="Not sent" />
 }
 
-function Avatar({ name, size = 44 }: { name: string; size?: number }) {
-  const ini = initials(name)
+function Avatar({ name, size = 44, group = false }: { name: string; size?: number; group?: boolean }) {
+  const ini = group ? '' : initials(name)
   return (
-    <span className="flex flex-none items-center justify-center rounded-full font-semibold text-white" style={{ width: size, height: size, background: ini ? avatarBg(name) : '#DFE5E7', fontSize: size * 0.36 }}>
-      {ini || <UserRound size={size * 0.55} className="text-white" />}
+    <span className="flex flex-none items-center justify-center rounded-full font-semibold text-white" style={{ width: size, height: size, background: group ? '#8696A0' : ini ? avatarBg(name) : '#DFE5E7', fontSize: size * 0.36 }}>
+      {group ? <Users size={size * 0.5} /> : ini || <UserRound size={size * 0.55} className="text-white" />}
     </span>
+  )
+}
+
+/** photo inline (tap for full size) or a document chip */
+function Media({ m }: { m: Msg }) {
+  if (!m.attachmentId) return null
+  const url = `/api/v1/attachments/${m.attachmentId}`
+  if (m.kind === 'image' || m.mime?.startsWith('image/'))
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="-mx-1 mb-1 block overflow-hidden rounded-md" title="Open full size">
+        <img src={url} alt="Photo" loading="lazy" className="max-h-[320px] w-full min-w-[220px] bg-black/5 object-cover" />
+      </a>
+    )
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="mb-1 flex items-center gap-2 rounded-md bg-black/[.05] px-2 py-2 text-[12.5px] hover:bg-black/[.08]">
+      <span className="flex size-8 flex-none items-center justify-center rounded bg-[#DC2626] text-white">
+        <FileText size={16} />
+      </span>
+      <span className="min-w-0 flex-1 truncate font-semibold text-[#027EB5]">{m.file ?? 'Document'}</span>
+    </a>
+  )
+}
+
+function Reactions({ list, right }: { list: { emoji: string }[]; right?: boolean }) {
+  if (!list.length) return null
+  const counts = new Map<string, number>()
+  for (const r of list) counts.set(r.emoji, (counts.get(r.emoji) ?? 0) + 1)
+  return (
+    <div className={cx('-mt-1.5 flex gap-0.5', right ? 'mr-2 self-end' : 'ml-2 self-start')}>
+      <span className="flex items-center gap-0.5 rounded-full bg-white px-1.5 py-0.5 text-[13px] shadow-sm ring-1 ring-black/5">
+        {[...counts].map(([e, n]) => (
+          <span key={e}>
+            {e}
+            {n > 1 && <span className="text-[11px] text-slate-500">{n}</span>}
+          </span>
+        ))}
+      </span>
+    </div>
+  )
+}
+
+const NAME_COLORS = ['#E542A3', '#1F7AEC', '#D3396D', '#06CF9C', '#E26A34', '#A62C71', '#00A884', '#7F66FF']
+const nameColor = (s: string) => NAME_COLORS[[...s].reduce((a, c) => a + c.charCodeAt(0), 0) % NAME_COLORS.length]
+
+/** a message someone sent us — left, white, like WhatsApp */
+function InBubble({ m, group }: { m: Msg; group: boolean }) {
+  return (
+    <div className="flex flex-col items-start">
+      <div className="relative w-fit min-w-[120px] max-w-[min(600px,88%)] rounded-lg rounded-tl-none bg-white px-2.5 pb-1.5 pt-1.5 text-[#111B21] shadow-[0_1px_0.5px_rgba(11,20,26,.13)]">
+        <span className="absolute -left-[7px] top-0 h-3 w-2 bg-white" style={{ clipPath: 'polygon(0 0,100% 0,100% 100%)' }} />
+        {group && (
+          <div className="mb-0.5 text-[12.5px] font-semibold" style={{ color: nameColor(m.from ?? m.fromName ?? '') }}>
+            {m.fromName ?? (m.from ? `+${m.from}` : 'Someone')}
+            {m.from && m.fromName && <span className="ml-1.5 font-normal text-[#8696A0]">+{m.from}</span>}
+          </div>
+        )}
+        {m.deleted ? (
+          <div className="flex items-center gap-1 text-[13.5px] italic text-[#8696A0]">
+            <Ban size={13} /> This message was deleted
+          </div>
+        ) : (
+          <>
+            <Media m={m} />
+            {m.text && <div className="whitespace-pre-wrap break-words text-[14px] leading-[19px]">{m.text}</div>}
+          </>
+        )}
+        <div className="mt-0.5 text-right text-[11px] text-[#667781]">{clock(m.at)}</div>
+      </div>
+      <Reactions list={m.reactions} />
+    </div>
   )
 }
 
@@ -134,7 +225,14 @@ function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; request
             {stale && <span className="flex-none rounded bg-[#FEE2E2] px-1 text-[10px] font-bold uppercase text-[#B91C1C]">{m.visit.status === 'CANCELLED' ? 'Visit cancelled' : 'Closed'}</span>}
           </Link>
         )}
-        {editing ? (
+        {m.deleted ? (
+          <div className="flex items-center gap-1 text-[13.5px] italic text-[#667781]">
+            <Ban size={13} /> You deleted this message
+          </div>
+        ) : m.attachmentId && m.kind ? (
+          <Media m={m} />
+        ) : null}
+        {m.deleted ? null : editing ? (
           <div>
             <textarea className="w-full min-w-[260px] rounded-md border border-[#86EFAC] bg-white p-2 text-[13.5px] leading-[19px] outline-none focus:border-[#25D366]" rows={Math.min(16, Math.max(4, text.split('\n').length + 1))} value={text} onChange={(e) => onEdit(e.target.value)} autoFocus maxLength={1500} />
             <div className="mt-1 flex items-center gap-3 text-[12px]">
@@ -154,7 +252,7 @@ function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; request
             {text}
           </div>
         )}
-        {m.file && (
+        {m.file && !m.kind && (
           <div className="mt-1.5 flex items-center gap-2 rounded-md bg-black/[.05] px-2 py-2 text-[12.5px]">
             <span className="flex size-8 items-center justify-center rounded bg-[#DC2626] text-white">
               <FileText size={16} />
@@ -169,6 +267,11 @@ function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; request
           </div>
         )}
         <div className="mt-0.5 flex items-center justify-end gap-1 text-[11px] text-[#667781]">
+          {m.fromPhone && (
+            <span className="mr-0.5 inline-flex items-center gap-0.5" title="Typed on the linked phone">
+              <Smartphone size={11} /> phone
+            </span>
+          )}
           {(m.originalText || changed) && <span className="mr-0.5 italic">Edited</span>}
           {m.urgent && <span className="mr-0.5 font-semibold text-[#B91C1C]">Urgent</span>}
           <button type="button" onClick={() => setInfo(!info)} className="mr-0.5 rounded p-0.5 text-slate-400 opacity-60 hover:bg-black/5 hover:text-slate-600 group-hover:opacity-100" title="Message info" aria-label="Message info">
@@ -181,6 +284,7 @@ function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; request
         </div>
       </div>
 
+      <Reactions list={m.reactions} right />
       {/* actions for a waiting / failed message */}
       {(waiting || failed) && (
         <div className="mt-1 flex items-center gap-1">
@@ -363,6 +467,11 @@ export function WaInbox({
     })
     if (!r) return
     setThread((cur) => (older && cur && cur.contact.to === to ? { ...r, items: [...r.items, ...cur.items] } : r))
+    // opened = seen in our inbox (nothing goes to WhatsApp, so no blue ticks on their side)
+    if (!older && r.items.some((m) => m.incoming && !m.seen)) {
+      void api(`/whatsapp/chats/${to}/seen`, { body: {} }).catch(() => {})
+      setChats((cs) => cs.map((c) => (c.to === to ? { ...c, unread: 0 } : c)))
+    }
   }, [toast])
 
   useEffect(() => {
@@ -391,6 +500,35 @@ export function WaInbox({
       window.removeEventListener('hc:outbox', tick)
     }
   }, [active, loadChats, loadThread])
+
+  // new messages: a short WhatsApp session about every 2 minutes while this page is open and visible. The server allows one
+  // session per 110 s for everyone (other tabs / admins share it), skips while paused or sending, and sends no read receipts.
+  const activeRef = useRef(active)
+  activeRef.current = active
+  useEffect(() => {
+    if (!linked) return
+    let stop = false
+    let timer: ReturnType<typeof setTimeout>
+    const run = async () => {
+      if (stop) return
+      if (document.visibilityState === 'visible') {
+        const r = await api<{ ok: boolean; received: number; changed: number; at: string }>('/whatsapp/sync', { body: {} }).catch(() => null)
+        if (r?.ok) {
+          setTicksAt(r.at)
+          if (r.received || r.changed) {
+            void loadChats()
+            if (activeRef.current) void loadThread(activeRef.current)
+          }
+        }
+      }
+      timer = setTimeout(run, POLL_MS + Math.round((Math.random() - 0.5) * 40_000)) // ± 20 s, never in lockstep
+    }
+    timer = setTimeout(run, 4_000 + Math.random() * 6_000)
+    return () => {
+      stop = true
+      clearTimeout(timer)
+    }
+  }, [linked, loadChats, loadThread])
 
   // keep the newest message in view (unless the admin scrolled up to read)
   useEffect(() => {
@@ -423,15 +561,16 @@ export function WaInbox({
       setBusy(null)
     }
   }
-  /** fetch the delivered / read ticks from WhatsApp now (a ~15 s session) */
+  /** check WhatsApp now: new messages and delivered / read ticks (a ~15 s session) */
   async function updateTicks() {
     setSyncing(true)
     try {
-      const r = await api<{ ok: boolean; changed: number; skipped?: string; receiptsAt: string }>('/whatsapp/receipts', { body: {} })
-      if (r.ok) toast(r.changed ? `${r.changed} tick${r.changed === 1 ? '' : 's'} updated` : 'Ticks are up to date', 'ok')
-      else if (r.skipped === 'busy') toast('WhatsApp is sending right now, ticks come in with it', 'ok')
-      else toast(`Could not update ticks: ${r.skipped ?? 'try again'}`, 'err')
-      setTicksAt(r.receiptsAt)
+      const r = await api<{ ok: boolean; changed: number; received: number; skipped?: string; at: string }>('/whatsapp/sync', { body: { manual: true } })
+      if (r.ok) toast(r.received || r.changed ? [r.received && `${r.received} new message${r.received === 1 ? '' : 's'}`, r.changed && `${r.changed} tick${r.changed === 1 ? '' : 's'} updated`].filter(Boolean).join(' · ') : 'Up to date', 'ok')
+      else if (r.skipped === 'busy') toast('WhatsApp is sending right now, new messages come in with it', 'ok')
+      else if (r.skipped === 'recent') toast('Just checked, try again in a few seconds', 'ok')
+      else toast(`Could not check: ${r.skipped ?? 'try again'}`, 'err')
+      setTicksAt(r.at)
       if (active) await loadThread(active)
       void loadChats()
     } catch (e: any) {
@@ -463,6 +602,9 @@ export function WaInbox({
   const waitingChats = chats.filter((c) => c.waiting > 0)
   const otherChats = chats.filter((c) => c.waiting === 0)
   const waitingTotal = waitingChats.reduce((a, c) => a + c.waiting, 0)
+  const unreadTotal = chats.reduce((a, c) => a + (c.unread ?? 0), 0)
+  const activeChat = active ? chats.find((c) => c.to === active) : null
+  const isGroup = !!activeChat?.isGroup || !!active?.startsWith('g:')
   const pendingHere = thread?.items.filter((m) => m.status === 'PENDING') ?? []
   const contact = thread?.contact ?? (active ? chats.find((c) => c.to === active) ?? null : null)
   const days = useMemo(() => {
@@ -477,20 +619,28 @@ export function WaInbox({
   }, [thread])
 
   const row = (c: ChatRow) => {
-    const preview = c.last.file ? `📄 ${c.last.file}` : c.last.text.split('\n').find((l) => l.trim()) ?? ''
+    const firstLine = c.last.text.split('\n').find((l) => l.trim()) ?? ''
+    const body = c.last.deleted ? '🚫 This message was deleted' : c.last.kind === 'image' && !firstLine ? '📷 Photo' : c.last.file && !firstLine ? `📄 ${c.last.file}` : firstLine
+    const preview = c.isGroup && c.last.incoming && c.last.fromName ? `${c.last.fromName.split(' ')[0]}: ${body}` : body
+    const hot = c.unread > 0
     return (
       <button key={c.to} type="button" onClick={() => setActive(c.to)} className={cx('flex w-full items-center gap-3 px-3 text-left transition hover:bg-[#F5F6F6]', active === c.to && 'bg-[#F0F2F5]')}>
-        <Avatar name={c.name} size={46} />
+        <Avatar name={c.name} size={46} group={c.isGroup} />
         <span className="flex min-w-0 flex-1 flex-col border-b border-[#E9EDEF] py-3">
           <span className="flex items-baseline gap-2">
-            <span className={cx('min-w-0 flex-1 truncate text-[15.5px] text-[#111B21]', c.waiting > 0 && 'font-semibold')}>{c.name}</span>
-            <span className={cx('flex-none text-[11.5px]', c.waiting > 0 ? 'font-semibold text-[#1DA851]' : 'text-[#667781]')}>{listTime(c.last.at)}</span>
+            <span className={cx('min-w-0 flex-1 truncate text-[15.5px] text-[#111B21]', (hot || c.waiting > 0) && 'font-semibold')}>{c.name}</span>
+            <span className={cx('flex-none text-[11.5px]', hot ? 'font-semibold text-[#1DA851]' : 'text-[#667781]')}>{listTime(c.last.at)}</span>
           </span>
           <span className="mt-0.5 flex items-center gap-1.5">
-            <Ticks status={c.last.status} size={15} />
-            <span className="min-w-0 flex-1 truncate text-[13.5px] text-[#667781]">{preview}</span>
+            {!c.last.incoming && <Ticks status={c.last.status} size={15} />}
+            <span className={cx('min-w-0 flex-1 truncate text-[13.5px]', hot ? 'font-medium text-[#111B21]' : 'text-[#667781]')}>{preview}</span>
             {c.failed > 0 && <AlertCircle size={16} className="flex-none text-[#DC2626]" aria-label={`${c.failed} failed`} />}
-            {c.waiting > 0 && <span className="flex h-5 min-w-5 flex-none items-center justify-center rounded-full bg-[#25D366] px-1.5 text-[11.5px] font-bold text-white">{c.waiting}</span>}
+            {c.waiting > 0 && (
+              <span className="flex h-5 flex-none items-center gap-0.5 rounded-full bg-[#FEF3C7] px-1.5 text-[11px] font-bold text-[#B45309] ring-1 ring-[#FDE68A]" title={`${c.waiting} waiting for your approval`}>
+                <Clock3 size={11} /> {c.waiting}
+              </span>
+            )}
+            {hot && <span className="flex h-5 min-w-5 flex-none items-center justify-center rounded-full bg-[#25D366] px-1.5 text-[11.5px] font-bold text-white" title={`${c.unread} unread`}>{c.unread}</span>}
           </span>
           {c.role && <span className="mt-0.5 truncate text-[11.5px] text-[#8696A0]">{c.role}</span>}
         </span>
@@ -510,7 +660,7 @@ export function WaInbox({
             <div className="text-[16px] font-bold text-[#111B21]">WhatsApp</div>
             <div className="flex items-center gap-1.5 text-[12px] text-[#667781]">
               <span className={cx('size-2 rounded-full', linked ? 'bg-[#25D366]' : 'bg-[#F59E0B]')} />
-              {linked ? 'Connected · sends only after approval' : (
+              {linked ? 'Live · new messages every ~2 min' : (
                 <Link href="/settings#whatsapp" className="font-semibold text-[#B45309] hover:underline">
                   Not linked — scan the QR in Settings
                 </Link>
@@ -522,12 +672,12 @@ export function WaInbox({
             onClick={updateTicks}
             disabled={syncing || !linked}
             className="flex flex-none flex-col items-end rounded-lg px-2 py-1 text-right hover:bg-black/5 disabled:opacity-60"
-            title="Fetch delivered / read ticks from WhatsApp now (takes about 15 seconds)"
+            title="Check WhatsApp now for new messages and ticks (about 15 seconds). It also checks by itself every ~2 minutes while this page is open."
           >
             <span className="flex items-center gap-1 text-[12px] font-semibold text-[#008069]">
-              <RefreshCw size={13} className={cx(syncing && 'animate-spin')} /> {syncing ? 'Updating…' : 'Update ticks'}
+              <RefreshCw size={13} className={cx(syncing && 'animate-spin')} /> {syncing ? 'Checking…' : 'Check now'}
             </span>
-            <span className="text-[10.5px] text-[#8696A0]">{ticksAt ? `updated ${agoShort(ticksAt)}` : 'not fetched yet'}</span>
+            <span className="text-[10.5px] text-[#8696A0]">{ticksAt ? `checked ${agoShort(ticksAt)}` : 'not checked yet'}</span>
           </button>
         </div>
         <div className="border-b border-[#E9EDEF] px-3 py-2">
@@ -544,6 +694,8 @@ export function WaInbox({
             {(
               [
                 ['all', 'All'],
+                ['unread', `Unread${unreadTotal ? ` ${unreadTotal}` : ''}`],
+                ['groups', 'Groups'],
                 ['waiting', `Waiting${waitingTotal ? ` ${waitingTotal}` : ''}`],
                 ['sent', 'Sent'],
                 ['failed', 'Failed'],
@@ -583,7 +735,7 @@ export function WaInbox({
             </span>
             <div className="text-[26px] font-light text-[#41525D]">Unico HomeCare WhatsApp</div>
             <p className="max-w-[460px] text-[14px] leading-[21px] text-[#667781]">
-              Every WhatsApp the system writes waits here until you approve it. Pick a chat to read its full history — sent, delivered, read, failed or not sent — and to send, edit or write a new message.
+              Messages people send you and everything the system writes, in one place. Pick a chat to read and reply. Messages the app writes wait for your approval; new messages arrive about every 2 minutes while this page is open.
             </p>
             <div className="mt-2 flex items-center gap-1.5 text-[12.5px] text-[#8696A0]">
               <ShieldCheck size={14} /> Nothing is sent without an admin
@@ -595,19 +747,19 @@ export function WaInbox({
               <button type="button" onClick={() => setActive(null)} className="flex size-9 items-center justify-center rounded-full text-[#54656F] hover:bg-black/5 md:hidden" aria-label="Back to chats">
                 <ArrowLeft size={20} />
               </button>
-              <Avatar name={contact.name} size={40} />
+              <Avatar name={contact.name} size={40} group={isGroup} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15.5px] font-semibold text-[#111B21]">{contact.name}</div>
-                <div className="truncate text-[12.5px] text-[#667781]">{[contact.role, fmtPhone(contact.to)].filter(Boolean).join(' · ')}</div>
+                <div className="truncate text-[12.5px] text-[#667781]">{isGroup ? 'Group' : [contact.role, /^\d+$/.test(contact.to) ? fmtPhone(contact.to) : null].filter(Boolean).join(' · ')}</div>
               </div>
               {profileLinks && thread?.contact.href && (
                 <Link href={thread.contact.href} className="hidden h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[#54656F] hover:bg-black/5 sm:flex" title="Open profile">
                   <UserRound size={16} /> Profile
                 </Link>
               )}
-              <a href={`https://wa.me/${contact.to}`} target="_blank" rel="noreferrer" className="flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[#008069] hover:bg-black/5" title="Open this chat in WhatsApp">
+              {/^\d+$/.test(contact.to) && <a href={`https://wa.me/${contact.to}`} target="_blank" rel="noreferrer" className="flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[#008069] hover:bg-black/5" title="Open this chat in WhatsApp">
                 <ExternalLink size={15} /> <span className="hidden sm:inline">WhatsApp</span>
-              </a>
+              </a>}
             </header>
 
             <div ref={body} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto bg-[#EFEAE2] bg-[radial-gradient(rgba(0,0,0,.045)_1px,transparent_1px)] px-3 py-3 [background-size:16px_16px] md:px-[6%]">
@@ -623,17 +775,21 @@ export function WaInbox({
                     </button>
                   )}
                   <div className="mx-auto mb-1 max-w-[460px] rounded-lg bg-[#FFEECD] px-3 py-1.5 text-center text-[12px] leading-[17px] text-[#54656F] shadow-sm">
-                    <ShieldCheck size={12} className="mr-1 inline" /> Messages from Unico HomeCare. Each one is sent only after an admin approves it.
+                    <ShieldCheck size={12} className="mr-1 inline" /> Messages the app writes are sent only after an admin approves them. Replies show here within about 2 minutes.
                   </div>
                   {days.map((d) => (
                     <div key={d.key} className="flex flex-col gap-2">
                       <div className="sticky top-1 z-10 mx-auto my-1 rounded-lg bg-white/95 px-3 py-1 text-[12px] font-medium uppercase tracking-wide text-[#54656F] shadow-sm">{d.label}</div>
-                      {d.items.map((m) => (
+                      {d.items.map((m) =>
+                        m.incoming ? (
+                          <InBubble key={m.id} m={m} group={isGroup} />
+                        ) : (
                         <Bubble key={m.id} m={m} requestHref={requestHref} busy={busy} edit={edits[m.id]} onEdit={(t) => setEdits((x) => (t == null ? Object.fromEntries(Object.entries(x).filter(([k]) => k !== m.id)) : { ...x, [m.id]: t }))} onAct={(a) => act(a, [m])} />
-                      ))}
+                        ),
+                      )}
                     </div>
                   ))}
-                  {!thread?.items.length && !loading && <div className="py-10 text-center text-[13px] text-[#667781]">No messages to this number yet.</div>}
+                  {!thread?.items.length && !loading && <div className="py-10 text-center text-[13px] text-[#667781]">No messages in this chat yet.</div>}
                 </div>
               )}
             </div>

@@ -660,7 +660,7 @@ const AttachmentSchema = new Schema<any>(
     ownerType: { type: String, enum: ['REQUEST', 'PATIENT', 'USER', 'CHAT'] },
     ownerId: { type: ObjectId, index: true },
     requestId: { type: ObjectId, ref: 'HomecareRequest', index: true },
-    kind: { type: String, enum: ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'INVOICE', 'REQUISITION', 'GATE_PASS', 'CLAIM', 'RECEIPT', 'AVATAR', 'VOUCHER', 'EQUIPMENT', 'OTHER'] },
+    kind: { type: String, enum: ['PRESCRIPTION', 'REPORT', 'WOUND_PHOTO', 'DRESSING_PHOTO', 'SAMPLE_LABEL', 'SIGNATURE', 'VISIT_REPORT', 'PHOTO', 'INVOICE', 'REQUISITION', 'GATE_PASS', 'CLAIM', 'RECEIPT', 'AVATAR', 'VOUCHER', 'EQUIPMENT', 'WHATSAPP', 'OTHER'] },
     filename: String,
     mime: String,
     size: Number,
@@ -709,7 +709,18 @@ const MessageLogSchema = new Schema<any>(
     patientId: { type: ObjectId, ref: 'Patient' },
     initiatedBy: { type: ObjectId, ref: 'User' },
     // PENDING = waiting in the Outbox for an admin to approve (Settings → WhatsApp → "Send only after approval")
-    status: { type: String, enum: ['PENDING', 'PREPARED', 'QUEUED', 'SENT', 'SENT_CONFIRMED', 'DELIVERED', 'OPENED', 'FAILED', 'SKIPPED'], default: 'QUEUED' },
+    status: { type: String, enum: ['PENDING', 'PREPARED', 'QUEUED', 'SENT', 'SENT_CONFIRMED', 'DELIVERED', 'OPENED', 'FAILED', 'SKIPPED', 'RECEIVED'], default: 'QUEUED' },
+    // WhatsApp inbox (lib/wa/inbound.ts): IN = a message someone sent us; missing = OUT (everything we send)
+    direction: { type: String, enum: ['IN', 'OUT'] },
+    origin: { type: String, enum: ['APP', 'PHONE'] }, // PHONE = typed on the linked phone itself
+    kind: String, // text · image · document · voice · video · sticker · location · contact · other
+    mime: String,
+    isGroup: Boolean,
+    from: String, // group: who wrote it (chat key)
+    fromName: String, // their WhatsApp name
+    seenAt: Date, // an admin opened it in our inbox (no read receipt is sent to them)
+    reactions: [{ _id: false, by: String, emoji: String, at: Date }],
+    deletedAt: Date, // "This message was deleted"
     events: [{ _id: false, status: String, at: Date, note: String }],
     batch: String, // the click it came from (lib/wa/context.ts) — the review window shows one action's messages
     approvedBy: { type: ObjectId, ref: 'User' },
@@ -736,6 +747,7 @@ MessageLogSchema.index({ channel: 1, at: -1 })
 MessageLogSchema.index({ status: 1, at: 1 })
 MessageLogSchema.index({ batch: 1 }, { partialFilterExpression: { batch: { $exists: true } } })
 MessageLogSchema.index({ channel: 1, to: 1, at: -1 }) // WhatsApp inbox: one chat per number (lib/wa/history.ts)
+MessageLogSchema.index({ providerId: 1 }, { partialFilterExpression: { providerId: { $exists: true } } }) // receipts, reactions, dedupe
 MessageLogSchema.index({ channel: 1, provider: 1, sentAt: -1, to: 1 }, { partialFilterExpression: { sentAt: { $exists: true } } }) // WhatsApp rate limits
 export const MessageLog = model('MessageLog', MessageLogSchema, 'message_logs')
 

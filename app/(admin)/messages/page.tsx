@@ -34,7 +34,7 @@ export default async function MessagesPage({ searchParams }: { searchParams: SP 
   const limit = Math.min(Number(sp.limit) || 100, 500)
 
   // filters shared by the list and the tab counts (counts ignore the channel)
-  const base: Record<string, any> = {}
+  const base: Record<string, any> = { direction: { $ne: 'IN' } } // what we sent; incoming WhatsApp lives in the WhatsApp inbox
   if (sp.status) base.status = { $in: sp.status.split(',') }
   if (sp.template) base.templateKey = sp.template
   const from = rangeFrom(sp.range)

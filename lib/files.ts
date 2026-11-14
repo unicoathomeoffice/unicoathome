@@ -22,6 +22,7 @@ export const ATTACHMENT_KINDS = [
   'AVATAR',
   'VOUCHER',
   'EQUIPMENT',
+  'WHATSAPP', // photos / documents people sent on WhatsApp (lib/wa/inbound.ts)
   'OTHER',
 ] as const
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number]
