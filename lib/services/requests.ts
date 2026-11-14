@@ -337,6 +337,45 @@ export async function buildChecklist(serviceTypeIds: unknown[]) {
   return list
 }
 
+/** Statuses after which the services of a visit can no longer change. */
+const SERVICES_LOCKED = ['COMPLETED', 'CLOSED', 'CANCELLED']
+/** Until the team leaves, the bag follows the services; after that it stays as packed. */
+const BAG_FOLLOWS = ['NEW', 'VERIFIED', 'CONFIRMED', 'RESCHEDULED', 'ASSIGNED', 'ACCEPTED']
+
+/**
+ * Add / remove services on an existing request (e.g. after it was confirmed). The checklist gains the new services'
+ * steps and loses only untouched steps of removed ones (ticked and added-by-hand steps stay); the bag is rebuilt while
+ * the team hasn't left yet, keeping what is already packed. Saves nothing itself — the caller saves `r`.
+ */
+export async function changeServices(r: any, input: { serviceCodes: string[]; otherService?: string }) {
+  if (SERVICES_LOCKED.includes(r.status)) throw bad('Services can only change before the visit is completed')
+  const types = await ServiceType.find({ code: { $in: input.serviceCodes } }).lean<any[]>()
+  const services: any[] = types.map((t) => ({ serviceTypeId: t._id, code: t.code, name: t.name }))
+  const other = input.otherService?.trim()
+  if (other) services.push({ serviceTypeId: undefined, code: 'OTHER', name: other })
+  if (!services.length) throw bad('Pick at least one service', { serviceCodes: 'Required' })
+  const before = (r.services ?? []).map((x: any) => x.name)
+  r.services = services
+  const ids = types.map((t) => t._id)
+
+  // checklist: new services' steps added; ticked / hand-added steps always kept
+  const fresh = await buildChecklist(ids)
+  const freshKeys = new Set(fresh.map((c: any) => c.key))
+  const old: any[] = r.visit?.checklist ?? []
+  const merged = [...fresh.map((c: any) => old.find((o) => o.key === c.key) ?? c), ...old.filter((o) => !freshKeys.has(o.key) && (o.adHoc || o.done))]
+  r.set('visit.checklist', merged)
+
+  // bag: follows the services until the journey starts; packed quantities are kept
+  if (r.visit?.kitSet && BAG_FOLLOWS.includes(r.status)) {
+    const kit = await (await import('./kit')).buildKit(ids)
+    const prev: any[] = r.visit?.kit ?? []
+    const next = kit.map((k: any) => ({ ...k, packedQty: prev.find((p) => String(p.itemId) === String(k.itemId))?.packedQty ?? 0 }))
+    for (const p of prev) if ((p.packedQty ?? 0) > 0 && !next.some((n: any) => String(n.itemId) === String(p.itemId))) next.push(p) // already packed: stays in the bag
+    r.set('visit.kit', next)
+  }
+  return { before, after: services.map((x) => x.name) }
+}
+
 export async function createRequest(input: CreateRequestInput, user: SessionUser, meta: Meta = {}) {
   if (!can(user, 'requests.create')) throw forbidden()
   let patient: any

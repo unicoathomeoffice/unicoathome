@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation'
+import { activeServices } from '@/lib/cached'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { AutoRefresh } from '@/components/client'
 import { PriorityBadge, SlaPill, StatusChip, Tabs } from '@/components/ui'
@@ -111,8 +112,8 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   }
 
   // everything that only needs the request, all at once (these used to wait for each other)
-  const [, settings, [patient, msgCount, attCount, auditCount, logCount, waPaired, confirmMsg], , todays, supportPeople, [carList, driverList]] = await Promise.all([
-    withPeople([r]),
+  const [serviceCatalog, settings, [patient, msgCount, attCount, auditCount, logCount, waPaired, confirmMsg], , todays, supportPeople, [carList, driverList]] = await Promise.all([
+    withPeople([r]).then(() => activeServices()), // the catalog (cached) for "add a service" in Edit
     getSettings(),
     Promise.all([
       Patient.findById(r.patientId).lean<any>(),
@@ -198,6 +199,9 @@ export default async function RequestDetailPage({ params, searchParams }: { para
     version: r.version ?? 0,
     priority: r.priority,
     tests: r.tests ?? [],
+    serviceCodes: (r.services ?? []).filter((x: any) => x.code !== 'OTHER').map((x: any) => x.code),
+    otherService: (r.services ?? []).filter((x: any) => x.code === 'OTHER').map((x: any) => x.name).join(', '),
+    serviceOptions: serviceCatalog.map((t) => ({ code: t.code, name: t.name, fee: t.fee ?? null })),
     testItems: (r.testItems ?? []).map((t: any) => ({ code: t.code ?? '', name: t.name, price: t.price ?? 0, dept: t.dept })),
     patientCategory: (patient as any)?.category ?? undefined,
     date: r.scheduledAt ? isoDay(r.scheduledAt) : r.preferred?.date || isoDay(),

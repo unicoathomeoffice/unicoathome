@@ -24,6 +24,10 @@ export type ReqLite = {
   priority: string
   tests: string[]
   testItems?: TestItem[]
+  /** the request's services (codes of the catalog ones) + any "other" service by name; options = the active catalog */
+  serviceCodes: string[]
+  otherService: string
+  serviceOptions: { code: string; name: string; fee: number | null }[]
   patientCategory?: string
   date: string // YYYY-MM-DD (scheduled or preferred)
   time: string // HH:mm
@@ -737,15 +741,24 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
     remarks: r.remarks,
     tests: plainTests(r),
     testItems: r.testItems ?? [],
+    serviceCodes: r.serviceCodes,
+    otherService: r.otherService,
   })
   const set = (k: keyof typeof f, v: any) => setF((x) => ({ ...x, [k]: v }))
+  const servicesLocked = ['COMPLETED', 'CLOSED', 'CANCELLED'].includes(r.status)
+  const bagFixed = !['NEW', 'VERIFIED', 'CONFIRMED', 'RESCHEDULED', 'ASSIGNED', 'ACCEPTED'].includes(r.status)
+  const servicesChanged = f.serviceCodes.join() !== r.serviceCodes.join() || f.otherService.trim() !== r.otherService
+  const servicesFee = r.serviceOptions.filter((o) => f.serviceCodes.includes(o.code)).reduce((a, o) => a + (o.fee ?? 0), 0)
+  const toggleService = (code: string) => set('serviceCodes', f.serviceCodes.includes(code) ? f.serviceCodes.filter((c) => c !== code) : [...f.serviceCodes, code])
   async function save() {
+    if (servicesChanged && !f.serviceCodes.length && !f.otherService.trim()) return toast('Pick at least one service', 'err')
     setBusy(true)
     try {
       await api(`/requests/${r.id}`, {
         method: 'PATCH',
         body: {
           version: r.version,
+          ...(servicesChanged ? { serviceCodes: f.serviceCodes, otherService: f.otherService.trim() || undefined } : {}),
           priority: f.priority,
           expectedDurationMin: Number(f.expectedDurationMin) || undefined,
           estimatedFee: f.estimatedFee === '' ? undefined : Number(f.estimatedFee),
@@ -798,6 +811,46 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
             >
               <RefreshCw size={14} /> Reload latest
             </button>
+          </div>
+        )}
+        {!servicesLocked && (
+          <div>
+            <span className="hc-label">
+              Services <span className="font-normal text-slate-500">· add or remove — {f.serviceCodes.length + (f.otherService.trim() ? 1 : 0)} selected</span>
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {r.serviceOptions.map((o) => {
+                const on = f.serviceCodes.includes(o.code)
+                return (
+                  <button
+                    key={o.code}
+                    type="button"
+                    onClick={() => toggleService(o.code)}
+                    className={cx('flex h-9 items-center gap-1.5 rounded-full border px-3 text-[13px] font-semibold transition', on ? 'border-primary bg-primary-50 text-primary-700' : 'border-slate-300 bg-white text-slate-600 hover:border-slate-400')}
+                  >
+                    {on && <Check size={14} />} {o.name}
+                    {o.fee ? <span className={cx('text-[11.5px] font-medium', on ? 'text-primary-700/80' : 'text-slate-400')}>{taka(o.fee)}</span> : null}
+                  </button>
+                )
+              })}
+            </div>
+            <input className="hc-input mt-2" placeholder="Other service (not in the list) — e.g. Catheter change" value={f.otherService} onChange={(e) => set('otherService', e.target.value)} maxLength={80} />
+            {servicesChanged && (
+              <div className="mt-1.5 rounded-lg bg-[#EFF6FF] px-3 py-2 text-[12px] leading-[17px] text-[#1E40AF]">
+                The checklist gets the new services&apos; steps (ticked steps stay).{' '}
+                {bagFixed ? 'The team has left — the bag stays as packed.' : 'The bag is updated to match (packed items stay).'}
+                {servicesFee > 0 && (
+                  <>
+                    {' '}
+                    Services {taka(servicesFee)}
+                    {testsTotal(f.testItems) ? ` + tests ${taka(testsTotal(f.testItems))}` : ''} = <b>{taka(servicesFee + testsTotal(f.testItems))}</b> ·{' '}
+                    <button type="button" className="font-semibold underline" onClick={() => set('estimatedFee', String(servicesFee + testsTotal(f.testItems)))}>
+                      use as estimated fee
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
         <div>

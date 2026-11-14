@@ -3,7 +3,7 @@ import { TestItemInput, testNames } from '@/lib/schemas'
 import { route, body, clientMeta, conflict, forbidden } from '@/lib/api'
 import { Patient } from '@/lib/models'
 import { can } from '@/lib/constants'
-import { carRequestedLazy, loadRequest, withPeople, slaInfo } from '@/lib/services/requests'
+import { carRequestedLazy, changeServices, loadRequest, withPeople, slaInfo } from '@/lib/services/requests'
 import { background } from '@/lib/messaging'
 import { audit, diff } from '@/lib/audit'
 import { getSettings } from '@/lib/settings'
@@ -32,6 +32,9 @@ const Patch = z.object({
   estimatedFee: z.coerce.number().nonnegative().optional(),
   paymentMethod: z.enum(['CASH', 'BKASH', 'NAGAD', 'CARD']).optional(),
   transportNeeded: z.boolean().optional(),
+  // services can change after confirming (until the visit is completed)
+  serviceCodes: z.array(z.string()).max(20).optional(),
+  otherService: z.string().trim().max(80).optional(),
 })
 
 /** General field edits by coordinators / front desk. Lifecycle changes go through /requests/:id/:action. */
@@ -41,8 +44,9 @@ export const PATCH = route<{ id: string }>(async ({ req, user, params }) => {
   const isTeam = [r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])].map(String).includes(user.id)
   if (!can(user, 'patients.edit') && !(isTeam && Object.keys(input).every((k) => ['tests', 'testItems', 'version'].includes(k)))) throw forbidden()
   if (input.version != null && input.version !== r.version) throw conflict('VERSION_CONFLICT', 'Someone else changed this request. Reload to see the latest version.')
-  const before = { transport: !!r.transport?.needed, priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
+  const before = { services: (r.services ?? []).map((x: any) => x.name), transport: !!r.transport?.needed, priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
   if (input.priority) r.priority = input.priority
+  if (input.serviceCodes) await changeServices(r, { serviceCodes: input.serviceCodes, otherService: input.otherService })
   if (input.testItems) {
     r.testItems = input.testItems
     r.tests = testNames(input.testItems, input.tests ?? [])
@@ -64,7 +68,7 @@ export const PATCH = route<{ id: string }>(async ({ req, user, params }) => {
   await r.save()
   // requisition → on-call security supervisor, but only once the care team is assigned (assign sends it otherwise)
   if (carAsked && r.assignment?.primaryStaffId) background(() => carRequestedLazy(r._id, user.id))
-  const after = { priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
+  const after = { services: (r.services ?? []).map((x: any) => x.name), priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
   await audit(user, 'request.update', 'request', r._id, { ...diff(before, after), label: r.requestNo }, clientMeta(req, user))
   return { ok: true, version: r.version }
 })
