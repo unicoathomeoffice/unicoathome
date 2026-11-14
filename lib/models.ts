@@ -739,6 +739,7 @@ const MessageLogSchema = new Schema<any>(
     attachmentId: { type: ObjectId, ref: 'Attachment' },
     // WhatsApp sending safety (lib/wa/guard.ts): higher goes first; sentAt drives the rate limits
     priority: { type: Number, default: 0 },
+    force: Boolean, // "Send now" by an admin: first in line, past quiet hours / per-person / hourly limits (not the ban pause)
     sentAt: Date,
     deliveredAt: Date, // WhatsApp ✓✓ (lib/wa/receipts.ts)
     readAt: Date, // WhatsApp blue ✓✓

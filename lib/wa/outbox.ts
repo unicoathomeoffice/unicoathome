@@ -155,6 +155,31 @@ export async function retryFailed(ids: string[], user: SessionUser, meta: Meta =
   return rows.length
 }
 
+/**
+ * "Send now": an admin pushes messages out at once — waiting ones are approved, stuck / failed / discarded ones go back in
+ * the queue first in line, past quiet hours and the per-person / hourly limits (lib/wa/service.ts pump honours `force`).
+ * Never for people who replied STOP. Then one send session runs straight away and its outcome is returned.
+ */
+export async function forceSend(ids: string[], user: SessionUser, meta: Meta = {}) {
+  const rows = await MessageLog.find({ _id: { $in: ids }, channel: 'WHATSAPP', provider: PROVIDER, direction: { $ne: 'IN' }, status: { $in: ['PENDING', 'QUEUED', 'PREPARED', 'FAILED', 'SKIPPED'] } })
+    .select('_id toName to status error')
+    .lean<any[]>()
+  const ok = rows.filter((r) => !(r.status === 'SKIPPED' && /opted out/i.test(String(r.error ?? ''))))
+  if (!ok.length) return { count: 0, sent: 0, skipped: rows.length ? 'This person replied STOP — WhatsApp messages to them are off' : 'Nothing to send' }
+  const now = new Date()
+  await MessageLog.updateMany(
+    { _id: { $in: ok.map((r) => r._id) } },
+    {
+      $set: { status: 'QUEUED', force: true, priority: 100, at: now, error: null, approvedBy: user.id, approvedAt: now },
+      $push: { events: { status: 'QUEUED', at: now, note: `Send now by ${user.name}` } },
+    },
+  )
+  await audit(user, 'message.force', 'message', ok.length === 1 ? ok[0]._id : null, { after: { count: ok.length, to: ok.slice(0, 20).map((r) => r.toName ?? r.to), from: ok.map((r) => r.status) } }, meta)
+  const { pumpWhatsApp } = await import('./service')
+  const r = await pumpWhatsApp().catch((e: any) => ({ sent: 0, failed: 0, skipped: String(e?.message ?? e) }))
+  return { count: ok.length, sent: r.sent, failed: r.failed, skipped: r.skipped ?? null }
+}
+
 /** Sweep: waiting too long → discarded (an "on the way" message two days later only confuses people). */
 export async function expirePending() {
   const old = await MessageLog.find({ ...PENDING, at: { $lt: new Date(Date.now() - PENDING_MAX_H * 3600_000) } }).select('_id').lean<any[]>()

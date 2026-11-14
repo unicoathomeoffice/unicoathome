@@ -6,7 +6,7 @@
 // open it checks WhatsApp for new messages about every 2 minutes (one shared, safe session). Data: lib/wa/history.ts.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ArrowLeft, Ban, Check, CheckCheck, ChevronDown, Clock3, ExternalLink, FileText, Info, Loader2, MessageCircle, Pencil, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Smartphone, Trash2, UserRound, Users, X } from 'lucide-react'
+import { Zap, AlertCircle, ArrowLeft, Ban, Check, CheckCheck, ChevronDown, Clock3, ExternalLink, FileText, Info, Loader2, MessageCircle, Pencil, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Smartphone, Trash2, UserRound, Users, X } from 'lucide-react'
 import { api, useToast } from '@/components/client'
 import { outboxChanged } from '@/components/client/WaReview'
 import { cx, phone as fmtPhone } from '@/lib/format'
@@ -192,12 +192,15 @@ function InBubble({ m, group }: { m: Msg; group: boolean }) {
 }
 
 // ================================================================ one message
-function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; requestHref: (id: string) => string; edit: string | undefined; onEdit: (t: string | null) => void; onAct: (a: 'send' | 'discard' | 'retry') => void; busy: string | null }) {
+function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; requestHref: (id: string) => string; edit: string | undefined; onEdit: (t: string | null) => void; onAct: (a: 'send' | 'discard' | 'retry' | 'force') => void; busy: string | null }) {
   const [info, setInfo] = useState(false)
   const [editing, setEditing] = useState(false)
   const waiting = m.status === 'PENDING'
   const failed = m.status === 'FAILED'
   const skipped = m.status === 'SKIPPED'
+  const stuck = m.status === 'QUEUED' || m.status === 'PREPARED' // approved but held back (limits, quiet hours…)
+  const optedOut = skipped && /opted out/i.test(m.error ?? '')
+  const canForce = !m.incoming && !m.fromPhone && (stuck || failed || (skipped && !optedOut))
   const text = edit ?? m.text
   const changed = edit != null && edit !== m.text
   const stale = m.visit && ['CANCELLED', 'CLOSED'].includes(m.visit.status)
@@ -286,8 +289,8 @@ function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; request
 
       <Reactions list={m.reactions} right />
       {/* actions for a waiting / failed message */}
-      {(waiting || failed) && (
-        <div className="mt-1 flex items-center gap-1">
+      {(waiting || canForce) && (
+        <div className="mt-1 flex flex-wrap items-center justify-end gap-1">
           {waiting && (
             <>
               <button type="button" disabled={!!busy || !text.trim()} onClick={() => onAct('send')} className="inline-flex h-8 items-center gap-1 rounded-full bg-[#25D366] px-3 text-[12.5px] font-bold text-white shadow-sm hover:bg-[#1DA851] disabled:opacity-50">
@@ -303,9 +306,15 @@ function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; request
               </button>
             </>
           )}
-          {failed && (
-            <button type="button" disabled={!!busy} onClick={() => onAct('retry')} className="inline-flex h-8 items-center gap-1 rounded-full bg-white px-3 text-[12.5px] font-semibold text-[#008069] shadow-sm hover:bg-emerald-50 disabled:opacity-50">
-              {busy === m.id + 'retry' ? <Loader2 size={13} className="animate-spin" /> : <RotateCcw size={13} />} Retry
+          {canForce && (
+            <button
+              type="button"
+              disabled={!!busy}
+              onClick={() => (skipped ? confirm('This message was not sent (discarded or skipped). Send it now anyway?') && onAct('force') : onAct('force'))}
+              className="inline-flex h-8 items-center gap-1 rounded-full bg-[#00A884] px-3 text-[12.5px] font-bold text-white shadow-sm hover:bg-[#008F72] disabled:opacity-50"
+              title="Send right away — first in line, past quiet hours and the per-person / hourly limits"
+            >
+              {busy === m.id + 'force' ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />} {skipped ? 'Send anyway' : 'Send now'}
             </button>
           )}
         </div>
@@ -544,13 +553,21 @@ export function WaInbox({
   }
 
   // ---------------------------------------------------------------- actions
-  async function act(action: 'send' | 'discard' | 'retry', ms: Msg[]) {
+  async function act(action: 'send' | 'discard' | 'retry' | 'force', ms: Msg[]) {
     if (!ms.length) return
     setBusy(ms.length === 1 ? ms[0].id + action : 'all' + action)
     try {
       const changed = Object.fromEntries(ms.filter((m) => edits[m.id] != null && edits[m.id] !== m.text).map((m) => [m.id, edits[m.id]]))
-      const r = await api<{ count: number }>('/outbox', { body: { action, ids: ms.map((m) => m.id), ...(action === 'send' && Object.keys(changed).length ? { edits: changed } : {}) } })
-      toast(action === 'send' ? `Sending ${r.count} message${r.count === 1 ? '' : 's'}` : action === 'retry' ? 'Trying again' : `${r.count} discarded — not sent`, 'ok')
+      const r = await api<{ count: number; sent?: number; failed?: number; skipped?: string | null }>('/outbox', { body: { action, ids: ms.map((m) => m.id), ...(action === 'send' && Object.keys(changed).length ? { edits: changed } : {}) } })
+      if (action === 'force') {
+        // the server ran a send session straight away: say what happened
+        if (r.sent) toast(`Sent ✓`, 'ok')
+        else if (!r.count) toast(r.skipped ?? 'Nothing to send', 'err')
+        else if (r.skipped === 'busy') toast('WhatsApp is sending right now — this one goes first in that session', 'ok')
+        else if (r.skipped?.startsWith('paused')) toast(`Sending is paused for safety (${r.skipped}). Resume it in Settings → WhatsApp safety.`, 'err')
+        else if (r.failed) toast('WhatsApp refused it — see Message info for the reason', 'err')
+        else toast(r.skipped ? `Not sent yet: ${r.skipped}` : 'Queued first in line', r.skipped ? 'err' : 'ok')
+      } else toast(action === 'send' ? `Sending ${r.count} message${r.count === 1 ? '' : 's'}` : action === 'retry' ? 'Trying again' : `${r.count} discarded — not sent`, 'ok')
       setEdits((e) => Object.fromEntries(Object.entries(e).filter(([k]) => !ms.some((m) => m.id === k))))
       outboxChanged()
       if (active) await loadThread(active)

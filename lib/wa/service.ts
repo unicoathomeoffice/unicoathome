@@ -82,11 +82,13 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
   if (paused) return { sent: 0, failed: 0, skipped: `paused until ${paused.until.toISOString()}` }
   if (!(await MessageLog.exists({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED' }))) return { sent: 0, failed: 0, skipped: 'nothing queued' }
   const room = await allowance()
-  if (room.left <= 0) return { sent: 0, failed: 0, skipped: 'rate limit — will send later' }
+  // "Send now" messages go even when the hourly allowance is used up
+  const forced = !!(await MessageLog.exists({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED', force: true }))
+  if (room.left <= 0 && !forced) return { sent: 0, failed: 0, skipped: 'rate limit — will send later' }
   const quiet = await inQuietHours()
-  // urgent first; routine automatic messages wait out quiet hours (anything sent by hand still goes)
-  const rows = await MessageLog.find({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED', ...(quiet ? { $or: [{ priority: { $gte: 10 } }, { initiatedBy: { $ne: null } }, { approvedBy: { $ne: null } }] } : {}) })
-    .sort({ priority: -1, at: 1 })
+  // "Send now" first, then urgent; routine automatic messages wait out quiet hours (anything sent by hand still goes)
+  const rows = await MessageLog.find({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED', ...(quiet ? { $or: [{ force: true }, { priority: { $gte: 10 } }, { initiatedBy: { $ne: null } }, { approvedBy: { $ne: null } }] } : {}) })
+    .sort({ force: -1, priority: -1, at: 1 })
     .limit(40)
   if (!rows.length) return { sent: 0, failed: 0, skipped: 'waiting for morning (quiet hours)' }
   const lock = await acquireLock(90_000)
@@ -117,7 +119,8 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
       })
     const started = Date.now()
     for (const m of rows) {
-      if (sent >= room.left || Date.now() - started > 60_000) break // stay inside the limit and the lease
+      if (Date.now() - started > 60_000) break // stay inside the lease
+      if (!m.force && sent >= room.left) continue // stay inside the limit ("Send now" messages excepted)
       if ((await contactState(m.to))?.optOut) {
         m.status = 'SKIPPED'
         m.events.push({ status: 'SKIPPED', at: new Date(), note: 'Opted out (replied STOP)' })
@@ -131,13 +134,13 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
         await m.save()
         continue
       }
-      if (await isDuplicate(m, cfg.dedupeMin)) {
+      if (!m.force && (await isDuplicate(m, cfg.dedupeMin))) {
         m.status = 'SKIPPED'
         m.events.push({ status: 'SKIPPED', at: new Date(), note: 'Duplicate of a message sent a few minutes ago' })
         await m.save()
         continue
       }
-      if (!isInternalAlert(m.templateKey) && !(await recipientRoom(m.to, cfg))) continue // this person had enough for now: later
+      if (!m.force && !isInternalAlert(m.templateKey) && !(await recipientRoom(m.to, cfg))) continue // this person had enough for now: later
       const jid = jidOf(m.to)
       try {
         // only real WhatsApp numbers (messaging numbers that aren't on WhatsApp is a ban signal)
@@ -179,6 +182,7 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
         const res = await sock.sendMessage(jid, content)
         m.status = 'SENT'
         m.sentAt = new Date()
+        m.force = undefined
         m.providerId = res?.key?.id
         m.attempts = (m.attempts ?? 0) + 1
         m.events.push({ status: 'SENT', at: new Date() })
