@@ -9,7 +9,7 @@ import { ArrowDownLeft, ArrowUpRight, Camera, ClipboardCheck, EyeOff, ImageOff, 
 import { api, Drawer, Segmented, Toggle, useToast } from '@/components/client'
 import { btnClass, Tag } from '@/components/ui'
 import { cx } from '@/lib/format'
-import { groupItems, parseItemName } from '@/lib/store-groups'
+import { groupItems, parseItemName, stockState } from '@/lib/store-groups'
 import { ConsumeDrawer } from '@/components/store/ConsumeDrawer'
 import { usePasteFiles } from '@/components/client/paste'
 import { ImageEditor } from '@/components/store/ImageEditor'
@@ -17,11 +17,12 @@ import { ImageViewer, pictureCount } from '@/components/store/ImageViewer'
 import { AddItemChooser } from '@/components/store/AddItemChooser'
 import { LoanDrawer } from '@/components/store/LoanDrawer'
 import { ReceiveDrawer } from '@/components/store/ReceiveDrawer'
+import { StoreItems } from '@/components/store/StoreItems'
 
 export type EquipmentDoc = { _id: string; name: string; type: 'EQUIPMENT' | 'CONSUMABLE'; unit: string; imageId?: string | null; images?: { attachmentId: string }[]; notes?: string; isActive: boolean; inUse?: number; stock?: number; alertBelow?: number; family?: string; variant?: string; brand?: string; h360Code?: string; lentOut?: number; borrowed?: number }
 
 /** out ≤ 0 · low ≤ alert level · ok */
-export const stockState = (i: { stock?: number; alertBelow?: number }) => ((i.stock ?? 0) <= 0 ? 'out' : (i.alertBelow ?? 0) > 0 && (i.stock ?? 0) <= (i.alertBelow ?? 0) ? 'low' : 'ok')
+export { stockState }
 const STOCK_TONE = { out: 'bg-[#FEE2E2] text-[#B91C1C]', low: 'bg-[#FEF3C7] text-[#B45309]', ok: 'bg-[#DCFCE7] text-[#15803D]' } as const
 
 export function StockChip({ item, className }: { item: { stock?: number; alertBelow?: number; unit: string }; className?: string }) {
@@ -47,126 +48,28 @@ export function ItemPicture({ item, size = 48, className }: { item: { _id: strin
 }
 
 export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items: EquipmentDoc[]; canEdit: boolean; canStock?: boolean }) {
-  const [q, setQ] = useState('')
-  const [type, setType] = useState<'ALL' | 'EQUIPMENT' | 'CONSUMABLE' | 'LOW'>('ALL')
-  const [brand, setBrand] = useState('')
-  const [view, setView] = useState<'GROUPED' | 'ALL'>('GROUPED')
-  const [hidden, setHidden] = useState(false)
   const [edit, setEdit] = useState<EquipmentDoc | 'new' | null>(null)
   const [consume, setConsume] = useState<string[] | null>(null)
   const [viewer, setViewer] = useState<EquipmentDoc | null>(null)
   const [adding, setAdding] = useState<null | { tab: 'h360' | 'store' | 'copy' | 'bulk'; copyFrom?: string }>(null)
   const [loan, setLoan] = useState<null | { direction: 'TAKEN' | 'GIVEN'; preset: string[] }>(null)
-  const [receiving, setReceiving] = useState(false)
+  const [receiving, setReceiving] = useState<string[] | null>(null)
   const canPic = canEdit || canStock
   const open = (i: EquipmentDoc) => (canEdit || canStock) && setEdit(i)
-  const brands = useMemo(() => [...new Set(items.map((i) => i.brand).filter(Boolean) as string[])].sort(), [items])
-  const shown = useMemo(() => {
-    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean)
-    return items.filter(
-      (i) =>
-        (hidden || i.isActive) &&
-        (type === 'ALL' || (type === 'LOW' ? stockState(i) !== 'ok' : i.type === type)) &&
-        (!brand || i.brand === brand) &&
-        words.every((w) => [i.name, i.family, i.variant, i.brand, i.h360Code].some((f) => (f ?? '').toLowerCase().includes(w))),
-    )
-  }, [items, q, type, brand, hidden])
-  const groups = useMemo(() => groupItems(shown), [shown])
-  const active = items.filter((i) => i.isActive)
-  const nLow = active.filter((i) => stockState(i) === 'low').length
-  const nOut = active.filter((i) => stockState(i) === 'out').length
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-slate-600">
-        <span>
-          <b className="text-slate-900">{active.length}</b> items
-        </span>
-        <span>
-          <b className="text-slate-900">{active.reduce((a, i) => a + Math.max(0, i.stock ?? 0), 0).toLocaleString('en-US')}</b> units in stock
-        </span>
-        {nLow > 0 && <span className="font-semibold text-[#B45309]">{nLow} low</span>}
-        {nOut > 0 && <span className="font-semibold text-[#B91C1C]">{nOut} out of stock</span>}
-        <span className="text-slate-400">· consumables used on visits are taken out automatically</span>
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="relative min-w-[220px] flex-1">
-          <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="hc-input pl-9" placeholder="Search — item, size, company or H360 code (e.g. cannula 22G, braun)" value={q} onChange={(e) => setQ(e.target.value)} />
-        </label>
-        <Segmented
-          value={type}
-          onChange={setType}
-          items={[
-            { value: 'ALL', label: `All · ${active.length}` },
-            { value: 'CONSUMABLE', label: 'Consumables' },
-            { value: 'EQUIPMENT', label: 'Equipment' },
-            { value: 'LOW', label: `Low / out · ${nLow + nOut}` },
-          ]}
-        />
-        {brands.length > 0 && (
-          <select className="hc-input w-auto" value={brand} onChange={(e) => setBrand(e.target.value)} aria-label="Company">
-            <option value="">All companies</option>
-            {brands.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        )}
-        <Segmented
-          value={view}
-          onChange={setView}
-          items={[
-            { value: 'GROUPED', label: 'By family' },
-            { value: 'ALL', label: 'All items' },
-          ]}
-        />
-        <label className="flex items-center gap-2 text-[13px] text-slate-600">
-          <Toggle on={hidden} onChange={setHidden} label="Show hidden items" /> Hidden
-        </label>
-        {canStock && (
-          <>
-            <button type="button" className={btnClass('o')} onClick={() => setReceiving(true)}>
-              <PackagePlus size={16} /> Receive
-            </button>
-            <button type="button" className={btnClass('o')} onClick={() => setConsume([])}>
-              <PackageMinus size={16} /> Consume
-            </button>
-            <button type="button" className={btnClass('o')} onClick={() => setLoan({ direction: 'TAKEN', preset: [] })} title="Borrow from a department, staff or outside">
-              <ArrowDownLeft size={16} /> Take loan
-            </button>
-            <button type="button" className={btnClass('o')} onClick={() => setLoan({ direction: 'GIVEN', preset: [] })} title="Lend to a department, staff or outside">
-              <ArrowUpRight size={16} /> Give loan
-            </button>
-          </>
-        )}
-        {(canEdit || canStock) && (
-          <button type="button" className={btnClass('p')} onClick={() => setAdding({ tab: 'h360' })}>
-            <Plus size={16} /> Add item
-          </button>
-        )}
-      </div>
-      {!shown.length ? (
-        <div className="rounded-card bg-white px-6 py-12 text-center text-[14px] text-slate-500 shadow-card">
-          {items.length ? 'No items match.' : 'No items yet — add the instruments and consumables your teams take on visits (e.g. IV cannula, gloves, BP machine).'}
-        </div>
-      ) : view === 'GROUPED' ? (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-          {groups.map((g) =>
-            g.members.length === 1 ? (
-              <ItemCard key={g.members[0]._id} i={g.members[0]} onOpen={open} onPicture={setViewer} clickable={canEdit || canStock} />
-            ) : (
-              <FamilyCard key={g.family} family={g.family} members={g.members} onOpen={open} onPicture={setViewer} onAddSize={canEdit || canStock ? (m) => setAdding({ tab: 'copy', copyFrom: m._id }) : undefined} />
-            ),
-          )}
-        </div>
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-          {shown.map((i) => (
-            <ItemCard key={i._id} i={i} onOpen={open} onPicture={setViewer} clickable={canEdit || canStock} />
-          ))}
-        </div>
-      )}
+      <StoreItems
+        items={items}
+        canEdit={canEdit}
+        canStock={canStock}
+        onOpen={open}
+        onPicture={setViewer}
+        onConsume={(ids) => setConsume(ids)}
+        onReceive={(ids) => setReceiving(ids)}
+        onLoan={(direction) => setLoan({ direction, preset: [] })}
+        onAdd={canEdit || canStock ? () => setAdding({ tab: 'h360' }) : undefined}
+        onAddSize={canEdit || canStock ? (m) => setAdding({ tab: 'copy', copyFrom: m._id }) : undefined}
+      />
       {edit && (
         <EditItem
           key={edit === 'new' ? 'new' : edit._id}
@@ -187,128 +90,10 @@ export function EquipmentEditor({ items, canEdit, canStock = canEdit }: { items:
         />
       )}
       {consume && <ConsumeDrawer items={items} preset={consume} onClose={() => setConsume(null)} />}
-      {receiving && <ReceiveDrawer items={items} onClose={() => setReceiving(false)} />}
+      {receiving && <ReceiveDrawer items={items} preset={receiving} onClose={() => setReceiving(null)} />}
       {loan && <LoanDrawer direction={loan.direction} preset={loan.preset} items={items} onClose={() => setLoan(null)} />}
       {adding && <AddItemChooser items={items} preset={adding} onClose={() => setAdding(null)} onBlank={canEdit ? () => (setAdding(null), setEdit('new')) : undefined} />}
       {viewer && <ImageViewer item={viewer} canEdit={canPic} siblings={viewer.family ? items.filter((x) => x.family === viewer.family && x._id !== viewer._id).length : 0} onClose={() => setViewer(null)} />}
-    </div>
-  )
-}
-
-function ItemCard({ i, onOpen, onPicture, clickable }: { i: EquipmentDoc; onOpen: (i: EquipmentDoc) => void; onPicture: (i: EquipmentDoc) => void; clickable: boolean }) {
-  return (
-    <button type="button" onClick={() => onOpen(i)} className={cx('flex items-center gap-3 rounded-card bg-white p-3 text-left shadow-card', clickable && 'hover:ring-1 hover:ring-primary', !i.isActive && 'opacity-60')}>
-      <span
-        role="button"
-        tabIndex={0}
-        title={i.imageId ? 'View picture' : 'Add a picture'}
-        onClick={(e) => (e.stopPropagation(), onPicture(i))}
-        onKeyDown={(e) => e.key === 'Enter' && (e.stopPropagation(), onPicture(i))}
-        className="relative rounded-lg transition hover:ring-2 hover:ring-primary/50"
-      >
-        <ItemPicture item={i} size={64} />
-        <PicBadge item={i} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14.5px] font-bold text-slate-900" title={i.name}>
-          {i.name}
-        </span>
-        <span className="mt-1 flex flex-wrap items-center gap-1.5">
-          <StockChip item={i} />
-          <Tag tone={i.type === 'EQUIPMENT' ? 'indigo' : 'blue'}>{i.type === 'EQUIPMENT' ? 'Equipment' : 'Consumable'}</Tag>
-          {i.brand && <span className="text-[11.5px] font-semibold text-slate-500">{i.brand}</span>}
-          {!!i.lentOut && <span className="rounded-full bg-[#FFFBEB] px-1.5 text-[11px] font-bold text-[#B45309] ring-1 ring-[#FDE68A]">{i.lentOut} lent out</span>}
-          {!!i.borrowed && <span className="rounded-full bg-[#EEF2FF] px-1.5 text-[11px] font-bold text-[#4338CA] ring-1 ring-[#C7D2FE]">{i.borrowed} borrowed</span>}
-          {!i.isActive && <Tag tone="slate">Hidden</Tag>}
-        </span>
-        {!!i.inUse && <span className="mt-0.5 block text-[11.5px] text-slate-400">Used in {i.inUse} service / visit record{i.inUse === 1 ? '' : 's'}</span>}
-      </span>
-    </button>
-  )
-}
-
-/** "▣ 4" on a picture when the item has several */
-function PicBadge({ item }: { item: EquipmentDoc }) {
-  const n = pictureCount(item)
-  if (n < 2) return null
-  return (
-    <span className="pointer-events-none absolute bottom-1 left-1 flex items-center gap-0.5 rounded bg-slate-900/65 px-1 text-[10.5px] font-bold text-white" title={`${n} pictures`}>
-      <Images size={10} /> {n}
-    </span>
-  )
-}
-
-/** One family (e.g. IV cannula) with a chip per size: "22G · B Braun · 3". Click a chip for that item. */
-function FamilyCard({ family, members, onOpen, onPicture, onAddSize }: { family: string; members: EquipmentDoc[]; onOpen: (i: EquipmentDoc) => void; onPicture: (i: EquipmentDoc) => void; onAddSize?: (from: EquipmentDoc) => void }) {
-  const total = members.reduce((a, m) => a + Math.max(0, m.stock ?? 0), 0)
-  const unit = members[0].unit
-  const makers = [...new Set(members.map((m) => m.brand).filter(Boolean))]
-  const nOut = members.filter((m) => stockState(m) === 'out').length
-  const [all, setAll] = useState(false)
-  const shown = all ? members : members.slice(0, 8)
-  return (
-    <div className="flex flex-col gap-2.5 rounded-card bg-white p-3 shadow-card sm:col-span-2">
-      <div className="min-w-0">
-        <div className="truncate text-[15px] font-bold text-slate-900">{family}</div>
-        <div className="text-[12px] text-slate-500">
-          <b className="text-slate-800">{total}</b> {unit} in store · {members.length} sizes{makers.length ? ` · ${makers.join(', ')}` : ''}
-          {nOut > 0 && <span className="font-semibold text-[#B91C1C]"> · {nOut} out</span>}
-        </div>
-      </div>
-      {/* one tile per size: its picture, size, company and stock */}
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-5">
-        {shown.map((m) => {
-          const st = stockState(m)
-          return (
-            <button
-              key={m._id}
-              type="button"
-              onClick={() => onOpen(m)}
-              title={m.name}
-              className={cx(
-                'group flex flex-col overflow-hidden rounded-lg border text-left transition hover:ring-2 hover:ring-primary/40',
-                st === 'out' ? 'border-[#FECACA]' : st === 'low' ? 'border-[#FDE68A]' : 'border-slate-200',
-                !m.isActive && 'opacity-50',
-              )}
-            >
-              <span
-                role="button"
-                tabIndex={0}
-                title={m.imageId ? 'View picture' : 'Add a picture'}
-                onClick={(e) => (e.stopPropagation(), onPicture(m))}
-                onKeyDown={(e) => e.key === 'Enter' && (e.stopPropagation(), onPicture(m))}
-                className="relative block aspect-square w-full overflow-hidden bg-slate-100"
-              >
-                <ItemPicture item={m} size={0} className="!size-full rounded-none" />
-                <PicBadge item={m} />
-                <span className={cx('absolute right-1 top-1 rounded px-1.5 text-[11.5px] font-bold shadow-sm', STOCK_TONE[st])}>{m.stock ?? 0}</span>
-              </span>
-              <span className="px-1.5 py-1">
-                <b className="block truncate text-[12.5px] text-slate-900">{m.variant || m.name}</b>
-                {m.brand && <span className="block truncate text-[11px] text-slate-500">{m.brand}</span>}
-                {(!!m.lentOut || !!m.borrowed) && (
-                  <span className="block truncate text-[10.5px] font-semibold">
-                    {!!m.lentOut && <span className="text-[#B45309]">{m.lentOut} lent </span>}
-                    {!!m.borrowed && <span className="text-[#4338CA]">{m.borrowed} borrowed</span>}
-                  </span>
-                )}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-      <div className="flex items-center gap-3">
-        {members.length > 8 && (
-          <button type="button" onClick={() => setAll(!all)} className="text-[12px] font-semibold text-primary-700 hover:underline">
-            {all ? 'Show fewer' : `+${members.length - 8} more sizes`}
-          </button>
-        )}
-        {onAddSize && (
-          <button type="button" onClick={() => onAddSize(members[members.length - 1])} className="ml-auto text-[12px] font-semibold text-primary-700 hover:underline">
-            + Add a size
-          </button>
-        )}
-      </div>
     </div>
   )
 }

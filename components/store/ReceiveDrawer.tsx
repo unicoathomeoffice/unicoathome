@@ -7,10 +7,10 @@ import { api, Drawer, useToast } from '@/components/client'
 import { btnClass } from '@/components/ui'
 import { ItemPicker, type Line, type PickItem } from './ItemPicker'
 
-export function ReceiveDrawer({ items, onClose }: { items: PickItem[]; onClose: () => void }) {
+export function ReceiveDrawer({ items, preset = [], onClose }: { items: PickItem[]; preset?: string[]; onClose: () => void }) {
   const router = useRouter()
   const toast = useToast()
-  const [lines, setLines] = useState<Line[]>([])
+  const [lines, setLines] = useState<Line[]>(preset.map((itemId) => ({ itemId, qty: 1 })))
   const [from, setFrom] = useState('Central store (H360 indent)')
   const [ref, setRef] = useState('')
   const [note, setNote] = useState('')

@@ -114,3 +114,6 @@ export function groupItems<T extends { _id: string; name: string; family?: strin
   }
   return [...map.values()].map((members) => ({ family: members[0].family || members[0].name, members: sortVariants(members) }))
 }
+
+/** Stock state of an item: out ≤ 0 · low ≤ its alert level · ok */
+export const stockState = (i: { stock?: number; alertBelow?: number }): 'out' | 'low' | 'ok' => ((i.stock ?? 0) <= 0 ? 'out' : (i.alertBelow ?? 0) > 0 && (i.stock ?? 0) <= (i.alertBelow ?? 0) ? 'low' : 'ok')
