@@ -462,7 +462,12 @@ export function cropTo(source: HTMLCanvasElement, crop: { x: number; y: number; 
   x.fillStyle = '#fff'
   x.fillRect(0, 0, out.width, out.height)
   x.imageSmoothingQuality = 'high'
-  x.drawImage(source, c.x, c.y, c.w, c.h, 0, 0, out.width, out.height)
+  // the box may reach past the photo (a tall item in a square crop): draw only the overlap, the rest stays white
+  const sx = Math.max(0, c.x)
+  const sy = Math.max(0, c.y)
+  const ex = Math.min(source.width, c.x + c.w)
+  const ey = Math.min(source.height, c.y + c.h)
+  if (ex > sx && ey > sy) x.drawImage(source, sx, sy, ex - sx, ey - sy, (sx - c.x) * k, (sy - c.y) * k, (ex - sx) * k, (ey - sy) * k)
   return out
 }
 

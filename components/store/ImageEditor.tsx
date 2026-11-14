@@ -210,7 +210,15 @@ export function ImageEditor({
   }, [previewSrc, tab, s.bg.mode, s.bg.color, s.bg.tolerance])
 
   // ---------------------------------------------------------------- crop box
-  const cropScale = src ? Math.min(box.w / src.width, box.h / src.height) : 1
+  // The area the box may cover. Square crop: a square as big as the photo's longest side, centred on it — so a tall item
+  // (a syringe) or a wide one still fits whole; the part outside the photo becomes white (lib/image-filters.ts cropTo).
+  const area = useMemo(() => {
+    if (!src) return { x: 0, y: 0, w: 1, h: 1 }
+    if (!square) return { x: 0, y: 0, w: src.width, h: src.height }
+    const S = Math.max(src.width, src.height)
+    return { x: (src.width - S) / 2, y: (src.height - S) / 2, w: S, h: S }
+  }, [src, square])
+  const cropScale = src ? Math.min(box.w / area.w, box.h / area.h) : 1
   const cropUrl = useMemo(() => (src && tab === 'crop' ? src.toDataURL('image/jpeg', 0.82) : ''), [src, tab])
   const drag = useRef<null | { mode: 'move' | 'nw' | 'ne' | 'sw' | 'se'; sx: number; sy: number; r: Rect }>(null)
   function down(mode: 'move' | 'nw' | 'ne' | 'sw' | 'se', e: React.PointerEvent) {
@@ -225,13 +233,15 @@ export function ImageEditor({
     if (!g || !src) return
     const dx = (e.clientX - g.sx) / cropScale
     const dy = (e.clientY - g.sy) / cropScale
-    const W = src.width
-    const H = src.height
-    const min = Math.max(24, Math.min(W, H) * 0.08)
+    const min = Math.max(24, Math.min(src.width, src.height) * 0.08)
+    const X0 = area.x
+    const Y0 = area.y
+    const X1 = area.x + area.w
+    const Y1 = area.y + area.h
     let { x, y, w, h } = g.r
     if (g.mode === 'move') {
-      x = Math.min(Math.max(0, x + dx), W - w)
-      y = Math.min(Math.max(0, y + dy), H - h)
+      x = Math.min(Math.max(X0, x + dx), X1 - w)
+      y = Math.min(Math.max(Y0, y + dy), Y1 - h)
     } else {
       const west = g.mode.includes('w')
       const north = g.mode.includes('n')
@@ -239,8 +249,8 @@ export function ImageEditor({
       const ay = north ? y + h : y
       let nw = Math.max(min, w + (west ? -dx : dx))
       let nh = Math.max(min, h + (north ? -dy : dy))
-      const roomW = west ? ax : W - ax
-      const roomH = north ? ay : H - ay
+      const roomW = west ? ax - X0 : X1 - ax
+      const roomH = north ? ay - Y0 : Y1 - ay
       if (square) nw = nh = Math.min(Math.max(nw, nh), roomW, roomH)
       else (nw = Math.min(nw, roomW), (nh = Math.min(nh, roomH)))
       x = west ? ax - nw : ax
@@ -339,6 +349,11 @@ export function ImageEditor({
               if (v && crop) {
                 const side = Math.min(crop.w, crop.h)
                 setCrop({ ...crop, w: side, h: side })
+              } else if (!v && src && crop) {
+                // back to the photo itself: clip the box to the photo
+                const x = Math.max(0, crop.x)
+                const y = Math.max(0, crop.y)
+                setCrop({ x, y, w: Math.min(src.width, crop.x + crop.w) - x, h: Math.min(src.height, crop.y + crop.h) - y })
               }
             }}
           />
@@ -349,11 +364,13 @@ export function ImageEditor({
             <button type="button" className={btnClass('o', 'sm')} disabled={!src} onClick={() => setRot((r) => (r + 90) % 360)} title="Rotate right">
               <RotateCw size={15} /> Right
             </button>
-            <button type="button" className={btnClass('o', 'sm')} disabled={!src || square} onClick={() => src && setCrop({ x: 0, y: 0, w: src.width, h: src.height })}>
+            <button type="button" className={btnClass('o', 'sm')} disabled={!src} onClick={() => src && setCrop(square ? { ...area } : { x: 0, y: 0, w: src.width, h: src.height })} title={square ? 'The whole item in a square, white around it' : 'The whole photo'}>
               Whole
             </button>
           </div>
-          <div className="text-[12px] text-slate-500">Drag the box to move it, the round handles to resize it.</div>
+          <div className="text-[12px] leading-[17px] text-slate-500">
+            Drag the box to move it, the round handles to resize it.{square && ' A tall or wide item? Pull the box past the photo (or press Whole) — the extra space turns white.'}
+          </div>
         </>
       )}
       {tab === 'filters' && (
@@ -527,15 +544,21 @@ export function ImageEditor({
                 </div>
               </div>
             ) : tab === 'crop' && crop ? (
-              <div className="relative touch-none select-none" style={{ width: src.width * cropScale, height: src.height * cropScale }} onPointerMove={moveCrop} onPointerUp={() => (drag.current = null)} onPointerCancel={() => (drag.current = null)}>
-                <img src={cropUrl} alt="" className="pointer-events-none absolute inset-0 size-full" draggable={false} />
-                <div
-                  className="pointer-events-none absolute inset-0 bg-black/45"
-                  style={{
-                    clipPath: `polygon(0 0,100% 0,100% 100%,0 100%,0 0,${crop.x * cropScale}px ${crop.y * cropScale}px,${crop.x * cropScale}px ${(crop.y + crop.h) * cropScale}px,${(crop.x + crop.w) * cropScale}px ${(crop.y + crop.h) * cropScale}px,${(crop.x + crop.w) * cropScale}px ${crop.y * cropScale}px,${crop.x * cropScale}px ${crop.y * cropScale}px)`,
-                  }}
-                />
-                <div className="absolute cursor-move border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,.4)]" style={{ left: crop.x * cropScale, top: crop.y * cropScale, width: crop.w * cropScale, height: crop.h * cropScale }} onPointerDown={(e) => down('move', e)}>
+              <div className={cx('relative touch-none select-none', square && 'bg-white ring-1 ring-slate-200')} style={{ width: area.w * cropScale, height: area.h * cropScale }} onPointerMove={moveCrop} onPointerUp={() => (drag.current = null)} onPointerCancel={() => (drag.current = null)}>
+                <img src={cropUrl} alt="" className="pointer-events-none absolute" style={{ left: -area.x * cropScale, top: -area.y * cropScale, width: src.width * cropScale, height: src.height * cropScale }} draggable={false} />
+                {(() => {
+                  const L = (crop.x - area.x) * cropScale
+                  const T = (crop.y - area.y) * cropScale
+                  const R = L + crop.w * cropScale
+                  const B = T + crop.h * cropScale
+                  return (
+                    <div
+                      className="pointer-events-none absolute inset-0 bg-black/45"
+                      style={{ clipPath: `polygon(0 0,100% 0,100% 100%,0 100%,0 0,${L}px ${T}px,${L}px ${B}px,${R}px ${B}px,${R}px ${T}px,${L}px ${T}px)` }}
+                    />
+                  )
+                })()}
+                <div className="absolute cursor-move border-2 border-white shadow-[0_0_0_1px_rgba(0,0,0,.4)]" style={{ left: (crop.x - area.x) * cropScale, top: (crop.y - area.y) * cropScale, width: crop.w * cropScale, height: crop.h * cropScale }} onPointerDown={(e) => down('move', e)}>
                   <span className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3">
                     {Array.from({ length: 9 }, (_, i) => (
                       <span key={i} className="border border-white/25" />
