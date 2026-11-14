@@ -1,5 +1,6 @@
 'use client'
 import Link from 'next/link'
+import { HoverPrefetchLink } from '@/components/client/HoverPrefetchLink'
 import { useRouter } from 'next/navigation'
 import { useState, type DragEvent } from 'react'
 import { Clock, GripVertical, Loader2, Plus } from 'lucide-react'
@@ -162,7 +163,7 @@ function KanbanCard({
   const live = r.status === 'IN_PROGRESS' || r.status === 'EN_ROUTE'
   const showChip = r.status !== col.statuses[0] || col.key === 'progress' || col.key === 'completed'
   return (
-    <Link
+    <HoverPrefetchLink
       href={`/requests/${r.id}`}
       draggable={draggable}
       onDragStart={onDragStart}
@@ -213,6 +214,6 @@ function KanbanCard({
         </div>
       )}
       {busy && <Loader2 size={16} className="absolute right-3 top-3 animate-spin text-primary" />}
-    </Link>
+    </HoverPrefetchLink>
   )
 }

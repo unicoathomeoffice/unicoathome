@@ -49,7 +49,8 @@ export async function loadPatientBoard(fl: BoardFilters): Promise<BoardRow[]> {
     .lean<any[]>()
   const staffIds = [...new Set(reqs.map((r) => r.assignment?.primaryStaffId).filter(Boolean).map(String))]
   const staff = await User.find({ _id: { $in: staffIds } }).select('name').lean<any[]>()
-  const staffName = (id: unknown) => staff.find((s) => String(s._id) === String(id))?.name
+  const names = new Map(staff.map((s) => [String(s._id), s.name as string]))
+  const staffName = (id: unknown) => (id ? names.get(String(id)) : undefined)
 
   const byPatient = new Map<string, any[]>()
   for (const r of reqs) {

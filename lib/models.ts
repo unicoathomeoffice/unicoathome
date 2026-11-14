@@ -638,6 +638,13 @@ RequestSchema.index({ 'assignment.secondaryStaffIds': 1, scheduledAt: 1 })
 RequestSchema.index({ patientId: 1, createdAt: -1 })
 RequestSchema.index({ priority: 1, status: 1 })
 RequestSchema.index({ 'transport.driverId': 1, scheduledAt: 1 })
+// dashboard / board / reports date filters and the board sort (were collection scans)
+RequestSchema.index({ deletedAt: 1, 'timeline.requestedAt': -1 })
+RequestSchema.index({ 'timeline.completedAt': -1 })
+RequestSchema.index({ 'timeline.checkInAt': -1 })
+RequestSchema.index({ 'timeline.closedAt': -1 })
+RequestSchema.index({ 'timeline.cancelledAt': -1 })
+RequestSchema.index({ scheduledAt: 1, createdAt: -1 })
 export const HomecareRequest = model('HomecareRequest', RequestSchema, 'homecare_requests')
 
 const AssignmentLogSchema = new Schema<any>(
@@ -743,6 +750,7 @@ const MessageLogSchema = new Schema<any>(
   { timestamps: false },
 )
 MessageLogSchema.index({ requestId: 1, at: -1 })
+MessageLogSchema.index({ requestId: 1, channel: 1, templateKey: 1, at: -1 }) // request page: confirmation / bills / requisition lookups
 MessageLogSchema.index({ channel: 1, at: -1 })
 MessageLogSchema.index({ status: 1, at: 1 })
 MessageLogSchema.index({ batch: 1 }, { partialFilterExpression: { batch: { $exists: true } } })

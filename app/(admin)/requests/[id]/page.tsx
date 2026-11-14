@@ -50,24 +50,15 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   if (!isOid(id)) notFound()
   const r = await HomecareRequest.findOne({ _id: id, deletedAt: null }).lean<any>()
   if (!r || !canView(user, r)) notFound()
-  await withPeople([r])
-
-  const settings = await getSettings()
-  const sla = settings.sla
   const perms = permsFor(user)
   const status = r.status as Status
   const acts = availableActions(status)
-
-  const [patient, msgCount, attCount, auditCount, logCount, waPaired, confirmMsg] = await Promise.all([
-    Patient.findById(r.patientId).lean<any>(),
-    MessageLog.countDocuments({ requestId: r._id }),
-    Attachment.countDocuments({ requestId: r._id, deletedAt: null }),
-    AuditLog.countDocuments({ entity: 'request', entityId: id }),
-    AssignmentLog.countDocuments({ requestId: r._id }),
-    isPaired(),
-    // latest patient confirmation on WhatsApp (status card on Overview)
-    MessageLog.findOne({ requestId: r._id, channel: 'WHATSAPP', templateKey: 'patient_confirmed' }).sort({ at: -1 }).select('status at error provider').lean<any>(),
-  ])
+  const canOverride = can(user, 'requests.override')
+  const needAssign = perms.assign && (acts.assign || acts.reassign)
+  const canCar = canOverride || can(user, 'transport.manage')
+  const carRelevant = canCar && r.transport?.needed // own transport can switch back to a car, so load cars either way
+  const supportIds: string[] = (r.assignment?.supportStaffIds ?? []).map(String).filter((x: string) => (r.assignment?.secondaryStaffIds ?? []).map(String).includes(x))
+  const assignDay = dayRange(isoDay(r.scheduledAt ?? new Date()))
 
   // ---- tab data (only what the open tab needs)
   let logs: any[] = []
@@ -84,38 +75,70 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   let billSent: any[] = []
   let h360On = false
   const extraIds: unknown[] = []
-  if (tab === 'overview') {
-    staffWa = await MessageLog.findOne({ requestId: r._id, channel: 'WHATSAPP', templateKey: 'staff_assigned', status: { $in: ['SENT_CONFIRMED', 'SENT', 'DELIVERED'] } })
-      .sort({ at: -1 })
-      .select('at')
-      .lean<any>()
-  } else if (tab === 'assignment') {
-    logs = await AssignmentLog.find({ requestId: r._id }).sort({ at: -1 }).lean<any[]>()
-    for (const l of logs) extraIds.push(l.fromStaffId, l.toStaffId, l.by)
-  } else if (tab === 'visit') {
-    ;[photos, prescriptions, labs] = await Promise.all([
-      Attachment.find({ requestId: r._id, deletedAt: null, kind: { $in: PHOTO_KINDS } }).sort({ at: 1 }).lean<any[]>(),
-      Prescription.find({ requestId: r._id }).sort({ createdAt: -1 }).lean<any[]>(),
-      LabResult.find({ requestId: r._id }).sort({ createdAt: 1 }).lean<any[]>(),
-    ])
-    if (r.visit?.confirmation?.attachmentId) signature = await Attachment.findOne({ _id: r.visit.confirmation.attachmentId, deletedAt: null }).select('_id mime').lean<any>()
-  } else if (tab === 'messages') {
-    ;[msgs, chat] = await Promise.all([MessageLog.find({ requestId: r._id }).sort({ at: -1 }).limit(200).lean<any[]>(), ChatMessage.find({ requestId: r._id }).sort({ createdAt: 1 }).limit(300).lean<any[]>()])
-    for (const m of msgs) extraIds.push(m.initiatedBy)
-    for (const c of chat) extraIds.push(c.senderId)
-  } else if (tab === 'attachments') {
-    atts = await Attachment.find({ requestId: r._id, deletedAt: null }).sort({ at: -1 }).lean<any[]>()
-    for (const a of atts) extraIds.push(a.uploadedBy)
-  } else if (tab === 'invoice') {
-    ;[billSent, h360On] = await Promise.all([
-      MessageLog.find({ requestId: r._id, channel: 'WHATSAPP', templateKey: { $in: ['patient_bill', 'staff_bill'] } }).sort({ at: -1 }).limit(50).select('at toName to status error fileName').lean<any[]>(),
-      h360Status().then((s) => s.configured),
-    ])
-  } else if (tab === 'notified') {
-    notifySteps = await notifyTimeline(r)
-  } else if (tab === 'audit') {
-    audits = await AuditLog.find({ entity: 'request', entityId: id }).sort({ serverAt: -1 }).limit(500).lean<any[]>()
+  const loadTab = async () => {
+    if (tab === 'overview') {
+      staffWa = await MessageLog.findOne({ requestId: r._id, channel: 'WHATSAPP', templateKey: 'staff_assigned', status: { $in: ['SENT_CONFIRMED', 'SENT', 'DELIVERED'] } })
+        .sort({ at: -1 })
+        .select('at')
+        .lean<any>()
+    } else if (tab === 'assignment') {
+      logs = await AssignmentLog.find({ requestId: r._id }).sort({ at: -1 }).lean<any[]>()
+      for (const l of logs) extraIds.push(l.fromStaffId, l.toStaffId, l.by)
+    } else if (tab === 'visit') {
+      ;[photos, prescriptions, labs] = await Promise.all([
+        Attachment.find({ requestId: r._id, deletedAt: null, kind: { $in: PHOTO_KINDS } }).sort({ at: 1 }).lean<any[]>(),
+        Prescription.find({ requestId: r._id }).sort({ createdAt: -1 }).lean<any[]>(),
+        LabResult.find({ requestId: r._id }).sort({ createdAt: 1 }).lean<any[]>(),
+      ])
+      if (r.visit?.confirmation?.attachmentId) signature = await Attachment.findOne({ _id: r.visit.confirmation.attachmentId, deletedAt: null }).select('_id mime').lean<any>()
+    } else if (tab === 'messages') {
+      ;[msgs, chat] = await Promise.all([MessageLog.find({ requestId: r._id }).sort({ at: -1 }).limit(200).lean<any[]>(), ChatMessage.find({ requestId: r._id }).sort({ createdAt: 1 }).limit(300).lean<any[]>()])
+      for (const m of msgs) extraIds.push(m.initiatedBy)
+      for (const c of chat) extraIds.push(c.senderId)
+    } else if (tab === 'attachments') {
+      atts = await Attachment.find({ requestId: r._id, deletedAt: null }).sort({ at: -1 }).lean<any[]>()
+      for (const a of atts) extraIds.push(a.uploadedBy)
+    } else if (tab === 'invoice') {
+      ;[billSent, h360On] = await Promise.all([
+        MessageLog.find({ requestId: r._id, channel: 'WHATSAPP', templateKey: { $in: ['patient_bill', 'staff_bill'] } }).sort({ at: -1 }).limit(50).select('at toName to status error fileName').lean<any[]>(),
+        h360Status().then((s) => s.configured),
+      ])
+    } else if (tab === 'notified') {
+      notifySteps = await notifyTimeline(r)
+    } else if (tab === 'audit') {
+      audits = await AuditLog.find({ entity: 'request', entityId: id }).sort({ serverAt: -1 }).limit(500).lean<any[]>()
+    }
   }
+
+  // everything that only needs the request, all at once (these used to wait for each other)
+  const [, settings, [patient, msgCount, attCount, auditCount, logCount, waPaired, confirmMsg], , todays, supportPeople, [carList, driverList]] = await Promise.all([
+    withPeople([r]),
+    getSettings(),
+    Promise.all([
+      Patient.findById(r.patientId).lean<any>(),
+      MessageLog.countDocuments({ requestId: r._id }),
+      Attachment.countDocuments({ requestId: r._id, deletedAt: null }),
+      AuditLog.countDocuments({ entity: 'request', entityId: id }),
+      AssignmentLog.countDocuments({ requestId: r._id }),
+      isPaired(),
+      // latest patient confirmation on WhatsApp (status card on Overview)
+      MessageLog.findOne({ requestId: r._id, channel: 'WHATSAPP', templateKey: 'patient_confirmed' }).sort({ at: -1 }).select('status at error provider').lean<any>(),
+    ]),
+    loadTab(),
+    needAssign
+      ? HomecareRequest.find({ _id: { $ne: r._id }, deletedAt: null, scheduledAt: { $gte: assignDay.start, $lt: assignDay.end }, status: { $in: ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED'] } })
+          .select('assignment scheduledAt expectedDurationMin')
+          .lean<any[]>()
+      : Promise.resolve([] as any[]),
+    needAssign && supportIds.length ? User.find({ _id: { $in: supportIds } }).select('name hisDesignation employeeId').lean<any[]>() : Promise.resolve([] as any[]),
+    carRelevant
+      ? Promise.all([
+          Vehicle.find({ isActive: { $ne: false } }).sort({ name: 1 }).select('name plate driverId status').lean<any[]>(),
+          User.find({ status: 'ACTIVE', deletedAt: null, $or: [{ role: 'DRIVER' }, { roles: 'DRIVER' }] }).sort({ name: 1 }).select('name phone').lean<any[]>(),
+        ])
+      : Promise.resolve([[], []] as [any[], any[]]),
+  ])
+  const sla = settings.sla
 
   // ---- people referenced anywhere on the page
   const ids = [...new Set([...collectUserIds(r), ...extraIds.filter(Boolean).map(String)])].filter(isOid)
@@ -125,20 +148,14 @@ export default async function RequestDetailPage({ params, searchParams }: { para
 
   // ---- assign drawer (W06)
   let assign: Omit<AssignProps, 'open' | 'onClose'> | null = null
-  if (perms.assign && (acts.assign || acts.reassign)) {
-    const day = isoDay(r.scheduledAt ?? new Date())
-    const { start, end } = dayRange(day)
-    const todays = await HomecareRequest.find({ _id: { $ne: r._id }, deletedAt: null, scheduledAt: { $gte: start, $lt: end }, status: { $in: ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS', 'COMPLETED'] } })
-      .select('assignment scheduledAt expectedDurationMin')
-      .lean<any[]>()
+  if (needAssign) {
+    const { start } = assignDay
     const busy: Record<string, [number, number][]> = {}
     for (const t of todays) {
       const s = new Date(t.scheduledAt).getTime()
       const iv: [number, number] = [s, s + (t.expectedDurationMin ?? 45) * 60_000]
       for (const sid of [t.assignment?.primaryStaffId, ...(t.assignment?.secondaryStaffIds ?? [])].filter(Boolean).map(String)) (busy[sid] ??= []).push(iv)
     }
-    const supportIds: string[] = (r.assignment?.supportStaffIds ?? []).map(String).filter((x: string) => (r.assignment?.secondaryStaffIds ?? []).map(String).includes(x))
-    const supportPeople = supportIds.length ? await User.find({ _id: { $in: supportIds } }).select('name hisDesignation employeeId').lean<any[]>() : []
     assign = {
       requestId: id,
       requestNo: r.requestNo,
@@ -167,17 +184,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   }
 
   // ---- "Act for the team" (override, or a coordinator when outside staff from the HIS are on the team) + car & any driver
-  const canOverride = can(user, 'requests.override')
   const actForTeam = canOverride || (!!r.assignment?.hasExternal && perms.assign)
-  const canCar = canOverride || can(user, 'transport.manage')
-  const carRelevant = canCar && r.transport?.needed // own transport can switch back to a car, so load cars either way
-  const [carList, driverList] =
-    carRelevant || canOverride
-      ? await Promise.all([
-          carRelevant ? Vehicle.find({ isActive: { $ne: false } }).sort({ name: 1 }).select('name plate driverId status').lean<any[]>() : [],
-          carRelevant ? User.find({ status: 'ACTIVE', deletedAt: null, $or: [{ role: 'DRIVER' }, { roles: 'DRIVER' }] }).sort({ name: 1 }).select('name phone').lean<any[]>() : [],
-        ])
-      : [[], []]
   const hhmm = (d?: Date | null) => (d ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hour12: false }).format(d) : '')
   const visitAt = r.scheduledAt ? new Date(r.scheduledAt) : null
 

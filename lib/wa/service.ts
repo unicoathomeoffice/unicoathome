@@ -18,17 +18,8 @@ const PROVIDER = 'wa_baileys'
 const setMeta = (patch: Record<string, unknown>) => WaAuth.updateOne({ _id: 'meta' }, { $set: patch }, { upsert: true })
 const getMeta = async () => (await WaAuth.findById('meta').lean<any>()) ?? {}
 
-export async function waStatus() {
-  const [paired, phone, m, queued, failed7d] = await Promise.all([
-    isPaired(),
-    pairedPhone(),
-    getMeta(),
-    MessageLog.countDocuments({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED' }),
-    MessageLog.countDocuments({ channel: 'WHATSAPP', provider: PROVIDER, status: 'FAILED', at: { $gte: new Date(Date.now() - 7 * 86400_000) } }),
-  ])
-  const link = await linkState()
-  return { paired, state: link.state, stateReason: link.reason ?? null, phone, queued, failed7d, lastSentAt: m.lastSentAt ?? null, lastError: m.lastError ?? null, lastErrorAt: m.lastErrorAt ?? null, pairedAt: m.pairedAt ?? null, verifiedAt: m.verifiedAt ?? null }
-}
+// the status card lives in ./status (no Baileys); kept here so existing imports keep working
+export { waStatus } from './status'
 
 /** Log a WhatsApp message and deliver it in the background. With attachmentId the file is sent (PDF as a document,
  *  photo as an image) and `text` becomes its caption. Delivery follows the sending-safety rules (lib/wa/guard.ts). */

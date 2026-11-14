@@ -4,6 +4,7 @@ import { unreadCount } from '@/lib/unread'
 import { ROLE_LABEL, ACTIVE_STATUSES, permissionsFor } from '@/lib/constants'
 import { Sidebar } from '@/components/admin/Sidebar'
 import { WaReviewProvider } from '@/components/client/WaReview'
+import { RouteFreshness } from '@/components/admin/RouteFreshness'
 import { can } from '@/lib/constants'
 import { getSettings } from '@/lib/settings'
 
@@ -21,6 +22,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const review = can(user, 'messages.approve') && (await getSettings()).whatsapp.approval !== 'OFF'
   return (
     <div className="flex h-dvh overflow-hidden bg-page">
+      <RouteFreshness />
       <Sidebar user={{ name: user.name, initials: user.initials, photoUrl: user.photoUrl, perms: permissionsFor(user), roleLabel: user.designation ?? ROLE_LABEL[user.role] }} counts={counts} />
       {children}
       {/* the WhatsApp dock: a right sidebar on wide screens */}

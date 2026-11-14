@@ -140,7 +140,16 @@ textarea.hc-input {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
 }
-.hc-enter { animation: hc-enter 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.hc-enter { animation: hc-enter 0.18s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+/* top progress bar while the next page is on its way (components/admin/RouteFreshness.tsx) */
+@keyframes hc-nav-run {
+  0% { width: 0; }
+  20% { width: 45%; }
+  60% { width: 75%; }
+  100% { width: 92%; }
+}
+.hc-nav-run { animation: hc-nav-run 6s cubic-bezier(0.1, 0.8, 0.2, 1) forwards; }
 
 @keyframes hc-shimmer {
   from { background-position: 200% 0; }

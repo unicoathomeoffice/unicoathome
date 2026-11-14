@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { waStatus } from '@/lib/wa/status'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { ArrowRight, BellRing, CheckCircle2, Circle, FileText, SlidersHorizontal } from 'lucide-react'
@@ -47,13 +48,16 @@ function cronText(expr: string) {
 export default async function SettingsPage() {
   const user = await requireWebUser()
   if (!canOpenSettings(user)) redirect('/dashboard?denied=1')
-  const [s, lastEmail, inapp7d, unreadAll] = await Promise.all([
+  // everything at once — and the WhatsApp card no longer loads the WhatsApp library (seconds on a cold start)
+  const [s, lastEmail, inapp7d, unreadAll, gmail, wa, safety] = await Promise.all([
     getSettings(),
     MessageLog.findOne({ channel: 'EMAIL' }).sort({ at: -1 }).select('at templateKey status subject').lean<any>(),
     Notification.countDocuments({ createdAt: { $gte: new Date(Date.now() - 7 * 86400_000) } }),
     Notification.countDocuments({ readAt: null }),
+    getGmailStatus(),
+    waStatus(),
+    safetyStatus(),
   ])
-  const gmail = await getGmailStatus()
   const sla = s.sla
   const schedules = ((vercel as any).crons ?? []).map((c: any) => ({ path: c.path, when: cronText(c.schedule) }))
 
@@ -97,9 +101,9 @@ export default async function SettingsPage() {
           </>
         )}
 
-        <WhatsAppCard initial={plain(s.whatsapp)} envCountry={process.env.WA_DEFAULT_COUNTRY ?? '880'} status={JSON.parse(JSON.stringify(await (await import('@/lib/wa/service')).waStatus()))} /* Baileys loads only on this page */ autoSend={s.whatsapp.autoSend !== false} />
+        <WhatsAppCard initial={plain(s.whatsapp)} envCountry={process.env.WA_DEFAULT_COUNTRY ?? '880'} status={JSON.parse(JSON.stringify(wa))} autoSend={s.whatsapp.autoSend !== false} />
 
-        <WaSafetyCard initial={plain(s.whatsappSafety)} status={plain(await safetyStatus()) as any} />
+        <WaSafetyCard initial={plain(s.whatsappSafety)} status={plain(safety) as any} />
 
         <SCard title="Push · in-app" sub="Notification centre now · Expo push (FCM / APNs) next">
           {[

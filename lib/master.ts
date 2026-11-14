@@ -1,6 +1,7 @@
 import 'server-only'
 import { z } from 'zod'
 import type { Model } from 'mongoose'
+import { memo } from './memo'
 import { Department, Designation, Zone, ServiceType, Vehicle, User, HomecareRequest, Equipment, isOid, oid } from './models'
 import type { Permission } from './constants'
 
@@ -113,11 +114,13 @@ export const MASTER: Record<string, Master> = {
       isActive: z.boolean().default(true),
       sortOrder: z.number().default(0),
     }),
-    usage: async (ids) => {
-      const [a, b, c] = await Promise.all([countBy(ServiceType, 'kit.itemId', ids), countBy(HomecareRequest, 'visit.kit.itemId', ids), countBy(HomecareRequest, 'visit.consumables.itemId', ids)])
-      const out: Record<string, number> = {}
-      for (const m of [a, b, c]) for (const [k, n] of Object.entries(m)) out[k] = (out[k] ?? 0) + n
-      return out
-    },
+    // "in use" counts only decide hide-vs-delete: scanning every visit on each Store open is wasteful, so keep them 60 s
+    usage: (ids) =>
+      memo(`master:equipment-usage:${ids.length}`, 60_000, async () => {
+        const [a, b, c] = await Promise.all([countBy(ServiceType, 'kit.itemId', ids), countBy(HomecareRequest, 'visit.kit.itemId', ids), countBy(HomecareRequest, 'visit.consumables.itemId', ids)])
+        const out: Record<string, number> = {}
+        for (const m of [a, b, c]) for (const [k, n] of Object.entries(m)) out[k] = (out[k] ?? 0) + n
+        return out
+      }),
   },
 }

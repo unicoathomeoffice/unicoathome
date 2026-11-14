@@ -10,6 +10,9 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     serverActions: { bodySizeLimit: '4mb' },
+    // instant back / re-open: the browser keeps a page for 45 s (prefetched ones 2 min); RouteFreshness refreshes
+    // a cached page quietly right after it shows, so it opens at once and is still up to date a moment later
+    staleTimes: { dynamic: 45, static: 120 },
   },
   // there is no /admin page: the web admin home is /dashboard (people type /admin and land on a 404 after login)
   async redirects() {

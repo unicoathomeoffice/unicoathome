@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { HoverPrefetchLink } from '@/components/client/HoverPrefetchLink'
 import { after } from 'next/server'
 import { CheckCircle2 } from 'lucide-react'
 import { requireWebUser } from '@/lib/auth'
@@ -23,8 +24,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   after(async () => {
     try { await sweep() } catch (e) { console.error('sweep failed', e) }
   })
-  const d = await dashboardData()
-  const maps = await googleBudget((await getSettings()).maps)
+  // both at once (the maps budget used to wait for the dashboard data)
+  const [d, maps] = await Promise.all([dashboardData(), getSettings().then((s) => googleBudget(s.maps))])
   const canAssign = can(user, 'requests.assign')
 
   const toggle = (
@@ -164,7 +165,7 @@ function LivePanel({ d, compact, canAssign }: { d: Data; compact?: boolean; canA
       {d.live.length ? (
         <div className="flex flex-col gap-3">
           {d.live.map((v) => (
-            <Link key={v.id} href={`/requests/${v.id}`} className={cx('flex items-center gap-3 rounded-[10px] bg-slate-50 hover:bg-slate-100', compact ? 'px-3 py-2.5' : 'px-3.5 py-3')}>
+            <HoverPrefetchLink key={v.id} href={`/requests/${v.id}`} className={cx('flex items-center gap-3 rounded-[10px] bg-slate-50 hover:bg-slate-100', compact ? 'px-3 py-2.5' : 'px-3.5 py-3')}>
               <Avatar name={v.patient} photo={v.patientPhoto} size={36} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-semibold">{v.patient}</div>
@@ -183,7 +184,7 @@ function LivePanel({ d, compact, canAssign }: { d: Data; compact?: boolean; canA
                   </>
                 )}
               </div>
-            </Link>
+            </HoverPrefetchLink>
           ))}
         </div>
       ) : (

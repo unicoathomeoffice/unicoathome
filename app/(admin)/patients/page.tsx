@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { Users } from 'lucide-react'
 import { requireWebUser } from '@/lib/auth'
-import { Zone, ServiceType, User } from '@/lib/models'
+import { User } from '@/lib/models'
+import { activeServices, activeZones } from '@/lib/cached'
 import { can, PRIORITIES, STATUSES, STATUS_LABEL, FIELD_ROLES } from '@/lib/constants'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { Avatar, Empty, PriorityBadge, StatusChip, Table, Tr } from '@/components/ui'
@@ -30,13 +31,12 @@ export default async function PatientsPage({ searchParams }: { searchParams: SP 
   const user = await requireWebUser('requests.readAll')
   const sp = await searchParams
   const page = Math.max(1, Number(sp.page ?? 1) || 1)
-  const [rows, zones, services, staff] = await Promise.all([
+  const [rows, zoneNames, services, staff] = await Promise.all([
     loadPatientBoard({ q: sp.q, zone: sp.zone, status: sp.status, priority: sp.priority, staff: sp.staff, service: sp.service }),
-    Zone.find({ isActive: true }).sort({ sortOrder: 1, name: 1 }).lean<any[]>(),
-    ServiceType.find({ isActive: true }).sort({ sortOrder: 1 }).select('code name').lean<any[]>(),
+    activeZones(), // cached master lists (lib/cached.ts)
+    activeServices(),
     User.find({ role: { $in: FIELD_ROLES }, status: 'ACTIVE', deletedAt: null }).sort({ name: 1 }).select('name').lean<any[]>(),
   ])
-  const zoneNames = zones.map((z) => z.name as string)
   const masked = user.role === 'VIEWER'
   const canEdit = can(user, 'patients.edit')
   const canMessage = can(user, 'messages.send') && !masked

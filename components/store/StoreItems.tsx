@@ -1,6 +1,6 @@
 'use client'
 // The store's "Items & stock" view: colourful overview tiles, a tidy toolbar, and every item — single or a family of
-// sizes — as the same clean product card, organized in sections (needs attention · equipment · consumables), a plain
+// sizes — as the same clean product card, organized in sections (equipment · consumables; low / out via the tiles), a plain
 // A–Z family grid, or a compact list. Families open inline with their sizes. State, drawers and the item editor stay in
 // components/admin-settings/EquipmentEditor.tsx; this file only shows things and calls back.
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -386,7 +386,6 @@ export function StoreItems({
       .sort((x, y) => (x.family || x.name).localeCompare(y.family || y.name))
   }, [items, q, type, brand, hidden])
   const groups = useMemo(() => groupItems(shown).sort((x, y) => x.family.localeCompare(y.family)), [shown])
-  const attention = useMemo(() => shown.filter((i) => i.isActive && stockState(i) !== 'ok').sort((x, y) => (x.stock ?? 0) - (y.stock ?? 0)), [shown])
 
   const toggleSection = (k: string) => {
     const next = collapsed.includes(k) ? collapsed.filter((x) => x !== k) : [...collapsed, k]
@@ -587,33 +586,6 @@ export function StoreItems({
         grid(groups)
       ) : (
         <>
-          {attention.length > 0 && type !== 'LOW' && (
-            <section className="rounded-2xl bg-gradient-to-r from-[#FFF7ED] via-[#FFFBEB] to-white p-4 ring-1 ring-[#FED7AA]">
-              <div className="mb-3 flex items-center gap-2">
-                <span className="flex size-8 items-center justify-center rounded-lg bg-[#F59E0B] text-white">
-                  <AlertTriangle size={16} />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-[15px] font-bold text-slate-900">Needs attention</div>
-                  <div className="text-[12px] text-[#92400E]">
-                    {nOut > 0 && `${nOut} out of stock`}
-                    {nOut > 0 && nLow > 0 && ' · '}
-                    {nLow > 0 && `${nLow} running low`}
-                  </div>
-                </div>
-                <button type="button" onClick={() => setType('LOW')} className="text-[12.5px] font-semibold text-[#B45309] hover:underline">
-                  Show only these
-                </button>
-              </div>
-              <div className="-mx-1 flex snap-x gap-3 overflow-x-auto px-1 pb-1">
-                {attention.map((i) => (
-                  <div key={i._id} className="w-[150px] flex-none snap-start">
-                    <ProductCard i={i} a={a} compact />
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
           {sections.map((s) => {
             const closed = collapsed.includes(s.key)
             const n = s.groups.reduce((x, g) => x + g.members.length, 0)

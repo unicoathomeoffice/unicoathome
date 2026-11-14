@@ -25,9 +25,12 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   const sp = await searchParams
   const manage = can(user, 'store.manage')
   const tab = manage && (sp.tab === 'consumption' || sp.tab === 'h360' || sp.tab === 'loans' || sp.tab === 'moves') ? sp.tab : 'items'
-  const openLoans = manage ? await StoreLoan.countDocuments({ status: { $in: ['OPEN', 'PARTLY_RETURNED'] } }) : 0
-  const last = manage ? await Setting.findOne({ key: 'store:lastCompare' }).lean<any>() : null
-  const items = await Equipment.find({}).sort(MASTER.equipment.sort).lean<any[]>()
+  // all three at once (they used to wait for each other)
+  const [openLoans, last, items] = await Promise.all([
+    manage ? StoreLoan.countDocuments({ status: { $in: ['OPEN', 'PARTLY_RETURNED'] } }) : Promise.resolve(0),
+    manage ? Setting.findOne({ key: 'store:lastCompare' }).lean<any>() : Promise.resolve(null),
+    Equipment.find({}).sort(MASTER.equipment.sort).lean<any[]>(),
+  ])
   const tabs = [
     { key: 'items', label: 'Items & stock', href: '/store' },
     ...(manage

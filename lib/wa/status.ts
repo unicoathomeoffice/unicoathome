@@ -1,5 +1,5 @@
 import 'server-only'
-import { WaAuth } from '../models'
+import { MessageLog, WaAuth } from '../models'
 
 // Pairing status without touching Baileys. `auth-state.ts` / `client.ts` pull in @whiskeysockets/baileys + pino
 // (seconds of cold start), so anything that only needs to know "is WhatsApp paired?" — the request lifecycle,
@@ -18,9 +18,10 @@ export async function isPaired() {
 
 export type LinkState = { state: 'connected' | 'needs_rescan' | 'not_paired'; reason?: string | null }
 export async function linkState(): Promise<LinkState> {
-  const c = await creds()
+  // both rows at once (one round trip instead of two on every page that checks WhatsApp)
+  const [c, m] = await Promise.all([creds(), WaAuth.findById('meta').lean<any>()])
   if (!c?.me?.id) return { state: 'not_paired' }
-  const meta = (await WaAuth.findById('meta').lean<any>()) ?? {}
+  const meta = m ?? {}
   if (meta.needsRescan) return { state: 'needs_rescan', reason: meta.needsRescanReason ?? 'WhatsApp asked to link the device again' }
   if (meta.verifiedAt) return { state: 'connected' }
   // sessions linked before verification existed: completed links have their signal keys stored
@@ -35,6 +36,18 @@ export async function linkState(): Promise<LinkState> {
  */
 export async function canQueue() {
   return (await linkState()).state !== 'not_paired'
+}
+
+/** Settings → WhatsApp card: link, queue and last activity — without loading Baileys (moved here from service.ts). */
+export async function waStatus() {
+  const [link, phone, m, queued, failed7d] = await Promise.all([
+    linkState(),
+    pairedPhone(),
+    WaAuth.findById('meta').lean<any>().then((x) => x ?? {}),
+    MessageLog.countDocuments({ channel: 'WHATSAPP', provider: 'wa_baileys', status: 'QUEUED' }),
+    MessageLog.countDocuments({ channel: 'WHATSAPP', provider: 'wa_baileys', status: 'FAILED', at: { $gte: new Date(Date.now() - 7 * 86400_000) } }),
+  ])
+  return { paired: link.state === 'connected', state: link.state, stateReason: link.reason ?? null, phone, queued, failed7d, lastSentAt: m.lastSentAt ?? null, lastError: m.lastError ?? null, lastErrorAt: m.lastErrorAt ?? null, pairedAt: m.pairedAt ?? null, verifiedAt: m.verifiedAt ?? null }
 }
 
 export async function pairedPhone(): Promise<string | null> {

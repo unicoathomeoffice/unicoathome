@@ -6,6 +6,7 @@ import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, 
 import { cx } from '@/lib/format'
 import { api } from '@/components/client/api'
 import { OutboxBadge } from '@/components/client/WaReview'
+import { useWarm } from '@/components/client/warm'
 import type { Permission } from '@/lib/constants'
 
 /** perms: what the signed-in user holds (custom role included) — computed on the server with permissionsFor() */
@@ -53,6 +54,17 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Promise<Recor
   const path = clicked ?? realPath
   const [menu, setMenu] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  // load a page the moment the pointer is on its link — by the click it is ready
+  const warm = useWarm()
+  const intent = (href: string) => ({ onMouseEnter: () => warm(href), onFocus: () => warm(href), onTouchStart: () => warm(href) })
+  // after the first page settles, quietly get the two most used pages ready too
+  useEffect(() => {
+    const go = () => ['/dashboard', '/requests'].filter((h) => h !== realPath).forEach(warm)
+    const w = window as any
+    const id = w.requestIdleCallback ? w.requestIdleCallback(go, { timeout: 4000 }) : setTimeout(go, 2500)
+    return () => (w.cancelIdleCallback ? w.cancelIdleCallback(id) : clearTimeout(id))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const inSettings = path.startsWith('/settings') || path.startsWith('/audit')
   const active = (href: string) => (href === '/settings' ? inSettings : path === href || path.startsWith(href + '/'))
   const allowed = (perm?: Perm) => !perm || (typeof perm === 'function' ? perm(user.perms) : user.perms.includes(perm))
@@ -74,6 +86,7 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Promise<Recor
             <div key={n.href}>
               <Link
                 href={n.href}
+                {...intent(n.href)}
                 onClick={() => (setMobileOpen(false), setClicked(n.href))}
                 className={cx('flex h-10 items-center gap-3 rounded-lg px-3 text-sm transition-colors', on ? 'bg-white/[.12] font-semibold text-white' : 'font-medium text-white/75 hover:bg-white/[.06] hover:text-white')}
               >
@@ -94,6 +107,7 @@ export function Sidebar({ user, counts }: { user: NavUser; counts: Promise<Recor
                     <Link
                       key={s.href}
                       href={s.href}
+                      {...intent(s.href)}
                       onClick={() => (setMobileOpen(false), setClicked(s.href))}
                       className={cx('flex items-center rounded-md px-2.5 py-1.5 text-[13px] transition-colors', path === s.href ? 'bg-white/[.12] font-semibold text-white' : 'text-white/65 hover:text-white')}
                     >

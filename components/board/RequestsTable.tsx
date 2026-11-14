@@ -8,6 +8,7 @@ import { Avatar, PriorityBadge, SlaPill, StatusChip } from '@/components/ui'
 import { Elapsed, useToast, WhatsAppButton } from '@/components/client'
 import { cx } from '@/lib/format'
 import { downloadCsv } from './csv'
+import { useWarm } from '@/components/client/warm'
 import { DeleteRequestsDialog, type DeleteTarget } from './DeleteRequests'
 import type { BoardRow } from './types'
 
@@ -41,6 +42,7 @@ export function RequestsTable({ rows: loaded, canAssign, canMessage, canDelete =
   const [del, setDel] = useState<DeleteTarget[] | null>(null)
   const target = (r: BoardRow): DeleteTarget => ({ id: r.id, requestNo: r.requestNo, patient: r.patient, status: r.status })
   const router = useRouter()
+  const warm = useWarm() // load a request while the pointer is on its row
   const toast = useToast()
   // drop selections that are no longer on screen after a refresh / filter change
   useEffect(() => setSel((s) => new Set([...s].filter((id) => rows.some((r) => r.id === id)))), [rows])
@@ -73,6 +75,7 @@ export function RequestsTable({ rows: loaded, canAssign, canMessage, canDelete =
               key={r.id}
               className={cx('grid h-[52px] cursor-pointer items-center border-b border-slate-100 px-5 text-[13px] hover:bg-slate-50', sel.has(r.id) && 'bg-primary-50 hover:bg-primary-50')}
               style={{ gridTemplateColumns: COLS }}
+              onMouseEnter={() => warm(`/requests/${r.id}`)}
               onClick={(e) => {
                 if ((e.target as HTMLElement).closest('a,button,[data-stop]')) return
                 router.push(`/requests/${r.id}`)
