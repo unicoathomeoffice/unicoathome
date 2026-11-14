@@ -722,6 +722,8 @@ const MessageLogSchema = new Schema<any>(
     // WhatsApp sending safety (lib/wa/guard.ts): higher goes first; sentAt drives the rate limits
     priority: { type: Number, default: 0 },
     sentAt: Date,
+    deliveredAt: Date, // WhatsApp ✓✓ (lib/wa/receipts.ts)
+    readAt: Date, // WhatsApp blue ✓✓
     fileName: String,
     error: String,
     attempts: { type: Number, default: 0 },

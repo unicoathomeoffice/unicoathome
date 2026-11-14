@@ -1,4 +1,5 @@
 import 'server-only'
+import { listenForReceipts } from './receipts'
 import makeWASocket, { Browsers, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore, type WASocket } from '@whiskeysockets/baileys'
 import pino from 'pino'
 import { WaAuth } from '../models'
@@ -60,6 +61,8 @@ export async function connect(opts: { onQr?: (qr: string) => void; onSocket?: (s
     fail = rej
   })
   ready.catch(() => {}) // observed by callers; avoid unhandled-rejection noise when they time out first
+  // delivered / read ticks: WhatsApp hands over the receipts it held for us as soon as we connect
+  listenForReceipts(sock)
   opts.onSocket?.(sock)
   const timer = setTimeout(() => fail(new Error('WhatsApp did not connect in time')), opts.timeoutMs ?? 25_000)
   sock.ev.on('creds.update', () => {

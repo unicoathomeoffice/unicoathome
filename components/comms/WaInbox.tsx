@@ -5,7 +5,7 @@
 // edited / sent / discarded right in the chat, and an admin can type a new message. Data: lib/wa/history.ts.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ArrowLeft, Ban, Check, CheckCheck, ChevronDown, Clock3, ExternalLink, FileText, Info, Loader2, MessageCircle, Pencil, RotateCcw, Search, Send, ShieldCheck, Trash2, UserRound, X } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Ban, Check, CheckCheck, ChevronDown, Clock3, ExternalLink, FileText, Info, Loader2, MessageCircle, Pencil, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Trash2, UserRound, X } from 'lucide-react'
 import { api, useToast } from '@/components/client'
 import { outboxChanged } from '@/components/client/WaReview'
 import { cx, phone as fmtPhone } from '@/lib/format'
@@ -19,6 +19,9 @@ type Msg = {
   status: string
   at: string
   sentAt: string | null
+  deliveredAt: string | null
+  readAt: string | null
+  untracked: boolean
   error: string | null
   file: string | null
   attachmentId: string | null
@@ -49,6 +52,11 @@ function listTime(iso: string) {
   if (Date.now() - new Date(iso).getTime() < 6 * 86400_000) return new Date(iso).toLocaleDateString('en-GB', { timeZone: TZ, weekday: 'long' })
   return new Date(iso).toLocaleDateString('en-GB', { timeZone: TZ, day: '2-digit', month: '2-digit', year: '2-digit' })
 }
+const agoShort = (iso: string) => {
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`
+}
+const fullTime = (iso: string) => new Date(iso).toLocaleString('en-GB', { timeZone: TZ, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true })
 const initials = (name: string) => (name.startsWith('+') ? '' : name.replace(/\(.*?\)/g, '').trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join(''))
 const AVATAR = ['#00A884', '#027EB5', '#7E57C2', '#E67E22', '#D81B60', '#00897B', '#5C6BC0', '#6D4C41']
 const avatarBg = (s: string) => AVATAR[[...s].reduce((a, c) => a + c.charCodeAt(0), 0) % AVATAR.length]
@@ -63,6 +71,14 @@ const STATUS: Record<string, string> = {
   OPENED: 'Read',
   FAILED: 'Failed',
   SKIPPED: 'Not sent',
+}
+
+/** "Sent 10:31 am · Delivered 10:31 am · Read 10:40 am" for the tick tooltip */
+function tickTitle(m: { status: string; sentAt?: string | null; deliveredAt?: string | null; readAt?: string | null; untracked?: boolean }) {
+  const parts = [m.sentAt && `Sent ${clock(m.sentAt)}`, m.deliveredAt && `Delivered ${clock(m.deliveredAt)}`, m.readAt && `Read ${clock(m.readAt)}`].filter(Boolean)
+  if (m.untracked) parts.push('no delivery report (sent before tracking started)')
+  else if (m.status === 'SENT' || m.status === 'SENT_CONFIRMED') parts.push('waiting for the delivery report')
+  return parts.join(' · ') || (STATUS[m.status] ?? m.status)
 }
 
 function Ticks({ status, size = 15 }: { status: string; size?: number }) {
@@ -159,7 +175,9 @@ function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; request
             <Info size={12} />
           </button>
           {clock(m.sentAt ?? m.at)}
-          <Ticks status={m.status} />
+          <span title={tickTitle(m)} className="inline-flex">
+            <Ticks status={m.status} />
+          </span>
         </div>
       </div>
 
@@ -203,6 +221,32 @@ function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; request
             <dd className="flex items-center gap-1 font-semibold">
               <Ticks status={m.status} size={14} /> {STATUS[m.status] ?? m.status}
             </dd>
+            {m.sentAt && (
+              <>
+                <dt className="text-slate-500">Sent</dt>
+                <dd>{fullTime(m.sentAt)}</dd>
+                <dt className="text-slate-500">Delivered</dt>
+                <dd className="flex items-center gap-1">
+                  {m.deliveredAt ? (
+                    <>
+                      <CheckCheck size={14} className="text-slate-500" /> {fullTime(m.deliveredAt)}
+                    </>
+                  ) : (
+                    <span className="text-slate-400">{m.untracked ? 'No report (sent before delivery tracking started)' : 'Not reported yet'}</span>
+                  )}
+                </dd>
+                <dt className="text-slate-500">Read</dt>
+                <dd className="flex items-center gap-1">
+                  {m.readAt ? (
+                    <>
+                      <CheckCheck size={14} className="text-[#53BDEB]" /> {fullTime(m.readAt)}
+                    </>
+                  ) : (
+                    <span className="text-slate-400">{m.untracked ? '—' : 'Not yet, or read receipts are off on their phone'}</span>
+                  )}
+                </dd>
+              </>
+            )}
             {m.templateKey && (
               <>
                 <dt className="text-slate-500">Message</dt>
@@ -257,7 +301,7 @@ function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; request
               <div className="mt-1 whitespace-pre-wrap rounded bg-slate-50 p-2 text-[12px] text-slate-600">{m.originalText}</div>
             </details>
           )}
-          <div className="mt-2 text-[11px] text-slate-400">Delivered / read ticks update when WhatsApp next connects to send.</div>
+          <div className="mt-2 text-[11px] text-slate-400">✓ sent · ✓✓ delivered · blue ✓✓ read. WhatsApp reports ticks when the app connects; press “Update ticks” to fetch them now.</div>
         </div>
       )}
     </div>
@@ -297,10 +341,15 @@ export function WaInbox({
   const stick = useRef(true)
 
   // ---------------------------------------------------------------- data
+  const [ticksAt, setTicksAt] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
   const loadChats = useCallback(async () => {
     const p = new URLSearchParams({ filter, ...(q.trim() ? { q: q.trim() } : {}) })
-    const r = await api<{ chats: ChatRow[] }>(`/whatsapp/chats?${p}`).catch(() => null)
-    if (r) setChats(r.chats)
+    const r = await api<{ chats: ChatRow[]; receiptsAt: string | null }>(`/whatsapp/chats?${p}`).catch(() => null)
+    if (r) {
+      setChats(r.chats)
+      setTicksAt(r.receiptsAt)
+    }
   }, [q, filter])
   useEffect(() => {
     const t = setTimeout(loadChats, q ? 300 : 0)
@@ -374,6 +423,24 @@ export function WaInbox({
       setBusy(null)
     }
   }
+  /** fetch the delivered / read ticks from WhatsApp now (a ~15 s session) */
+  async function updateTicks() {
+    setSyncing(true)
+    try {
+      const r = await api<{ ok: boolean; changed: number; skipped?: string; receiptsAt: string }>('/whatsapp/receipts', { body: {} })
+      if (r.ok) toast(r.changed ? `${r.changed} tick${r.changed === 1 ? '' : 's'} updated` : 'Ticks are up to date', 'ok')
+      else if (r.skipped === 'busy') toast('WhatsApp is sending right now, ticks come in with it', 'ok')
+      else toast(`Could not update ticks: ${r.skipped ?? 'try again'}`, 'err')
+      setTicksAt(r.receiptsAt)
+      if (active) await loadThread(active)
+      void loadChats()
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   async function compose() {
     if (!active || !draft.trim()) return
     setBusy('compose')
@@ -450,9 +517,18 @@ export function WaInbox({
               )}
             </div>
           </div>
-          <span className="hidden items-center gap-1 rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-[#008069] sm:flex" title="Nothing goes out until an admin sends it">
-            <ShieldCheck size={13} /> Approval on
-          </span>
+          <button
+            type="button"
+            onClick={updateTicks}
+            disabled={syncing || !linked}
+            className="flex flex-none flex-col items-end rounded-lg px-2 py-1 text-right hover:bg-black/5 disabled:opacity-60"
+            title="Fetch delivered / read ticks from WhatsApp now (takes about 15 seconds)"
+          >
+            <span className="flex items-center gap-1 text-[12px] font-semibold text-[#008069]">
+              <RefreshCw size={13} className={cx(syncing && 'animate-spin')} /> {syncing ? 'Updating…' : 'Update ticks'}
+            </span>
+            <span className="text-[10.5px] text-[#8696A0]">{ticksAt ? `updated ${agoShort(ticksAt)}` : 'not fetched yet'}</span>
+          </button>
         </div>
         <div className="border-b border-[#E9EDEF] px-3 py-2">
           <label className="flex h-9 items-center gap-3 rounded-lg bg-[#F0F2F5] px-3">

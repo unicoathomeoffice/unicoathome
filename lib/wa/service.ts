@@ -63,15 +63,6 @@ export async function queueWhatsApp(input: { to: string; toName?: string; text: 
   return log
 }
 
-/** A delivery / read receipt from WhatsApp: ticks only move forward (sent → delivered → read). */
-async function markReceipt(providerId: string, status: 'DELIVERED' | 'OPENED') {
-  const from = status === 'OPENED' ? ['SENT', 'SENT_CONFIRMED', 'DELIVERED'] : ['SENT', 'SENT_CONFIRMED']
-  await MessageLog.updateOne(
-    { channel: 'WHATSAPP', providerId, status: { $in: from } },
-    { $set: { status }, $push: { events: { status, at: new Date(), note: status === 'OPENED' ? 'Read' : 'Delivered' } } },
-  ).catch(() => {})
-}
-
 /** Wait a few seconds so the messages of one action go out in one session, and keep 20 s between sessions. */
 async function pumpSoon() {
   await sleep(8_000)
@@ -117,14 +108,6 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
     if ((await conn.ready) !== 'open') throw new Error('Connection did not open')
     await setMeta({ verifiedAt: new Date(), needsRescan: null, needsRescanReason: null })
     const sock = conn.sock
-    // delivered / read ticks for messages we sent (WhatsApp reports them while we are connected, also ones from before)
-    sock.ev.on('messages.update', (updates) => {
-      for (const u of updates) {
-        const st = Number((u.update as any)?.status ?? 0) // 3 = delivered · 4 = read · 5 = played
-        if (!u.key?.fromMe || !u.key.id || st < 3) continue
-        void markReceipt(u.key.id, st >= 4 ? 'OPENED' : 'DELIVERED')
-      }
-    })
     // STOP replies that arrive while we're connected (WhatsApp also delivers ones received while we were away)
     if (cfg.optOut)
       sock.ev.on('messages.upsert', ({ messages }) => {
@@ -221,7 +204,9 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
       }
     }
     if (sent && !inARow) await calmDown()
-    await setMeta({ ...(sent ? { lastSentAt: new Date() } : {}), lastError: null })
+    // stay a few seconds so the phones' "delivered" ticks come back before we disconnect
+    if (sent) await sleep(Math.min(8_000, Math.max(0, 75_000 - (Date.now() - started))))
+    await setMeta({ ...(sent ? { lastSentAt: new Date(), receiptsAt: new Date() } : {}), lastError: null })
     return { sent, failed }
   } catch (e: any) {
     const msg = String(e?.message ?? e)
@@ -334,6 +319,38 @@ export async function* pairWhatsApp(opts: { phone?: string } = {}): AsyncGenerat
     await lock.release()
   }
 }
+
+/**
+ * Delivered / read ticks between sends: connect for a few seconds so WhatsApp hands over the receipts it held for us
+ * (lib/wa/receipts.ts records them), then close. Skipped while a send session runs — that one collects them anyway.
+ */
+export async function syncReceipts(opts: { waitMs?: number } = {}): Promise<{ ok: boolean; changed: number; skipped?: string }> {
+  if (!(await isPaired())) return { ok: false, changed: 0, skipped: 'WhatsApp is not linked' }
+  const lock = await acquireLock(40_000)
+  if (!lock) return { ok: false, changed: 0, skipped: 'busy' }
+  let conn: Conn | undefined
+  try {
+    const { takeChanged } = await import('./receipts')
+    takeChanged()
+    await setMeta({ receiptsAt: new Date() }) // claim first, so other tabs don't start a second session
+    conn = await connect({ timeoutMs: 20_000 })
+    if ((await conn.ready) !== 'open') throw new Error('Connection did not open')
+    await sleep(opts.waitMs ?? 12_000)
+    await sleep(1_500) // let the last database writes finish
+    await setMeta({ receiptsAt: new Date(), verifiedAt: new Date() })
+    return { ok: true, changed: takeChanged() }
+  } catch (e: any) {
+    const msg = String(e?.message ?? e)
+    await markIfLoggedOut(msg)
+    return { ok: false, changed: 0, skipped: msg }
+  } finally {
+    conn?.close()
+    await lock.release()
+  }
+}
+
+/** When the receipts were last collected (null = never). */
+export const receiptsAt = async () => ((await getMeta()).receiptsAt as Date | undefined) ?? null
 
 /** Open a session for a moment to confirm the link still works (Settings → Check connection). */
 export async function checkWhatsApp(): Promise<{ ok: boolean; error?: string }> {

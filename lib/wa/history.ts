@@ -8,6 +8,8 @@ import { refreshPending } from './outbox'
 // approval, sent, delivered, read, failed or discarded — with the full history of each message (MessageLog.events).
 
 const WA = { channel: 'WHATSAPP' } as const
+/** Delivered / read receipts are recorded from this moment on; older sent messages have no delivery report. */
+export const RECEIPTS_SINCE = new Date('2026-11-14T05:00:00Z')
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 export type ChatFilter = 'all' | 'waiting' | 'sent' | 'failed' | 'discarded'
@@ -47,6 +49,12 @@ async function whoIs(numbers: string[]): Promise<Map<string, Contact>> {
     if (p) out.set(n, { to: n, name: p.name, role: 'Patient', href: `/patients/${p._id}` })
   }
   return out
+}
+
+/** Ticks worth collecting: something sent in the last 7 days (after tracking began) is still at a single ✓. */
+export async function receiptsDue() {
+  const since = new Date(Math.max(Date.now() - 7 * 86400_000, RECEIPTS_SINCE.getTime()))
+  return !!(await MessageLog.exists({ ...WA, status: { $in: ['SENT', 'SENT_CONFIRMED', 'DELIVERED'] }, providerId: { $ne: null }, sentAt: { $gte: since } }))
 }
 
 /** One row per number, newest first — numbers with messages waiting for approval on top. */
@@ -109,6 +117,10 @@ export type ThreadMsg = {
   status: string
   at: string
   sentAt: string | null
+  deliveredAt: string | null
+  readAt: string | null
+  /** sent before delivery tracking started: a single ✓ is all there will ever be */
+  untracked: boolean
   error: string | null
   file: string | null
   attachmentId: string | null
@@ -151,6 +163,9 @@ export async function chatThread(to: string, opts: { before?: string | null; lim
       status: m.status,
       at: new Date(m.at).toISOString(),
       sentAt: m.sentAt ? new Date(m.sentAt).toISOString() : null,
+      deliveredAt: m.deliveredAt ? new Date(m.deliveredAt).toISOString() : null,
+      readAt: m.readAt ? new Date(m.readAt).toISOString() : null,
+      untracked: ['SENT', 'SENT_CONFIRMED'].includes(m.status) && new Date(m.sentAt ?? m.at) < RECEIPTS_SINCE,
       error: m.error ?? null,
       file: m.attachmentId || m.fileName ? m.fileName ?? 'file' : null,
       attachmentId: m.attachmentId ? String(m.attachmentId) : null,
