@@ -1,5 +1,6 @@
 import 'server-only'
 import { requestTests } from '../visit-details'
+import { revertTarget, STATUS_WORD } from '../revert'
 import { z } from 'zod'
 import {
   AssignmentLog,
@@ -12,6 +13,8 @@ import {
   Vehicle,
   Approval,
   ChatMessage,
+  AuditLog,
+  MessageLog,
   isOid,
 } from '../models'
 import { ApiError, bad, conflict, forbidden, notFound } from '../api'
@@ -1151,7 +1154,137 @@ export async function decidePettyCash(r: any, pettyCashId: string, approve: bool
   background(() => notifyUsers([pc.requestedBy], { type: 'APPROVAL', as: 'STAFF', event: 'PETTY_CASH', title: `Petty cash ৳${pc.amount} ${approve ? 'approved' : 'rejected'}`, body: r.requestNo, requestId: r._id, url: appUrl(r._id) }))
 }
 
+// ============================================================== undo a step taken by mistake
+export const RevertInput = z.object({ reason: z.string().trim().min(3, 'Say why').max(200) })
+
+/** What the status was before the last cancel / reschedule (from the audit log). */
+async function statusBefore(r: any) {
+  if (r.status !== 'CANCELLED' && r.status !== 'RESCHEDULED') return null
+  const a = await AuditLog.findOne({ entity: 'request', entityId: String(r._id), action: r.status === 'CANCELLED' ? 'request.cancel' : 'request.reschedule' }).sort({ serverAt: -1 }).select('before').lean<any>()
+  return (a?.before?.status as string) ?? null
+}
+
+/** Where "Undo" would take this request (for the button label), or null. */
+export async function revertPreview(r: any) {
+  const plan = revertTarget(r, await statusBefore(r))
+  return plan ? { from: r.status as string, to: plan.to, step: plan.step, toWord: STATUS_WORD[plan.to] ?? plan.to } : null
+}
+
+/**
+ * Undo the last lifecycle step (clicked by mistake): back to the previous status, that step's stamps cleared. Messages
+ * already sent are not taken back; WhatsApp that step left waiting in the Outbox is discarded so it never goes out.
+ */
+export async function revertStep(r: any, input: z.infer<typeof RevertInput>, user: SessionUser, meta: Meta) {
+  const from = r.status as Status
+  const plan = revertTarget(r, await statusBefore(r))
+  if (!plan) throw bad(from === 'NEW' ? 'Nothing to undo — this request is new' : 'This step cannot be undone')
+  const stepAt: Date | null = plan.clear.map((k) => r.timeline?.[k]).find(Boolean) ?? null
+  const team = [r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])].filter(Boolean)
+  const cleared: Record<string, unknown> = {}
+  for (const k of plan.clear) {
+    cleared[k] = r.timeline?.[k] ?? null
+    r.set(`timeline.${k}`, undefined)
+  }
+  switch (from) {
+    case 'ASSIGNED':
+      // assignment withdrawn: the team comes off the visit
+      cleared.team = team.map(String)
+      r.set('assignment.primaryStaffId', undefined)
+      r.set('assignment.secondaryStaffIds', [])
+      r.set('assignment.supportStaffIds', [])
+      r.set('assignment.respondBy', undefined)
+      r.set('assignment.assignedAt', undefined)
+      r.set('assignment.timedOutAt', undefined)
+      break
+    case 'ACCEPTED': {
+      r.set('assignment.acceptedAt', undefined)
+      const sla = (await getSettings()).sla
+      r.set('assignment.respondBy', new Date(Date.now() + sla.acceptTimeoutMin * 60_000))
+      break
+    }
+    case 'EN_ROUTE':
+      r.set('tracking.active', false)
+      break
+    case 'IN_PROGRESS':
+      r.set('visit.checkIn', undefined)
+      break
+    case 'COMPLETED':
+      r.set('visit.checkOut', undefined)
+      break
+    case 'CANCELLED':
+      cleared.cancellation = r.cancellation ?? null
+      r.set('cancellation', undefined)
+      break
+  }
+  r.status = plan.to
+  r.version = (r.version ?? 0) + 1
+  await r.save()
+  // un-cancelled: the visit's consumables come out of the store again
+  if (from === 'CANCELLED') await (await import('./stock')).syncVisitStockQuietly(r._id, user, {}, meta)
+  // WhatsApp the undone step queued (still waiting for approval) never goes out
+  let discarded = 0
+  if (stepAt) {
+    const { discard } = await import('../wa/outbox')
+    const waiting = await MessageLog.find({ requestId: r._id, status: 'PENDING', at: { $gte: new Date(new Date(stepAt).getTime() - 5_000) } }).select('_id').lean<any[]>()
+    if (waiting.length) discarded = await discard(waiting.map((m) => String(m._id)), user, { note: `Step undone by ${user.name}` }, meta)
+  }
+  await audit(user, 'request.revert', 'request', r._id, { before: { status: from, ...cleared }, after: { status: plan.to, reason: input.reason, discardedWhatsApp: discarded }, label: r.requestNo }, meta)
+  if (team.length && (from === 'ASSIGNED' || from === 'ACCEPTED' || from === 'EN_ROUTE' || from === 'IN_PROGRESS'))
+    background(() =>
+      notifyUsers(team, {
+        type: 'ASSIGNMENT',
+        as: 'STAFF',
+        title: from === 'ASSIGNED' ? `${r.requestNo} — assignment withdrawn` : `${r.requestNo} — "${plan.step}" was undone`,
+        body: input.reason,
+        requestId: r._id,
+        url: appUrl(r._id),
+      }),
+    )
+  return { from, to: plan.to, discarded }
+}
+
 // ============================================================== transport
+export const TransportTimesInput = z.object({
+  pickupTime: z.string().regex(/^\d{2}:\d{2}$/).optional(), // HH:mm on the visit day
+  returnTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  resend: z.boolean().optional(), // re-send the requisition / trip update with the new times
+  notify: NotifyField,
+})
+
+/** Set the car's pick-up / return time by hand (instead of "40 min before"), and optionally re-send the paperwork. */
+export async function setTransportTimes(r: any, input: z.infer<typeof TransportTimesInput>, user: SessionUser, meta: Meta) {
+  if (!can(user, 'transport.manage') && !can(user, 'requests.manage') && !can(user, 'requests.override')) throw forbidden()
+  if (!r.transport?.needed) throw bad('This visit has no car requested')
+  if (!input.pickupTime && !input.returnTime) throw bad('Enter a pick-up or return time')
+  const day = isoDay(r.scheduledAt ?? new Date())
+  const before = { pickupAt: r.transport?.pickupAt ?? null, returnAt: r.transport?.returnAt ?? null }
+  const pickup = input.pickupTime ? dhakaDate(day, input.pickupTime) : null
+  const ret = input.returnTime ? dhakaDate(day, input.returnTime) : null
+  if (pickup && r.scheduledAt && pickup.getTime() > new Date(r.scheduledAt).getTime()) throw bad('Pick-up must be before the visit time', { pickupTime: 'After the visit' })
+  if (pickup) r.set('transport.pickupAt', pickup)
+  if (ret) r.set('transport.returnAt', ret)
+  for (const leg of r.transport?.legs ?? []) {
+    if (leg.key === 'pickup' && pickup) leg.plannedAt = pickup
+    if (leg.key === 'return' && ret) leg.plannedAt = ret
+  }
+  if (r.transport?.legs?.length) r.markModified('transport.legs')
+  r.version = (r.version ?? 0) + 1
+  await r.save()
+  await audit(user, 'transport.times', 'request', r._id, { before, after: { pickupAt: r.transport.pickupAt ?? null, returnAt: r.transport.returnAt ?? null, resend: !!input.resend }, label: r.requestNo }, meta)
+  if (input.resend) {
+    const only = notifySet(input.notify)
+    const allotted = !!r.transport?.vehicleId && r.transport?.status !== 'OWN'
+    background(async () => {
+      if (allotted) {
+        const { sendTransportDocs } = await import('./transport-docs')
+        await sendTransportDocs(r._id, 'allotted', user.id, only)
+        await carAlertLazy('CAR_CHANGED', r._id, {}, only)
+      } else await carRequestedLazy(r._id, user.id, { updated: true, only })
+    })
+  }
+  return { pickupAt: r.transport.pickupAt ?? null, returnAt: r.transport.returnAt ?? null }
+}
+
 export const TransportInput = z.object({
   mode: z.enum(['UNICO_CAR', 'UBER', 'PATHAO', 'CNG', 'RICKSHAW', 'OTHER']),
   vehicleId: z.string().optional(),

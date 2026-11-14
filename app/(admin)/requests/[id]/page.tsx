@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation'
 import { activeServices } from '@/lib/cached'
+import { revertPreview } from '@/lib/services/requests'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { AutoRefresh } from '@/components/client'
 import { PriorityBadge, SlaPill, StatusChip, Tabs } from '@/components/ui'
@@ -112,8 +113,8 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   }
 
   // everything that only needs the request, all at once (these used to wait for each other)
-  const [serviceCatalog, settings, [patient, msgCount, attCount, auditCount, logCount, waPaired, confirmMsg], , todays, supportPeople, [carList, driverList]] = await Promise.all([
-    withPeople([r]).then(() => activeServices()), // the catalog (cached) for "add a service" in Edit
+  const [[serviceCatalog, undoInfo], settings, [patient, msgCount, attCount, auditCount, logCount, waPaired, confirmMsg], , todays, supportPeople, [carList, driverList], recentPickupDocs] = await Promise.all([
+    withPeople([r]).then(() => Promise.all([activeServices(), revertPreview(r)] as const)), // catalog for "add a service" · "Undo last step"
     getSettings(),
     Promise.all([
       Patient.findById(r.patientId).lean<any>(),
@@ -138,6 +139,10 @@ export default async function RequestDetailPage({ params, searchParams }: { para
           User.find({ status: 'ACTIVE', deletedAt: null, $or: [{ role: 'DRIVER' }, { roles: 'DRIVER' }] }).sort({ name: 1 }).select('name phone').lean<any[]>(),
         ])
       : Promise.resolve([[], []] as [any[], any[]]),
+    // pick-up times used lately on other trips — "Recent" quick picks when setting this car's pick-up time
+    r.transport?.needed
+      ? HomecareRequest.find({ _id: { $ne: r._id }, 'transport.pickupAt': { $ne: null } }).sort({ 'transport.pickupAt': -1 }).limit(30).select('transport.pickupAt').lean<any[]>()
+      : Promise.resolve([] as any[]),
   ])
   const sla = settings.sla
 
@@ -202,6 +207,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
     serviceCodes: (r.services ?? []).filter((x: any) => x.code !== 'OTHER').map((x: any) => x.code),
     otherService: (r.services ?? []).filter((x: any) => x.code === 'OTHER').map((x: any) => x.name).join(', '),
     serviceOptions: serviceCatalog.map((t) => ({ code: t.code, name: t.name, fee: t.fee ?? null })),
+    revert: undoInfo ? { step: undoInfo.step, toWord: undoInfo.toWord } : null,
     testItems: (r.testItems ?? []).map((t: any) => ({ code: t.code ?? '', name: t.name, price: t.price ?? 0, dept: t.dept })),
     patientCategory: (patient as any)?.category ?? undefined,
     date: r.scheduledAt ? isoDay(r.scheduledAt) : r.preferred?.date || isoDay(),
@@ -307,6 +313,10 @@ export default async function RequestDetailPage({ params, searchParams }: { para
           canCompleteNow={canOverride}
           external={!!r.assignment?.hasExternal}
           canCar={canCar}
+          canTimes={canCar || perms.manage}
+          visitTime={visitAt ? hhmm(visitAt) : ''}
+          pickupAuto={!r.transport?.pickupAt}
+          recentPickups={[...new Set(recentPickupDocs.map((d: any) => hhmm(new Date(d.transport.pickupAt))))].slice(0, 6)}
           transport={{
             needed: !!r.transport?.needed,
             mode: r.transport?.mode ?? null,

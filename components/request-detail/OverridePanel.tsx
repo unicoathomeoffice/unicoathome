@@ -1,10 +1,11 @@
 'use client'
+import { ampm, PickupQuickPicks } from '@/components/client/PickupQuickPicks'
 // Request page → "Act for the team" (override access): accept for the staff, mark the next visit step for them, complete
 // the visit in one go, and put a car + any active driver on the trip directly (e.g. when the supervisor says so verbally).
 // Every action asks first and is audited "on behalf".
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Banknote, Car, CheckCircle2, Loader2, MapPin, Navigation, ShieldAlert, UserCheck } from 'lucide-react'
+import { Banknote, Car, CheckCircle2, Clock3, Loader2, MapPin, Navigation, ShieldAlert, UserCheck } from 'lucide-react'
 import { api, Drawer, useToast } from '@/components/client'
 import { NotifyPicker } from '@/components/client/NotifyPicker'
 import { btnClass } from '@/components/ui'
@@ -26,6 +27,12 @@ type Props = {
   external?: boolean
   /** may put a car + driver on the trip (car supervisor or override) */
   canCar: boolean
+  /** may set the car's pick-up / return time by hand (car supervisor, coordinator or override) */
+  canTimes?: boolean
+  /** visit time HH:mm (for "45 min before" picks), whether pick-up is still the automatic 40 min before, recent picks */
+  visitTime?: string
+  pickupAuto?: boolean
+  recentPickups?: string[]
   transport: { needed: boolean; mode?: string | null; vehicleId?: string | null; driverId?: string | null; pickup: string; ret: string }
   cars: CarLite[]
   drivers: DriverLite[]
@@ -56,14 +63,16 @@ export function OverridePanel(p: Props) {
   const router = useRouter()
   const toast = useToast()
   const [busy, setBusy] = useState<string | null>(null)
-  const [dlg, setDlg] = useState<null | 'complete' | 'car'>(null)
+  const [dlg, setDlg] = useState<null | 'complete' | 'car' | 'times'>(null)
   const step = STEP[p.status]
   const who = p.staffName ?? 'the team'
   const active = ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS'].includes(p.status)
   // car & driver, or (no car free) own transport + petty cash — both from the same drawer
   const showCar = p.canCar && p.transport.needed && !['COMPLETED', 'CLOSED', 'CANCELLED'].includes(p.status)
   const own = !!p.transport.mode && p.transport.mode !== 'UNICO_CAR'
-  if (!(p.canOverride && active) && !showCar) return null
+  // the car's pick-up time by hand (+ re-send the requisition) — until the car has left
+  const showTimes = !!p.canTimes && p.transport.needed && !own && ['NEW', 'VERIFIED', 'CONFIRMED', 'RESCHEDULED', 'ASSIGNED', 'ACCEPTED'].includes(p.status)
+  if (!(p.canOverride && active) && !showCar && !showTimes) return null
 
   async function doStep() {
     if (!step) return
@@ -96,6 +105,12 @@ export function OverridePanel(p: Props) {
             <CheckCircle2 size={14} /> Complete visit now
           </button>
         )}
+        {showTimes && (
+          <button type="button" disabled={!!busy} onClick={() => setDlg('times')} className={btnClass('o', 'sm', 'bg-white')} title="Set the pick-up time by hand and re-send the requisition">
+            <Clock3 size={14} /> Pick-up {ampm(p.transport.pickup) || '—'}
+            {p.pickupAuto && <span className="text-[11px] font-medium text-slate-400">auto</span>}
+          </button>
+        )}
         {showCar && (
           <button type="button" disabled={!!busy} onClick={() => setDlg('car')} className={btnClass('o', 'sm', 'bg-white')}>
             <Car size={14} /> {own ? `Transport · ${MODE_LABEL[p.transport.mode!] ?? 'own'}${p.cashGiven ? ` · ${taka(p.cashGiven.amount)} given` : ''}` : p.transport.vehicleId ? 'Change car & driver' : 'Car & driver'}
@@ -104,7 +119,76 @@ export function OverridePanel(p: Props) {
       </div>
       {dlg === 'complete' && <CompleteNow {...p} who={who} onClose={() => setDlg(null)} />}
       {dlg === 'car' && <CarDriver {...p} onClose={() => setDlg(null)} />}
+      {dlg === 'times' && <TransportTimes {...p} onClose={() => setDlg(null)} />}
     </div>
+  )
+}
+
+/** Pick-up / return time by hand, with quick picks, and re-send the requisition / trip update (WhatsApp waits for approval). */
+function TransportTimes({ requestId, requestNo, transport, visitTime, pickupAuto, recentPickups, onClose }: Props & { onClose: () => void }) {
+  const router = useRouter()
+  const toast = useToast()
+  const [pickup, setPickup] = useState(transport.pickup)
+  const [ret, setRet] = useState(transport.ret)
+  const [resend, setResend] = useState(true)
+  const [notify, setNotify] = useState<string[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const allotted = !!transport.vehicleId
+  async function save() {
+    if (!pickup) return toast('Enter the pick-up time', 'err')
+    if (visitTime && pickup >= visitTime) return toast('Pick-up must be before the visit time', 'err')
+    setBusy(true)
+    try {
+      await api(`/requests/${requestId}/transport-times`, { body: { pickupTime: pickup, returnTime: ret || undefined, resend, notify: notify ?? undefined } })
+      toast(resend ? `Pick-up ${ampm(pickup)} saved — the updated ${allotted ? 'trip' : 'requisition'} is waiting in WhatsApp for approval` : `Pick-up ${ampm(pickup)} saved`, 'ok')
+      router.refresh()
+      onClose()
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title="Pick-up time"
+      sub={`${requestNo}${visitTime ? ` · visit ${ampm(visitTime)}` : ''}`}
+      footer={
+        <div className="flex justify-end gap-2">
+          <button type="button" className={btnClass('o')} onClick={onClose}>
+            Close
+          </button>
+          <button type="button" className={btnClass('p')} disabled={busy} onClick={save}>
+            {busy && <Loader2 size={16} className="animate-spin" />} Save{resend ? ' & re-send' : ''}
+          </button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {pickupAuto && <div className="rounded-lg bg-[#FFFBEB] px-3 py-2 text-[12.5px] text-[#92400E] ring-1 ring-[#FDE68A]">Now set automatically: 40 min before the visit ({ampm(transport.pickup)}). Choose the real time below.</div>}
+        <div className="grid grid-cols-2 gap-3">
+          <label>
+            <span className="hc-label">Pick-up at hospital *</span>
+            <input type="time" className="hc-input" value={pickup} onChange={(e) => setPickup(e.target.value)} />
+          </label>
+          <label>
+            <span className="hc-label">Back at hospital (about)</span>
+            <input type="time" className="hc-input" value={ret} onChange={(e) => setRet(e.target.value)} />
+          </label>
+        </div>
+        <PickupQuickPicks visitTime={visitTime} recent={recentPickups} value={pickup} onChange={setPickup} />
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg bg-slate-50 px-3 py-2.5">
+          <input type="checkbox" className="mt-0.5 size-4 accent-[#0090CA]" checked={resend} onChange={(e) => setResend(e.target.checked)} />
+          <span className="text-[13px]">
+            <b>Re-send with the new time</b>
+            <span className="block text-[12px] text-slate-500">{allotted ? 'The updated requisition + gate pass and a "trip time changed" message.' : 'The updated vehicle requisition to the security supervisor.'} It waits in WhatsApp for your approval.</span>
+          </span>
+        </label>
+        {resend && allotted && <NotifyPicker params={{ events: ['CAR_ALLOTTED'], requestId, vehicleId: transport.vehicleId ?? undefined, driverId: transport.driverId ?? undefined }} value={notify} onChange={setNotify} />}
+      </div>
+    </Drawer>
   )
 }
 
@@ -182,7 +266,7 @@ function CompleteNow({ requestId, requestNo, status, who, openChecklist, onClose
   )
 }
 
-function CarDriver({ requestId, requestNo, transport, cars, drivers, team = [], area, defaultAmount, onClose }: Props & { onClose: () => void }) {
+function CarDriver({ requestId, requestNo, transport, cars, drivers, team = [], area, defaultAmount, visitTime, recentPickups, onClose }: Props & { onClose: () => void }) {
   const router = useRouter()
   const toast = useToast()
   // "Car not available" → own transport + petty cash (approved at once, voucher on WhatsApp)
@@ -358,6 +442,7 @@ function CarDriver({ requestId, requestNo, transport, cars, drivers, team = [], 
           <label>
             <span className="hc-label">Pick-up at hospital</span>
             <input type="time" className="hc-input" value={pickup} onChange={(e) => setPickup(e.target.value)} />
+            <PickupQuickPicks visitTime={visitTime} recent={recentPickups} value={pickup} onChange={setPickup} />
           </label>
           <label>
             <span className="hc-label">Return</span>

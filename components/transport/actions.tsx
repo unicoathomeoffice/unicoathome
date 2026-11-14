@@ -1,4 +1,5 @@
 'use client'
+import { PickupQuickPicks } from '@/components/client/PickupQuickPicks'
 import { useState } from 'react'
 import Link from 'next/link'
 import { Check, Loader2, Plus, Settings2 } from 'lucide-react'
@@ -74,7 +75,7 @@ export function LegButton({ id, leg, label, className }: { id: string; leg: stri
 export type CarOpt = { id: string; name: string; plate: string; model?: string; seats?: number; driver: { id: string; name: string } | null; ok: boolean; label: string }
 
 /** S4b — "Which car goes?" sheet body: Unico car vs own transport, cars with state, pick-up / return times. */
-export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVehicleId, currentDriverId, initialMode, drivers = [] }: { id: string; requestNo: string; sub: string; cars: CarOpt[]; pickup: string; ret: string; currentVehicleId?: string; currentDriverId?: string; initialMode: 'car' | 'own'; drivers?: { id: string; name: string }[] }) {
+export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVehicleId, currentDriverId, initialMode, drivers = [], visitTime }: { id: string; requestNo: string; sub: string; cars: CarOpt[]; pickup: string; ret: string; currentVehicleId?: string; currentDriverId?: string; initialMode: 'car' | 'own'; drivers?: { id: string; name: string }[]; visitTime?: string }) {
   const [mode, setMode] = useState<'car' | 'own'>(initialMode)
   const firstOk = cars.find((c) => c.id === currentVehicleId) ?? cars.find((c) => c.ok && c.driver)
   const [car, setCar] = useState<string>(firstOk?.id ?? '')
@@ -153,6 +154,7 @@ export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVe
             <div>
               <div className="mb-1.5 text-[13px] font-semibold text-slate-700">Pick-up at hospital</div>
               <input type="time" className="hc-input hc-input-lg" value={p} onChange={(e) => setP(e.target.value)} />
+              <PickupQuickPicks visitTime={visitTime} value={p} onChange={setP} />
             </div>
             <div>
               <div className="mb-1.5 text-[13px] font-semibold text-slate-700">Return</div>

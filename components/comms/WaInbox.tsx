@@ -6,7 +6,7 @@
 // open it checks WhatsApp for new messages about every 2 minutes (one shared, safe session). Data: lib/wa/history.ts.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Zap, AlertCircle, ArrowLeft, Ban, Check, CheckCheck, ChevronDown, Clock3, ExternalLink, FileText, Info, Loader2, MessageCircle, Pencil, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Smartphone, Trash2, UserRound, Users, X } from 'lucide-react'
+import { Zap, AlertCircle, ArrowLeft, Ban, Check, CheckCheck, ChevronDown, ChevronUp, Clock3, ExternalLink, FileText, Info, Loader2, MessageCircle, Pencil, RefreshCw, RotateCcw, Search, Send, ShieldCheck, Smartphone, Trash2, UserRound, Users, X } from 'lucide-react'
 import { api, useToast } from '@/components/client'
 import { outboxChanged } from '@/components/client/WaReview'
 import { cx, phone as fmtPhone } from '@/lib/format'
@@ -141,6 +141,32 @@ function Media({ m }: { m: Msg }) {
   )
 }
 
+/** Consecutive "not sent" messages (discarded / skipped) folded into one slim row; tap to see them. */
+function NotSentRun({ ms, render }: { ms: Msg[]; render: (m: Msg) => React.ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const who = [...new Set(ms.map((m) => /Discarded by (.+)/.exec(m.events.find((e) => e.status === 'SKIPPED')?.note ?? '')?.[1] ?? null).filter(Boolean))]
+  if (open)
+    return (
+      <div className="flex flex-col gap-1.5">
+        <button type="button" onClick={() => setOpen(false)} className="mx-auto flex items-center gap-1 rounded-full bg-white/80 px-2.5 py-0.5 text-[11.5px] font-semibold text-[#667781] shadow-sm hover:bg-white">
+          <ChevronUp size={12} /> Hide {ms.length} not sent
+        </button>
+        {ms.map(render)}
+      </div>
+    )
+  return (
+    <div className="flex justify-end">
+      <button type="button" onClick={() => setOpen(true)} className="flex max-w-[88%] items-center gap-1.5 rounded-lg border border-dashed border-[#CBD5E1] bg-white/70 px-2.5 py-1 text-left text-[12px] text-[#667781] hover:bg-white" title={ms.map((m) => m.text.split('\n')[0]).join('\n')}>
+        <Ban size={12} className="flex-none" />
+        <span className="min-w-0 truncate">
+          {ms.length} not sent{who.length ? ` · discarded by ${who.join(', ')}` : ''} · {clock(ms[ms.length - 1].at)}
+        </span>
+        <span className="flex-none font-semibold text-[#008069]">Show</span>
+      </button>
+    </div>
+  )
+}
+
 function Reactions({ list, right }: { list: { emoji: string }[]; right?: boolean }) {
   if (!list.length) return null
   const counts = new Map<string, number>()
@@ -204,6 +230,14 @@ function Bubble({ m, requestHref, edit, onEdit, onAct, busy }: { m: Msg; request
   const text = edit ?? m.text
   const changed = edit != null && edit !== m.text
   const stale = m.visit && ['CANCELLED', 'CLOSED'].includes(m.visit.status)
+  if (m.deleted)
+    return (
+      <div className="flex justify-end">
+        <span className="flex items-center gap-1.5 rounded-lg bg-[#D9FDD3]/70 px-2.5 py-1 text-[12.5px] italic text-[#667781] shadow-[0_1px_0.5px_rgba(11,20,26,.08)]">
+          <Ban size={12} /> You deleted this message · {clock(m.sentAt ?? m.at)}
+        </span>
+      </div>
+    )
   return (
     <div className="flex flex-col items-end">
       <div
@@ -450,6 +484,20 @@ export function WaInbox({
   const [busy, setBusy] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [atBottom, setAtBottom] = useState(true)
+  const [hideNotSent, setHideNotSent] = useState(true)
+  useEffect(() => {
+    try {
+      setHideNotSent(localStorage.getItem('hc:wa-hide-notsent') !== '0')
+    } catch {}
+  }, [])
+  const toggleNotSent = () => {
+    setHideNotSent((v) => {
+      try {
+        localStorage.setItem('hc:wa-hide-notsent', v ? '0' : '1')
+      } catch {}
+      return !v
+    })
+  }
   const body = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
@@ -635,6 +683,26 @@ export function WaInbox({
     return out
   }, [thread])
 
+  // one message → its bubble
+  const one = (m: Msg) =>
+    m.incoming ? (
+      <InBubble key={m.id} m={m} group={isGroup} />
+    ) : (
+      <Bubble key={m.id} m={m} requestHref={requestHref} busy={busy} edit={edits[m.id]} onEdit={(t) => setEdits((x) => (t == null ? Object.fromEntries(Object.entries(x).filter(([k]) => k !== m.id)) : { ...x, [m.id]: t }))} onAct={(a) => act(a, [m])} />
+    )
+  // "Hide not sent" (default on): consecutive not-sent messages become one foldable row
+  const runs = (items: Msg[]): (Msg | Msg[])[] => {
+    if (!hideNotSent) return items
+    const out: (Msg | Msg[])[] = []
+    for (const m of items) {
+      const ns = !m.incoming && m.status === 'SKIPPED'
+      const last = out[out.length - 1]
+      if (ns && Array.isArray(last)) last.push(m)
+      else out.push(ns ? [m] : m)
+    }
+    return out
+  }
+
   const row = (c: ChatRow) => {
     const firstLine = c.last.text.split('\n').find((l) => l.trim()) ?? ''
     const body = c.last.deleted ? '🚫 This message was deleted' : c.last.kind === 'image' && !firstLine ? '📷 Photo' : c.last.file && !firstLine ? `📄 ${c.last.file}` : firstLine
@@ -769,6 +837,11 @@ export function WaInbox({
                 <div className="truncate text-[15.5px] font-semibold text-[#111B21]">{contact.name}</div>
                 <div className="truncate text-[12.5px] text-[#667781]">{isGroup ? 'Group' : [contact.role, /^\d+$/.test(contact.to) ? fmtPhone(contact.to) : null].filter(Boolean).join(' · ')}</div>
               </div>
+              {thread?.items.some((m) => !m.incoming && m.status === 'SKIPPED') && (
+                <button type="button" onClick={toggleNotSent} className={cx('hidden h-9 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold hover:bg-black/5 sm:flex', hideNotSent ? 'text-[#54656F]' : 'bg-white text-[#008069] shadow-sm')} title="Fold or show messages that were not sent (discarded / skipped)">
+                  <Ban size={14} /> {hideNotSent ? 'Show not sent' : 'Fold not sent'}
+                </button>
+              )}
               {profileLinks && thread?.contact.href && (
                 <Link href={thread.contact.href} className="hidden h-9 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[#54656F] hover:bg-black/5 sm:flex" title="Open profile">
                   <UserRound size={16} /> Profile
@@ -795,13 +868,13 @@ export function WaInbox({
                     <ShieldCheck size={12} className="mr-1 inline" /> Messages the app writes are sent only after an admin approves them. Replies show here within about 2 minutes.
                   </div>
                   {days.map((d) => (
-                    <div key={d.key} className="flex flex-col gap-2">
+                    <div key={d.key} className="flex flex-col gap-1.5">
                       <div className="sticky top-1 z-10 mx-auto my-1 rounded-lg bg-white/95 px-3 py-1 text-[12px] font-medium uppercase tracking-wide text-[#54656F] shadow-sm">{d.label}</div>
-                      {d.items.map((m) =>
-                        m.incoming ? (
-                          <InBubble key={m.id} m={m} group={isGroup} />
+                      {runs(d.items).map((run) =>
+                        Array.isArray(run) ? (
+                          <NotSentRun key={`ns-${run[0].id}`} ms={run} render={one} />
                         ) : (
-                        <Bubble key={m.id} m={m} requestHref={requestHref} busy={busy} edit={edits[m.id]} onEdit={(t) => setEdits((x) => (t == null ? Object.fromEntries(Object.entries(x).filter(([k]) => k !== m.id)) : { ...x, [m.id]: t }))} onAct={(a) => act(a, [m])} />
+                          one(run)
                         ),
                       )}
                     </div>

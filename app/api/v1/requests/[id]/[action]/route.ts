@@ -33,6 +33,10 @@ const ACTIONS: Record<string, Action> = {
   transport: { schema: svc.TransportInput, run: ({ r, user, meta }, i) => svc.assignTransport(r, i, user, meta) },
   'accept-wait': { perm: 'requests.assign', run: ({ r, user, meta }) => svc.keepWaiting(r, user, meta) },
   'complete-now': { perm: 'requests.override', schema: svc.CompleteNowInput, run: ({ r, user, meta }, i) => svc.completeNow(r, i, user, meta) },
+  // the car's pick-up / return time by hand (+ re-send the requisition) — permission checked in the service
+  'transport-times': { schema: svc.TransportTimesInput, run: ({ r, user, meta }, i) => svc.setTransportTimes(r, i, user, meta) },
+  // undo the last step (clicked by mistake) — coordinators / admins
+  revert: { perm: 'requests.manage', schema: svc.RevertInput, run: ({ r, user, meta }, i) => svc.revertStep(r, i, user, meta) },
   'transport-leg': { schema: z.object({ leg: z.string() }), run: ({ r, user, meta }, i) => svc.stampTransportLeg(r, i.leg, user, meta) },
 
   accept: { schema: z.object({ deviceAt: z.string().optional() }), run: ({ r, user, meta }, i) => svc.accept(r, user, meta, i.deviceAt) },

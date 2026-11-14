@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { H360TestPicker } from '@/components/client/H360TestPicker'
 import { testsTotal, type TestItem } from '@/lib/schemas'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { CalendarClock, CheckCircle2, FileText, Loader2, Mail, MessageCircle, Pencil, RefreshCw, ShieldCheck, Trash2, UserPlus, Users, AlertTriangle, Check, Search } from 'lucide-react'
+import { CalendarClock, CheckCircle2, FileText, Loader2, Mail, MessageCircle, Pencil, RefreshCw, ShieldCheck, Trash2, UserPlus, Users, AlertTriangle, Check, Search, Undo2 } from 'lucide-react'
 import { api, useAction, ActionButton, Drawer, Segmented, Toggle, ChipPicker, WhatsAppButton } from '@/components/client'
 import { btnClass, Avatar } from '@/components/ui'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Status } from '@/lib/constants'
@@ -28,6 +28,8 @@ export type ReqLite = {
   serviceCodes: string[]
   otherService: string
   serviceOptions: { code: string; name: string; fee: number | null }[]
+  /** "Undo last step": what the last step was and where Undo goes (null = nothing to undo) */
+  revert: { step: string; toWord: string } | null
   patientCategory?: string
   date: string // YYYY-MM-DD (scheduled or preferred)
   time: string // HH:mm
@@ -111,7 +113,7 @@ export function ActionBar({
   const router = useRouter()
   const pathname = usePathname()
   const sp = useSearchParams()
-  const [dlg, setDlg] = useState<null | 'confirm' | 'reschedule' | 'cancel' | 'close' | 'email' | 'whatsapp' | 'delete'>(null)
+  const [dlg, setDlg] = useState<null | 'confirm' | 'reschedule' | 'cancel' | 'close' | 'email' | 'whatsapp' | 'delete' | 'undo'>(null)
   const [assigning, setAssigning] = useState(assignOpen)
   useEffect(() => setAssigning(assignOpen), [assignOpen])
   const a = availableActions(r.status)
@@ -177,6 +179,11 @@ export function ActionBar({
             Cancel
           </button>
         )}
+        {perms.manage && r.revert && (
+          <button className={cx(iconBtn(), 'text-[#B45309] hover:bg-[#FFFBEB]')} onClick={() => setDlg('undo')} title={`Clicked "${r.revert.step}" by mistake? Undo it — the request goes back to ${r.revert.toWord}`}>
+            <Undo2 size={16} /> Undo “{r.revert.step}”
+          </button>
+        )}
         {perms.delete && !['EN_ROUTE', 'IN_PROGRESS'].includes(r.status) && (
           <button className={cx(iconBtn(), 'text-[#DC2626] hover:bg-[#FEF2F2]')} onClick={() => setDlg('delete')} title="Delete this request">
             <Trash2 size={16} /> Delete
@@ -186,6 +193,7 @@ export function ActionBar({
       {dlg === 'confirm' && <ConfirmDialog r={r} slots={slots} onClose={close} />}
       {dlg === 'reschedule' && <RescheduleDialog r={r} slots={slots} onClose={close} />}
       {dlg === 'cancel' && <CancelDialog r={r} onClose={close} />}
+      {dlg === 'undo' && r.revert && <UndoDialog r={r} onClose={close} />}
       {dlg === 'close' && <CloseDialog r={r} perms={perms} onClose={close} />}
       {dlg === 'email' && <EmailDialog r={r} onClose={close} />}
       {dlg === 'whatsapp' && <WhatsAppDialog r={r} onClose={close} />}
@@ -397,6 +405,64 @@ function RescheduleDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; 
 
 // ---------------------------------------------------------------- cancel
 const CANCEL_REASONS = ['Patient cancelled', 'Patient unreachable', 'Admitted to hospital', 'Duplicate request', 'No staff available', 'Other']
+// ---------------------------------------------------------------- undo a step clicked by mistake
+const UNDO_REASONS = ['Clicked by mistake', 'Wrong request', 'Wrong time / date', 'Staff did not go yet', 'Patient not ready']
+function UndoDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
+  const { run, busy } = useAction()
+  const [reason, setReason] = useState('Clicked by mistake')
+  const [note, setNote] = useState('')
+  const text = [reason, note.trim()].filter(Boolean).join(' · ')
+  const rv = r.revert!
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title={`Undo “${rv.step}”`}
+      sub={`${r.requestNo} · ${r.patientName}`}
+      footer={
+        <Foot onClose={onClose}>
+          <button
+            className={btnClass('p')}
+            disabled={busy || text.length < 3}
+            onClick={async () => {
+              const ok = await run(() => api(`/requests/${r.id}/revert`, { body: { reason: text } }), `Undone — back to ${rv.toWord}`)
+              if (ok) onClose()
+            }}
+          >
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Undo2 size={16} />} Undo
+          </button>
+        </Foot>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-3 rounded-xl bg-[#FFFBEB] p-3.5 ring-1 ring-[#FDE68A]">
+          <span className="flex size-10 flex-none items-center justify-center rounded-full bg-[#F59E0B] text-white">
+            <Undo2 size={19} />
+          </span>
+          <div className="text-[13.5px] leading-[19px] text-[#78350F]">
+            The request goes back to <b>{rv.toWord}</b>, as if “{rv.step}” never happened.
+            {rv.step === 'Assigned' && ' The care team comes off this visit (they get a notice).'}
+          </div>
+        </div>
+        <div>
+          <span className="hc-label">
+            Why <span className="text-[#DC2626]">*</span>
+          </span>
+          <ChipPicker options={UNDO_REASONS} value={reason ? [reason] : []} onChange={(v) => setReason(v[0] ?? '')} max={1} />
+        </div>
+        <F label="Note">
+          <textarea className="hc-input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional details for the record" />
+        </F>
+        <ul className="list-disc space-y-1 pl-5 text-[12.5px] text-slate-500">
+          <li>WhatsApp this step left waiting for approval is discarded, so it never goes out.</li>
+          <li>Messages already sent are not taken back — send a correction if needed.</li>
+          <li>Recorded in the Audit tab with your reason.</li>
+        </ul>
+      </div>
+    </Drawer>
+  )
+}
+
 function CancelDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
   const { run, busy } = useAction()
   const [reason, setReason] = useState('')

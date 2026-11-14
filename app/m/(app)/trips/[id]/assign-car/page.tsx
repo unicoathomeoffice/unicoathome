@@ -53,6 +53,7 @@ export default async function AssignCarPage({ params, searchParams }: { params: 
           cars={plain(opts)}
           pickup={dhakaParts(new Date(pickup)).time}
           ret={dhakaParts(new Date(ret)).time}
+          visitTime={r.scheduledAt ? dhakaParts(new Date(r.scheduledAt)).time : undefined}
           currentVehicleId={r.transport?.vehicleId ? String(r.transport.vehicleId) : undefined}
           currentDriverId={r.transport?.driverId ? String(r.transport.driverId) : undefined}
           drivers={drivers.map((d: any) => ({ id: String(d._id), name: d.name }))}
