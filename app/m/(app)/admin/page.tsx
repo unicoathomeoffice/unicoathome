@@ -45,7 +45,7 @@ export default async function AdminHub() {
 
   const tools = [
     { href: '/m/admin/inbox', icon: Inbox, title: 'Request inbox', sub: 'Verify · confirm · assign · cancel', n: toConfirm + toAssign },
-    ...(can(user, 'messages.approve') ? [{ href: '/m/admin/outbox', icon: Send, title: 'WhatsApp outbox', sub: 'Check, edit and send waiting messages', n: waiting }] : []),
+    ...(can(user, 'messages.approve') ? [{ href: '/m/admin/outbox', icon: Send, title: 'WhatsApp', sub: 'Approve waiting messages · full history', n: waiting }] : []),
     { href: '/m/admin/patients', icon: UsersRound, title: 'Patient board', sub: 'Search by phone, UHID or name' },
     { href: '/m/admin/store', icon: Package, title: 'Store', sub: [storeLow ? `${storeLow} low / out of stock` : 'Stock by size and company', storeH360?.value?.differences ? `${storeH360.value.differences} differ from H360` : null].filter(Boolean).join(' · '), n: storeLow },
     { href: '/m/new-request', icon: FilePlus2, title: 'New request', sub: 'Quick form · 2 minutes' },

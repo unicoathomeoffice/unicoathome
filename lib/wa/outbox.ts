@@ -1,5 +1,6 @@
 import 'server-only'
-import { HomecareRequest, MessageLog, WaAuth } from '../models'
+import { HomecareRequest, MessageLog, Patient, WaAuth } from '../models'
+import { requestTests, withVisitDetails } from '../visit-details'
 import { audit, type Meta } from '../audit'
 import type { SessionUser } from '../auth'
 import { background, notifyRoles, stripRequestNo } from '../messaging'
@@ -26,19 +27,50 @@ export type OutboxItem = {
   requestId: string | null
   visit: string | null // "Saima Sonom · Sample collection · 2 Nov 9:00 AM" (no HC number — what the message is about)
   requestNo: string | null // for the link on our own screen only
+  visitStatus: string | null // CANCELLED / CLOSED drafts are marked stale
   batch: string | null
   at: string
   urgent: boolean
 }
 
+/**
+ * Drafts follow the visit: a waiting message written before a test or the UHID was added gets the current "Tests:" /
+ * "UHID:" lines (lib/visit-details.ts). Messages an admin has edited are left as they are.
+ */
+export async function refreshPending(filter: { requestId?: unknown; to?: string } = {}) {
+  const rows = await MessageLog.find({ ...PENDING, requestId: filter.requestId ?? { $ne: null }, originalText: null, ...(filter.to ? { to: filter.to } : {}) })
+    .select('renderedText requestId')
+    .lean<any[]>()
+  if (!rows.length) return 0
+  const reqs = await HomecareRequest.find({ _id: { $in: [...new Set(rows.map((r) => String(r.requestId)))] } })
+    .select('tests testItems patientId patientSnapshot.uhid')
+    .lean<any[]>()
+  const pats = await Patient.find({ _id: { $in: reqs.filter((q) => !q.patientSnapshot?.uhid && q.patientId).map((q) => q.patientId) } })
+    .select('uhid')
+    .lean<any[]>()
+  const changed: string[] = []
+  for (const m of rows) {
+    const q = reqs.find((x) => String(x._id) === String(m.requestId))
+    if (!q) continue
+    const uhid = q.patientSnapshot?.uhid || pats.find((p) => String(p._id) === String(q.patientId))?.uhid || ''
+    const next = withVisitDetails(m.renderedText ?? '', { tests: requestTests(q), uhid }).slice(0, 1500)
+    if (next === m.renderedText) continue
+    const ok = await MessageLog.updateOne({ _id: m._id, ...PENDING, originalText: null }, { $set: { renderedText: next }, $push: { events: { status: 'PENDING', at: new Date(), note: "Updated with the visit's latest details" } } })
+    if (ok.modifiedCount) changed.push(String(m._id))
+  }
+  if (changed.length) await audit(null, 'message.refresh', 'message', changed.length === 1 ? changed[0] : null, { after: { count: changed.length, ids: changed.slice(0, 20) } })
+  return changed.length
+}
+
 export async function listPending(filter: { batch?: string | null; requestId?: string | null } = {}, limit = 300): Promise<OutboxItem[]> {
+  await refreshPending(filter.requestId ? { requestId: filter.requestId } : {}).catch(() => 0)
   const rows = await MessageLog.find({ ...PENDING, ...(filter.batch ? { batch: filter.batch } : {}), ...(filter.requestId ? { requestId: filter.requestId } : {}) })
     .sort({ at: -1 })
     .limit(limit)
     .select('to toName templateKey renderedText originalText fileName attachmentId requestId batch at priority')
     .lean<any[]>()
   const reqs = await HomecareRequest.find({ _id: { $in: [...new Set(rows.map((r) => String(r.requestId ?? '')).filter(Boolean))] } })
-    .select('requestNo patientSnapshot.name services.name scheduledAt')
+    .select('requestNo patientSnapshot.name services.name scheduledAt status')
     .lean<any[]>()
   const fmt = (d?: Date) => (d ? new Date(d).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }) : '')
   return rows.map((r) => {
@@ -55,6 +87,7 @@ export async function listPending(filter: { batch?: string | null; requestId?: s
       requestId: r.requestId ? String(r.requestId) : null,
       visit: q ? [q.patientSnapshot?.name, (q.services ?? []).map((s: any) => s.name).join(', '), fmt(q.scheduledAt)].filter(Boolean).join(' · ') : null,
       requestNo: q?.requestNo ?? null,
+      visitStatus: q?.status ?? null,
       batch: r.batch ?? null,
       at: new Date(r.at).toISOString(),
       urgent: (r.priority ?? 0) >= 10,
@@ -104,6 +137,21 @@ export async function discard(ids: Ids, user: SessionUser | null, opts: { batch?
   const note = opts.note ?? `Discarded by ${user?.name ?? 'System'}`
   await MessageLog.updateMany({ _id: { $in: rows.map((r) => r._id) }, status: 'PENDING' }, { $set: { status: 'SKIPPED', error: note }, $push: { events: { status: 'SKIPPED', at: new Date(), note } } })
   await audit(user, 'message.discard', 'message', rows.length === 1 ? rows[0]._id : null, { after: { count: rows.length, to: rows.slice(0, 20).map((r) => r.toName ?? r.to), note } }, meta)
+  return rows.length
+}
+
+/** Try failed messages again: back in the queue (they were approved before), then the normal sender. */
+export async function retryFailed(ids: string[], user: SessionUser, meta: Meta = {}) {
+  const rows = await MessageLog.find({ _id: { $in: ids }, channel: 'WHATSAPP', provider: PROVIDER, status: 'FAILED' }).select('_id toName to').lean<any[]>()
+  if (!rows.length) return 0
+  const now = new Date()
+  await MessageLog.updateMany(
+    { _id: { $in: rows.map((r) => r._id) }, status: 'FAILED' },
+    { $set: { status: 'QUEUED', at: now, error: null, approvedBy: user.id, approvedAt: now }, $push: { events: { status: 'QUEUED', at: now, note: `Retried by ${user.name}` } } },
+  )
+  await audit(user, 'message.retry', 'message', rows.length === 1 ? rows[0]._id : null, { after: { count: rows.length, to: rows.slice(0, 20).map((r) => r.toName ?? r.to) } }, meta)
+  const { pumpWhatsApp } = await import('./service')
+  background(() => pumpWhatsApp())
   return rows.length
 }
 

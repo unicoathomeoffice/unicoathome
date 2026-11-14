@@ -733,6 +733,7 @@ MessageLogSchema.index({ requestId: 1, at: -1 })
 MessageLogSchema.index({ channel: 1, at: -1 })
 MessageLogSchema.index({ status: 1, at: 1 })
 MessageLogSchema.index({ batch: 1 }, { partialFilterExpression: { batch: { $exists: true } } })
+MessageLogSchema.index({ channel: 1, to: 1, at: -1 }) // WhatsApp inbox: one chat per number (lib/wa/history.ts)
 MessageLogSchema.index({ channel: 1, provider: 1, sentAt: -1, to: 1 }, { partialFilterExpression: { sentAt: { $exists: true } } }) // WhatsApp rate limits
 export const MessageLog = model('MessageLog', MessageLogSchema, 'message_logs')
 

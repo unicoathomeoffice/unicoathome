@@ -63,6 +63,15 @@ export async function queueWhatsApp(input: { to: string; toName?: string; text: 
   return log
 }
 
+/** A delivery / read receipt from WhatsApp: ticks only move forward (sent → delivered → read). */
+async function markReceipt(providerId: string, status: 'DELIVERED' | 'OPENED') {
+  const from = status === 'OPENED' ? ['SENT', 'SENT_CONFIRMED', 'DELIVERED'] : ['SENT', 'SENT_CONFIRMED']
+  await MessageLog.updateOne(
+    { channel: 'WHATSAPP', providerId, status: { $in: from } },
+    { $set: { status }, $push: { events: { status, at: new Date(), note: status === 'OPENED' ? 'Read' : 'Delivered' } } },
+  ).catch(() => {})
+}
+
 /** Wait a few seconds so the messages of one action go out in one session, and keep 20 s between sessions. */
 async function pumpSoon() {
   await sleep(8_000)
@@ -108,6 +117,14 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
     if ((await conn.ready) !== 'open') throw new Error('Connection did not open')
     await setMeta({ verifiedAt: new Date(), needsRescan: null, needsRescanReason: null })
     const sock = conn.sock
+    // delivered / read ticks for messages we sent (WhatsApp reports them while we are connected, also ones from before)
+    sock.ev.on('messages.update', (updates) => {
+      for (const u of updates) {
+        const st = Number((u.update as any)?.status ?? 0) // 3 = delivered · 4 = read · 5 = played
+        if (!u.key?.fromMe || !u.key.id || st < 3) continue
+        void markReceipt(u.key.id, st >= 4 ? 'OPENED' : 'DELIVERED')
+      }
+    })
     // STOP replies that arrive while we're connected (WhatsApp also delivers ones received while we were away)
     if (cfg.optOut)
       sock.ev.on('messages.upsert', ({ messages }) => {

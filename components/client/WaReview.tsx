@@ -3,7 +3,6 @@
 // Outbox (lib/wa/outbox.ts).
 //  · WaReviewProvider — mounted once for admins: the WhatsApp dock on the right (chat bubbles, Send / Edit / Discard).
 //    Every change made through api() carries a batch id; when that click created WhatsApp messages the dock opens.
-//  · OutboxCards — the message cards (also used by the Outbox page / pane).
 //  · OutboxBadge — red count of waiting messages, for the sidebar and the top bar.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
@@ -25,6 +24,7 @@ export type OutboxItem = {
   attachmentId: string | null
   requestId: string | null
   visit: string | null
+  visitStatus?: string | null // CANCELLED / CLOSED → the draft is stale
   requestNo: string | null
   batch: string | null
   at: string
@@ -43,119 +43,6 @@ const newBatch = () => `b${Date.now().toString(36)}-${Math.random().toString(36)
 const ago = (iso: string) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
   return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`
-}
-
-// ---------------------------------------------------------------- cards
-export function OutboxCards({ items, onDone, showVisit = true, selectable = false, selected, onSelect, edits, setEdits }: {
-  items: OutboxItem[]
-  onDone: (ids: string[]) => void
-  showVisit?: boolean
-  selectable?: boolean
-  selected?: Set<string>
-  onSelect?: (id: string, on: boolean) => void
-  edits: Record<string, string>
-  setEdits: (fn: (e: Record<string, string>) => Record<string, string>) => void
-}) {
-  const toast = useToast()
-  const [editing, setEditing] = useState<string | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
-  async function act(m: OutboxItem, action: 'send' | 'discard') {
-    setBusy(m.id + action)
-    try {
-      const text = edits[m.id]
-      await api('/outbox', { body: { action, ids: [m.id], ...(action === 'send' && text != null && text !== m.text ? { edits: { [m.id]: text } } : {}) } })
-      toast(action === 'send' ? `Sending to ${m.toName ?? fmtPhone(m.to)}` : 'Discarded — not sent', 'ok')
-      onDone([m.id])
-      outboxChanged()
-    } catch (e: any) {
-      toast(e.message, 'err')
-    } finally {
-      setBusy(null)
-    }
-  }
-  return (
-    <div className="flex flex-col gap-2.5">
-      {items.map((m) => {
-        const text = edits[m.id] ?? m.text
-        const changed = text !== m.text
-        return (
-          <div key={m.id} className={cx('rounded-xl border bg-white p-3', selected?.has(m.id) ? 'border-primary ring-1 ring-primary/30' : 'border-slate-200')}>
-            <div className="flex items-start gap-2.5">
-              {selectable && <input type="checkbox" className="mt-1 size-4 flex-none accent-[#0090CA]" checked={!!selected?.has(m.id)} onChange={(e) => onSelect?.(m.id, e.target.checked)} aria-label="Select" />}
-              <span className="flex size-8 flex-none items-center justify-center rounded-full bg-[#DCFCE7] text-[#15803D]">
-                <MessageCircle size={16} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-baseline gap-x-2">
-                  <b className="text-[14px]">{m.toName ?? 'WhatsApp'}</b>
-                  <span className="text-[12.5px] text-slate-500">{fmtPhone(m.to)}</span>
-                  {m.urgent && <span className="rounded bg-[#FEE2E2] px-1.5 text-[10.5px] font-bold uppercase text-[#B91C1C]">urgent</span>}
-                  {(m.edited || changed) && <span className="rounded bg-[#FEF3C7] px-1.5 text-[10.5px] font-bold uppercase text-[#B45309]">edited</span>}
-                  <span className="ml-auto text-[11.5px] text-slate-400">{ago(m.at)}</span>
-                </div>
-                {showVisit && m.visit && (
-                  <div className="truncate text-[12px] text-slate-500">
-                    {m.requestId ? (
-                      <Link href={`/requests/${m.requestId}`} className="hover:text-primary-700 hover:underline">
-                        {m.visit}
-                      </Link>
-                    ) : (
-                      m.visit
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-            {editing === m.id ? (
-              <div className="mt-2">
-                <textarea className="hc-input min-h-[140px] text-[13px] leading-[19px]" value={text} onChange={(e) => setEdits((x) => ({ ...x, [m.id]: e.target.value }))} autoFocus maxLength={1500} />
-                <div className="mt-1 flex items-center gap-3 text-[12px]">
-                  <button type="button" className="inline-flex items-center gap-1 font-semibold text-primary-700" onClick={() => setEditing(null)}>
-                    <Check size={13} /> Done
-                  </button>
-                  {changed && (
-                    <button type="button" className="inline-flex items-center gap-1 text-slate-500 hover:text-slate-700" onClick={() => setEdits((x) => ({ ...x, [m.id]: m.text }))}>
-                      <RotateCcw size={12} /> Undo my changes
-                    </button>
-                  )}
-                  <span className="ml-auto text-slate-400">{text.length}/1500</span>
-                </div>
-              </div>
-            ) : (
-              <button type="button" onClick={() => setEditing(m.id)} className="group mt-2 block w-full text-left" title="Click to edit">
-                <div className="max-h-[220px] overflow-y-auto whitespace-pre-wrap rounded-lg bg-[#F0FDF4] px-3 py-2.5 text-[13px] leading-[19px] text-slate-800 ring-1 ring-[#BBF7D0] group-hover:ring-primary/40">{text}</div>
-              </button>
-            )}
-            {m.file && (
-              <div className="mt-2 flex items-center gap-1.5 text-[12.5px] text-slate-600">
-                <FileText size={14} className="text-slate-400" />
-                {m.attachmentId ? (
-                  <a href={`/api/v1/attachments/${m.attachmentId}`} target="_blank" rel="noreferrer" className="font-semibold text-primary-700 hover:underline">
-                    {m.file}
-                  </a>
-                ) : (
-                  m.file
-                )}
-              </div>
-            )}
-            <div className="mt-2.5 flex flex-wrap items-center gap-2">
-              <button type="button" className={btnClass('g', 'sm')} disabled={!!busy || !text.trim()} onClick={() => act(m, 'send')}>
-                {busy === m.id + 'send' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send
-              </button>
-              {editing !== m.id && (
-                <button type="button" className={btnClass('o', 'sm')} onClick={() => setEditing(m.id)}>
-                  <Pencil size={14} /> Edit
-                </button>
-              )}
-              <button type="button" className={btnClass('o', 'sm', 'ml-auto text-[#B91C1C]')} disabled={!!busy} onClick={() => act(m, 'discard')}>
-                {busy === m.id + 'discard' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} Discard
-              </button>
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
 }
 
 /** Send / discard many at once, with the edits made in the cards. */
@@ -206,7 +93,9 @@ function Bubble({ m, fresh, text, onText, onDone }: { m: OutboxItem; fresh: bool
     <div className="flex flex-col items-end">
       <div className={cx('relative w-full max-w-[94%] rounded-xl rounded-tr-sm bg-[#D9FDD3] px-3 pb-1.5 pt-2 shadow-[0_1px_0.5px_rgba(11,20,26,.13)]', fresh && 'ring-2 ring-[#25D366] ring-offset-1 ring-offset-[#EFEAE2]')}>
         <div className="mb-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12px]">
-          <b className="text-[#027EB5]">To {m.toName ?? 'WhatsApp'}</b>
+          <Link href={`/outbox?to=${m.to}`} className="font-bold text-[#027EB5] hover:underline" title="Open the whole chat with this number">
+            To {m.toName ?? 'WhatsApp'}
+          </Link>
           <span className="text-slate-500">{fmtPhone(m.to)}</span>
           {fresh && <span className="rounded bg-[#25D366] px-1 text-[10px] font-bold uppercase text-white">new</span>}
           {m.urgent && <span className="rounded bg-[#FEE2E2] px-1 text-[10px] font-bold uppercase text-[#B91C1C]">urgent</span>}
@@ -478,6 +367,27 @@ export function WaReviewProvider({ overlay = false }: { overlay?: boolean } = {}
                           v.visit ?? 'Other messages'
                         )}
                       </div>
+                      {(v.visitStatus === 'CANCELLED' || v.visitStatus === 'CLOSED') && (
+                        <div className="mx-auto flex max-w-[94%] items-center gap-2 rounded-lg bg-[#FEF2F2] px-3 py-1.5 text-[12px] text-[#991B1B] ring-1 ring-[#FECACA]">
+                          <span className="font-semibold">{v.visitStatus === 'CANCELLED' ? 'This visit was cancelled' : 'This visit is closed'} — these messages are out of date.</span>
+                          <button
+                            type="button"
+                            disabled={!!busy}
+                            onClick={async () => {
+                              try {
+                                const n = await bulk('discard', g.m, edits)
+                                toast(`${n} discarded — not sent`, 'ok')
+                                done(g.m.map((m) => m.id))
+                              } catch (e: any) {
+                                toast(e.message, 'err')
+                              }
+                            }}
+                            className="ml-auto flex-none rounded-full bg-[#DC2626] px-2.5 py-1 text-[11.5px] font-bold text-white disabled:opacity-50"
+                          >
+                            Discard these {g.m.length}
+                          </button>
+                        </div>
+                      )}
                       {g.m.map((m) => (
                         <Bubble key={m.id} m={m} fresh={fresh.has(m.id)} text={edits[m.id] ?? m.text} onText={(t) => setEdits((x) => (t == null ? Object.fromEntries(Object.entries(x).filter(([k]) => k !== m.id)) : { ...x, [m.id]: t }))} onDone={(id) => done([id])} />
                       ))}

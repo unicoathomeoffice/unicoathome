@@ -1,20 +1,28 @@
 import { MScreen } from '@/components/mobile'
 import { requireDesk } from '@/components/coord/data'
-import { listPending } from '@/lib/wa/outbox'
+import { waNumber } from '@/lib/messaging'
+import { listChats } from '@/lib/wa/history'
 import { linkState } from '@/lib/wa/status'
-import { OutboxPanel } from '@/components/comms/OutboxPanel'
+import { WaInbox } from '@/components/comms/WaInbox'
 
-export const metadata = { title: 'WhatsApp outbox' }
+export const metadata = { title: 'WhatsApp' }
 
-/** WhatsApp waiting for approval — the coordinator checks, edits and sends from the phone. */
-export default async function MobileOutbox() {
+/** WhatsApp on the phone: chats → conversation, approve / edit / send, and the full history. */
+export default async function MobileOutbox({ searchParams }: { searchParams: Promise<{ to?: string }> }) {
   await requireDesk('messages.approve')
-  const [items, link] = await Promise.all([listPending(), linkState()])
+  const sp = await searchParams
+  const [chats, link] = await Promise.all([listChats(), linkState()])
+  const to = sp.to ? waNumber(sp.to) : null
   return (
-    <MScreen title="WhatsApp outbox" sub="Nothing is sent until you send it" back="/m/admin">
-      <div className="px-4 py-4">
-        <OutboxPanel initial={JSON.parse(JSON.stringify(items))} linked={link.state === 'connected'} requestHref={(id) => `/m/admin/requests/${id}`} />
-      </div>
+    <MScreen title="WhatsApp" sub="Nothing is sent until you send it" back="/m/admin" pad={false} bg="bg-white">
+      <WaInbox
+        initialChats={JSON.parse(JSON.stringify(chats))}
+        initialTo={to && to.length >= 8 ? to : null}
+        linked={link.state === 'connected'}
+        requestBase="/m/admin/requests/"
+        profileLinks={false}
+        className="h-[calc(100dvh-64px)]"
+      />
     </MScreen>
   )
 }

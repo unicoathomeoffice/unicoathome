@@ -24,7 +24,7 @@ const NAV: { href: string; label: string; icon: any; countKey?: string; perm?: P
   // the Family Medicine store (stock, sizes & companies, H360 match) — badge: items low or out of stock
   { href: '/store', label: 'Store', icon: Package, countKey: 'store', perm: (p) => p.includes('requests.manage') || p.includes('store.manage') },
   { href: '/messages', label: 'Messages', icon: Mail, perm: (p) => p.includes('requests.readAll') && (p.includes('messages.send') || p.includes('reports.view')) },
-  { href: '/outbox', label: 'WhatsApp outbox', icon: Send, countKey: 'outbox', perm: 'messages.approve' }, // messages waiting for approval
+  { href: '/outbox', label: 'WhatsApp', icon: Send, countKey: 'outbox', perm: 'messages.approve' }, // messages waiting for approval
   { href: '/notifications', label: 'Notifications', icon: Bell, countKey: 'unread' },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
