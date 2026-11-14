@@ -58,6 +58,9 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
   const r = await HomecareRequest.findById(requestId).lean<any>()
   if (!r || !r.transport?.needed || r.status === 'CANCELLED') return { sent: 0 }
   if (r.transport.mode && r.transport.mode !== 'UNICO_CAR') return { sent: 0 } // own transport: no car paperwork
+  // Section A must name the staff who travel: never make or send a requisition before the care team is assigned
+  // (it would name whoever asked for the car instead). Assigning the team sends it.
+  if (!r.assignment?.primaryStaffId) return { sent: 0, skipped: 'no staff assigned yet' }
   await withPeople([r])
   const team = [r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean)
   const [requester, allotter, patient, vehicle] = await Promise.all([
@@ -166,8 +169,9 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
 
 /** Sends the requisition the first time (or "UPDATED"), once the care team is assigned. */
 export async function carRequested(requestId: unknown, userId: string, opts: { updated?: boolean; only?: NotifyOnly } = {}): Promise<boolean> {
-  const r = await HomecareRequest.findById(requestId).select('transport status').lean<any>()
+  const r = await HomecareRequest.findById(requestId).select('transport status assignment.primaryStaffId').lean<any>()
   if (!r?.transport?.needed || r.status === 'CANCELLED') return false
+  if (!r.assignment?.primaryStaffId) return false // goes out when the care team is assigned (Section A names them)
   if (r.transport.mode && r.transport.mode !== 'UNICO_CAR') return false
   if (!r.transport.requestedBy) await HomecareRequest.updateOne({ _id: requestId }, { $set: { 'transport.requestedBy': userId } })
   if (!opts.updated) {

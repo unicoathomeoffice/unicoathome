@@ -316,6 +316,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
           canTimes={canCar || perms.manage}
           visitTime={visitAt ? hhmm(visitAt) : ''}
           pickupAuto={!r.transport?.pickupAt}
+          hasTeam={!!r.assignment?.primaryStaffId}
           recentPickups={[...new Set(recentPickupDocs.map((d: any) => hhmm(new Date(d.transport.pickupAt))))].slice(0, 6)}
           transport={{
             needed: !!r.transport?.needed,

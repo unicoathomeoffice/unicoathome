@@ -33,6 +33,8 @@ type Props = {
   visitTime?: string
   pickupAuto?: boolean
   recentPickups?: string[]
+  /** a care team is assigned (the requisition names them — nothing is re-sent before that) */
+  hasTeam?: boolean
   transport: { needed: boolean; mode?: string | null; vehicleId?: string | null; driverId?: string | null; pickup: string; ret: string }
   cars: CarLite[]
   drivers: DriverLite[]
@@ -125,12 +127,12 @@ export function OverridePanel(p: Props) {
 }
 
 /** Pick-up / return time by hand, with quick picks, and re-send the requisition / trip update (WhatsApp waits for approval). */
-function TransportTimes({ requestId, requestNo, transport, visitTime, pickupAuto, recentPickups, onClose }: Props & { onClose: () => void }) {
+function TransportTimes({ requestId, requestNo, transport, visitTime, pickupAuto, recentPickups, hasTeam, onClose }: Props & { onClose: () => void }) {
   const router = useRouter()
   const toast = useToast()
   const [pickup, setPickup] = useState(transport.pickup)
   const [ret, setRet] = useState(transport.ret)
-  const [resend, setResend] = useState(true)
+  const [resend, setResend] = useState(!!hasTeam)
   const [notify, setNotify] = useState<string[] | null>(null)
   const [busy, setBusy] = useState(false)
   const allotted = !!transport.vehicleId
@@ -140,7 +142,7 @@ function TransportTimes({ requestId, requestNo, transport, visitTime, pickupAuto
     setBusy(true)
     try {
       await api(`/requests/${requestId}/transport-times`, { body: { pickupTime: pickup, returnTime: ret || undefined, resend, notify: notify ?? undefined } })
-      toast(resend ? `Pick-up ${ampm(pickup)} saved — the updated ${allotted ? 'trip' : 'requisition'} is waiting in WhatsApp for approval` : `Pick-up ${ampm(pickup)} saved`, 'ok')
+      toast(resend && hasTeam ? `Pick-up ${ampm(pickup)} saved — the updated ${allotted ? 'trip' : 'requisition'} is waiting in WhatsApp for approval` : `Pick-up ${ampm(pickup)} saved`, 'ok')
       router.refresh()
       onClose()
     } catch (e: any) {
@@ -179,6 +181,11 @@ function TransportTimes({ requestId, requestNo, transport, visitTime, pickupAuto
           </label>
         </div>
         <PickupQuickPicks visitTime={visitTime} recent={recentPickups} value={pickup} onChange={setPickup} />
+        {!hasTeam ? (
+          <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-[12.5px] text-slate-600">
+            No staff assigned yet — nothing is sent now. The vehicle requisition goes to the security supervisor <b>when you assign the team</b>, with their names and this pick-up time.
+          </div>
+        ) : (
         <label className="flex cursor-pointer items-start gap-2.5 rounded-lg bg-slate-50 px-3 py-2.5">
           <input type="checkbox" className="mt-0.5 size-4 accent-[#0090CA]" checked={resend} onChange={(e) => setResend(e.target.checked)} />
           <span className="text-[13px]">
@@ -186,7 +193,8 @@ function TransportTimes({ requestId, requestNo, transport, visitTime, pickupAuto
             <span className="block text-[12px] text-slate-500">{allotted ? 'The updated requisition + gate pass and a "trip time changed" message.' : 'The updated vehicle requisition to the security supervisor.'} It waits in WhatsApp for your approval.</span>
           </span>
         </label>
-        {resend && allotted && <NotifyPicker params={{ events: ['CAR_ALLOTTED'], requestId, vehicleId: transport.vehicleId ?? undefined, driverId: transport.driverId ?? undefined }} value={notify} onChange={setNotify} />}
+        )}
+        {resend && hasTeam && allotted && <NotifyPicker params={{ events: ['CAR_ALLOTTED'], requestId, vehicleId: transport.vehicleId ?? undefined, driverId: transport.driverId ?? undefined }} value={notify} onChange={setNotify} />}
       </div>
     </Drawer>
   )

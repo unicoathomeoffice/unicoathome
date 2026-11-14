@@ -1271,7 +1271,10 @@ export async function setTransportTimes(r: any, input: z.infer<typeof TransportT
   r.version = (r.version ?? 0) + 1
   await r.save()
   await audit(user, 'transport.times', 'request', r._id, { before, after: { pickupAt: r.transport.pickupAt ?? null, returnAt: r.transport.returnAt ?? null, resend: !!input.resend }, label: r.requestNo }, meta)
-  if (input.resend) {
+  // the requisition names the travelling staff: before they're assigned there's nothing to re-send — the new time
+  // goes into the requisition that assigning the team sends
+  const hasTeam = !!r.assignment?.primaryStaffId
+  if (input.resend && hasTeam) {
     const only = notifySet(input.notify)
     const allotted = !!r.transport?.vehicleId && r.transport?.status !== 'OWN'
     background(async () => {
@@ -1282,7 +1285,7 @@ export async function setTransportTimes(r: any, input: z.infer<typeof TransportT
       } else await carRequestedLazy(r._id, user.id, { updated: true, only })
     })
   }
-  return { pickupAt: r.transport.pickupAt ?? null, returnAt: r.transport.returnAt ?? null }
+  return { pickupAt: r.transport.pickupAt ?? null, returnAt: r.transport.returnAt ?? null, resent: !!input.resend && hasTeam }
 }
 
 export const TransportInput = z.object({
