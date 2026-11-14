@@ -14,7 +14,7 @@ export default async function MobileLayout({ children }: { children: React.React
   const review = can(user, 'messages.approve') && (await getSettings()).whatsapp.approval !== 'OFF'
   return (
     <div className="min-h-dvh bg-slate-200/60">
-      {review && <WaReviewProvider />}
+      {review && <WaReviewProvider overlay />}
       <div className="mx-auto min-h-dvh w-full max-w-[480px] bg-slate-100 shadow-[0_0_0_1px_rgba(15,23,42,.06)]">
         <Suspense fallback={null}>
           <ActiveTrip />

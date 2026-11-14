@@ -1,11 +1,11 @@
 import Link from 'next/link'
 import { Suspense, type ReactNode } from 'react'
-import { Bell, Plus, Search, Send } from 'lucide-react'
+import { Bell, Plus, Search } from 'lucide-react'
 import { getUser } from '@/lib/auth'
 import { unreadCount } from '@/lib/unread'
 import { can } from '@/lib/constants'
 import { UnreadBadge } from '@/components/client'
-import { OutboxBadge } from '@/components/client/WaReview'
+import { WaDockButton } from '@/components/client/WaReview'
 import { btnClass } from '@/components/ui'
 import { cx } from '@/lib/format'
 
@@ -51,10 +51,7 @@ export async function AdminPage({
           </Link>
         )}
         {can(user, 'messages.approve') && (
-          <Link href="/outbox" className="relative flex size-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700" aria-label="WhatsApp outbox" title="WhatsApp waiting for approval">
-            <Send size={17} />
-            <OutboxBadge className="absolute -right-1.5 -top-1.5" />
-          </Link>
+          <WaDockButton />
         )}
         <Link href="/notifications" className="relative flex size-10 items-center justify-center rounded-lg border border-slate-200 text-slate-700" aria-label="Notifications">
           <Bell size={18} />

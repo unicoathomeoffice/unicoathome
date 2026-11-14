@@ -21,9 +21,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const review = can(user, 'messages.approve') && (await getSettings()).whatsapp.approval !== 'OFF'
   return (
     <div className="flex h-dvh overflow-hidden bg-page">
-      {review && <WaReviewProvider />}
       <Sidebar user={{ name: user.name, initials: user.initials, photoUrl: user.photoUrl, perms: permissionsFor(user), roleLabel: user.designation ?? ROLE_LABEL[user.role] }} counts={counts} />
       {children}
+      {/* the WhatsApp dock: a right sidebar on wide screens */}
+      {review && <WaReviewProvider />}
     </div>
   )
 }
