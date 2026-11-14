@@ -12,6 +12,7 @@ export const PLACEHOLDERS = [
   'patientName',
   'uhid', // the patient's hospital UHID — a line with an empty {uhid} is left out
   'uhidTag', // " · UHID 1234567" after a name, or nothing
+  'tests', // the tests on the request (H360 picks + typed) — a line with empty {tests} is left out
   'requestNo',
   'serviceType',
   'date',
@@ -80,7 +81,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP', 'EMAIL'],
     audience: 'Patient',
     subject: 'Your home care visit is confirmed · {requestNo}',
-    body: 'Respected Sir/Madam, your home care request is confirmed.\nService: {serviceType}\nTime: {date}, {slot}\nOur team will arrive at the scheduled time. Need help? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',
+    body: 'Respected Sir/Madam, your home care request is confirmed.\nService: {serviceType}\nTests: {tests}\nTime: {date}, {slot}\nOur team will arrive at the scheduled time. Need help? Call {hospitalPhone}.\n— Unico Hospitals, Family Medicine',
   },
   {
     key: 'patient_assigned',
@@ -96,7 +97,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP', 'PUSH', 'EMAIL'],
     audience: 'Staff',
     subject: 'New home care assignment · {requestNo}',
-    body: 'New home care assignment\nPatient: {patientName} ({age}/{gender})\nUHID: {uhid}\nService: {serviceType}\nAddress: {address}\nTime: {date}, {slot}\nPhone: {patientPhone}\nNotes: {notes}\nPlease Accept in the app.',
+    body: 'New home care assignment\nPatient: {patientName} ({age}/{gender})\nUHID: {uhid}\nService: {serviceType}\nTests: {tests}\nAddress: {address}\nTime: {date}, {slot}\nPhone: {patientPhone}\nNotes: {notes}\nPlease Accept in the app.',
   },
   {
     key: 'staff_rescheduled',
@@ -160,7 +161,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['EMAIL'],
     audience: 'Department',
     subject: 'Visit report {requestNo} · {patientName} · {serviceType}',
-    body: 'Visit report {requestNo}\nPatient: {patientName}\nUHID: {uhid}\nService: {serviceType}\nStaff: {staffName}\nCheck-in {checkInAt} · Check-out {checkOutAt} · Duration {durationMin} min\nChecklist {doneCount}/{totalCount}\nNotes: {notes}',
+    body: 'Visit report {requestNo}\nPatient: {patientName}\nUHID: {uhid}\nService: {serviceType}\nTests: {tests}\nStaff: {staffName}\nCheck-in {checkInAt} · Check-out {checkOutAt} · Duration {durationMin} min\nChecklist {doneCount}/{totalCount}\nNotes: {notes}',
   },
   {
     key: 'admin_escalation',
@@ -184,7 +185,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: 'New home care request · {requestNo}',
-    body: 'Respected Sir/Madam, a new home care request needs assignment.\nPriority: {priority}\nService: {serviceType}\nPatient: {patientName} ({age}/{gender}) · {patientPhone}\nUHID: {uhid}\nAddress: {address}\nPreferred: {date}, {slot}\nOpen: {requestLink}\n— Unico HomeCare',
+    body: 'Respected Sir/Madam, a new home care request needs assignment.\nPriority: {priority}\nService: {serviceType}\nTests: {tests}\nPatient: {patientName} ({age}/{gender}) · {patientPhone}\nUHID: {uhid}\nAddress: {address}\nPreferred: {date}, {slot}\nOpen: {requestLink}\n— Unico HomeCare',
   },
   {
     key: 'car_requested',
@@ -192,7 +193,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: 'Unico car requested · {requestNo}',
-    body: 'Unico car requested · {patientName}{uhidTag}\nVisit: {date}, {slot}\nTo: {address}\nService: {serviceType}\nOpen: {requestLink}\n— Unico HomeCare',
+    body: 'Unico car requested · {patientName}{uhidTag}\nVisit: {date}, {slot}\nTo: {address}\nService: {serviceType}\nTests: {tests}\nOpen: {requestLink}\n— Unico HomeCare',
   },
   {
     key: 'car_allotted',
@@ -256,7 +257,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP'],
     audience: 'Department',
     subject: '{requestNo} · live update',
-    body: '{update}\nPatient: {patientName}{uhidTag} · {area}\nService: {serviceType}\nTeam: {team}\nOpen: {requestLink}\n— Unico HomeCare',
+    body: '{update}\nPatient: {patientName}{uhidTag} · {area}\nService: {serviceType}\nTests: {tests}\nTeam: {team}\nOpen: {requestLink}\n— Unico HomeCare',
   },
   {
     key: 'visit_update',
@@ -309,11 +310,12 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
 ]
 
 const empty = (v: unknown) => v == null || v === ''
-/** Fill {placeholders}. Optional ones: a line with an empty {uhid} is left out; an empty {uhidTag} is just nothing. */
+/** Fill {placeholders}. Optional ones: a line with an empty {uhid} / {tests} is left out; an empty {uhidTag} is nothing. */
+const LINE_OPTIONAL = ['uhid', 'tests']
 export function renderText(tpl: string, vars: Record<string, unknown>) {
   return tpl
     .split('\n')
-    .filter((line) => !(line.includes('{uhid}') && empty(vars.uhid)))
+    .filter((line) => !LINE_OPTIONAL.some((k) => line.includes(`{${k}}`) && empty(vars[k])))
     .join('\n')
     .replace(/\{(\w+)\}/g, (m, k) => (empty(vars[k]) ? (k === 'notes' ? '—' : k === 'uhidTag' ? '' : m) : String(vars[k])))
 }

@@ -119,6 +119,8 @@ export async function templateVars(r: any, staffId?: unknown) {
     patientName: r.patientSnapshot?.name,
     uhid,
     uhidTag: uhid ? ` · UHID ${uhid}` : '',
+    // the tests (H360 picks and typed ones), e.g. "CBC, S. Creatinine"
+    tests: [...new Set([...(r.testItems ?? []).map((t: any) => t?.name), ...(r.tests ?? [])].map((x) => String(x ?? '').trim()).filter(Boolean))].join(', '),
     requestNo: r.requestNo,
     serviceType: (r.services ?? []).map((x: any) => x.name).join(', '),
     date: r.scheduledAt ? fmtDate(r.scheduledAt) : r.preferred?.date ?? '',

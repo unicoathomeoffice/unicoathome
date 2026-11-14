@@ -30,6 +30,8 @@ export async function buildVisitUpdate(requestId: unknown, opts: { forPatient?: 
     lines.push(`Respected Sir/Madam, here is a summary of today's home visit.`)
   } else {
     lines.push(`${['COMPLETED', 'CLOSED'].includes(r.status) ? '✅' : 'ℹ️'} ${services}`)
+    const tests = [...new Set([...(r.testItems ?? []).map((t: any) => t?.name), ...(r.tests ?? [])].map((x) => String(x ?? '').trim()).filter(Boolean))]
+    if (tests.length) lines.push(`Tests: ${tests.join(', ')}`)
     lines.push(`Patient: ${r.patientSnapshot?.name}${r.patientSnapshot?.uhid ? ` · UHID ${r.patientSnapshot.uhid}` : ''}${r.patientSnapshot?.ageYears != null ? ` (${ageGender(r.patientSnapshot.ageYears, r.patientSnapshot.gender)})` : ''}${r.patientSnapshot?.area ? ` · ${r.patientSnapshot.area}` : ''}`)
   }
   const team = [r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean)
