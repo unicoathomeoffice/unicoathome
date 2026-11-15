@@ -235,7 +235,9 @@ async function staffWa(r: any, staffIds: unknown[], templateKey: string, user: S
   for (const u of people) {
     const phone = u.whatsapp || u.phone
     if (!waNumber(phone) || !only.has(waNumber(phone))) continue
-    const { text } = await renderTemplate(templateKey, { ...(await templateVars(r, u._id)), ...extra })
+    // assignment: each person gets their own no-login bag & checklist link
+    const visitLink = templateKey === 'staff_assigned' ? await (await import('./staff-links')).staffLinkFor(r, u._id, user.id).catch(() => '') : ''
+    const { text } = await renderTemplate(templateKey, { ...(await templateVars(r, u._id)), ...(visitLink ? { visitLink } : {}), ...extra })
     await queueWhatsApp({ to: phone, toName: `${u.name} (care team)`, text, templateKey, requestId: r._id, initiatedBy: user.id })
   }
 }
@@ -597,6 +599,9 @@ export const AssignInput = z.object({
   fee: z.coerce.number().nonnegative().optional(),
   /** override: put the team on the visit as already accepted — no waiting for the staff to tap Accept */
   acceptNow: z.boolean().optional(),
+  /** Unico car: pick-up / return time (HH:mm, visit day) — required when a car is needed and no admin set them yet */
+  pickupTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  returnTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   notify: NotifyField,
 })
 
@@ -619,6 +624,11 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   if (input.slot) r.slot = input.slot
   if (input.expectedDurationMin) r.expectedDurationMin = input.expectedDurationMin
   if (input.fee != null) r.set('billing.estimatedFee', input.fee)
+  // Unico car: the requisition goes out with this assignment and needs times an admin chose (never automatic)
+  if (r.transport?.needed && (!r.transport.mode || r.transport.mode === 'UNICO_CAR')) {
+    if (input.pickupTime && input.returnTime) applyCarTimes(r, input.pickupTime, input.returnTime, user)
+    else if (!r.transport?.timesSetAt) throw bad("Set the car's pick-up and return time — the vehicle requisition needs them", { pickupTime: 'Required' })
+  }
   r.set('assignment.primaryStaffId', input.primaryStaffId)
   r.set('assignment.secondaryStaffIds', input.secondaryStaffIds)
   r.set('assignment.supportStaffIds', support)
@@ -638,6 +648,7 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   }
   await r.save()
   await AssignmentLog.create({ requestId: r._id, fromStaffId: prevPrimary ?? undefined, toStaffId: input.primaryStaffId, action: isReassign ? 'REASSIGN' : 'ASSIGN', by: user.id, reason: input.instructions })
+  await (await import('./staff-links')).revokeLeavers(r._id, [input.primaryStaffId, ...input.secondaryStaffIds]).catch(() => {})
   if (forced) {
     await AssignmentLog.create({ requestId: r._id, toStaffId: input.primaryStaffId, action: 'ACCEPT_BY_OVERRIDE', by: user.id, reason: 'Assigned and accepted by coordinator' })
     await audit(user, 'request.accept_override', 'request', r._id, { after: { status: 'ACCEPTED', for: staff.find((x) => String(x._id) === input.primaryStaffId)?.name }, label: r.requestNo }, meta)
@@ -703,6 +714,7 @@ export async function cancel(r: any, input: z.infer<typeof CancelInput>, user: S
   r.cancellation = { reason: input.reason, by: user.id, at: new Date() }
   stopTracking(r)
   await r.save()
+  await (await import('./staff-links')).revokeStaffLinks(r._id).catch(() => {}) // staff links stop working
   await (await import('./stock')).syncVisitStockQuietly(r._id, user, { giveBack: true }, meta) // consumables go back to the store
   const only = notifySet(input.notify)
   await audit(user, 'request.cancel', 'request', r._id, { before: { status: from }, after: { status: 'CANCELLED', reason: input.reason, ...(only && { whatsappTo: [...only] }) }, label: r.requestNo }, meta)
@@ -732,6 +744,7 @@ export async function close(r: any, input: z.infer<typeof CloseInput>, user: Ses
   const open = after.openRequiredAfter(r)
   if (open.length) throw new ApiError(409, 'AFTER_RETURN_OPEN', `Finish the after-return items first: ${open.map((c: any) => c.label).join(', ')}`)
   move(r, 'CLOSED', 'closedAt')
+  await (await import('./staff-links')).revokeStaffLinks(r._id).catch(() => {}) // closed: staff links stop working
   r.set('billing.invoiceNo', input.invoiceNo)
   r.set('billing.invoiceAmount', input.invoiceAmount)
   r.set('billing.invoicePrinted', input.invoicePrinted)
@@ -1187,8 +1200,9 @@ export async function revertStep(r: any, input: z.infer<typeof RevertInput>, use
   }
   switch (from) {
     case 'ASSIGNED':
-      // assignment withdrawn: the team comes off the visit
+      // assignment withdrawn: the team comes off the visit (and their staff links stop working)
       cleared.team = team.map(String)
+      await (await import('./staff-links')).revokeStaffLinks(r._id).catch(() => {})
       r.set('assignment.primaryStaffId', undefined)
       r.set('assignment.secondaryStaffIds', [])
       r.set('assignment.supportStaffIds', [])
@@ -1251,11 +1265,25 @@ export const TransportTimesInput = z.object({
   notify: NotifyField,
 })
 
+/** Car times chosen by an admin (assign drawer): on the visit day; pick-up before the visit, return after it. */
+function applyCarTimes(r: any, pickupTime: string, returnTime: string, user: SessionUser) {
+  const day = isoDay(r.scheduledAt ?? new Date())
+  const pickup = dhakaDate(day, pickupTime)
+  const ret = dhakaDate(day, returnTime)
+  if (r.scheduledAt && pickup.getTime() > new Date(r.scheduledAt).getTime()) throw bad('Pick-up must be before the visit time', { pickupTime: 'After the visit' })
+  if (ret.getTime() <= pickup.getTime()) throw bad('Return must be after pick-up', { returnTime: 'Before pick-up' })
+  r.set('transport.pickupAt', pickup)
+  r.set('transport.returnAt', ret)
+  r.set('transport.timesSetBy', user.id)
+  r.set('transport.timesSetAt', new Date())
+}
+
 /** Set the car's pick-up / return time by hand (instead of "40 min before"), and optionally re-send the paperwork. */
 export async function setTransportTimes(r: any, input: z.infer<typeof TransportTimesInput>, user: SessionUser, meta: Meta) {
   if (!can(user, 'transport.manage') && !can(user, 'requests.manage') && !can(user, 'requests.override')) throw forbidden()
   if (!r.transport?.needed) throw bad('This visit has no car requested')
   if (!input.pickupTime && !input.returnTime) throw bad('Enter a pick-up or return time')
+  if (!r.transport?.timesSetAt && !(input.pickupTime && input.returnTime)) throw bad('Enter both the pick-up and the return time')
   const day = isoDay(r.scheduledAt ?? new Date())
   const before = { pickupAt: r.transport?.pickupAt ?? null, returnAt: r.transport?.returnAt ?? null }
   const pickup = input.pickupTime ? dhakaDate(day, input.pickupTime) : null
@@ -1263,6 +1291,8 @@ export async function setTransportTimes(r: any, input: z.infer<typeof TransportT
   if (pickup && r.scheduledAt && pickup.getTime() > new Date(r.scheduledAt).getTime()) throw bad('Pick-up must be before the visit time', { pickupTime: 'After the visit' })
   if (pickup) r.set('transport.pickupAt', pickup)
   if (ret) r.set('transport.returnAt', ret)
+  r.set('transport.timesSetBy', user.id)
+  r.set('transport.timesSetAt', new Date())
   for (const leg of r.transport?.legs ?? []) {
     if (leg.key === 'pickup' && pickup) leg.plannedAt = pickup
     if (leg.key === 'return' && ret) leg.plannedAt = ret
@@ -1315,10 +1345,16 @@ export async function assignTransport(r: any, input: z.infer<typeof TransportInp
     r.set('transport.vehicleId', v._id)
     r.set('transport.driverId', driverId)
     r.set('transport.status', 'ASSIGNED')
-    const pickup = input.pickupTime ? dhakaDate(day, input.pickupTime) : r.scheduledAt ? new Date(r.scheduledAt.getTime() - 40 * 60_000) : undefined
-    const ret = input.returnTime ? dhakaDate(day, input.returnTime) : r.scheduledAt ? new Date(r.scheduledAt.getTime() + ((r.expectedDurationMin ?? 45) + 60) * 60_000) : undefined
+    // times chosen by a person (here, or earlier by the admin) — never "40 min before"
+    const pickup = input.pickupTime ? dhakaDate(day, input.pickupTime) : r.transport?.timesSetAt ? r.transport.pickupAt : undefined
+    const ret = input.returnTime ? dhakaDate(day, input.returnTime) : r.transport?.timesSetAt ? r.transport.returnAt : undefined
+    if (!pickup || !ret) throw bad('Set the pick-up and return time', { pickupTime: 'Required' })
     r.set('transport.pickupAt', pickup)
     r.set('transport.returnAt', ret)
+    if (input.pickupTime || input.returnTime) {
+      r.set('transport.timesSetBy', user.id)
+      r.set('transport.timesSetAt', new Date())
+    }
     r.set('transport.legs', [
       { key: 'pickup', label: 'Pick up team at hospital', plannedAt: pickup },
       { key: 'drive', label: `Drive to patient · ${r.patientSnapshot.area ?? ''}`, plannedAt: r.scheduledAt },

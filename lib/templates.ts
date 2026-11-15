@@ -13,6 +13,7 @@ export const PLACEHOLDERS = [
   'uhid', // the patient's hospital UHID — a line with an empty {uhid} is left out
   'uhidTag', // " · UHID 1234567" after a name, or nothing
   'tests', // the tests on the request (H360 picks + typed) — a line with empty {tests} is left out
+  'visitLink', // staff: their no-login bag & checklist link (lib/services/staff-links.ts) — line left out when empty
   'requestNo',
   'serviceType',
   'date',
@@ -97,7 +98,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     channel: ['WHATSAPP', 'PUSH', 'EMAIL'],
     audience: 'Staff',
     subject: 'New home care assignment · {requestNo}',
-    body: 'New home care assignment\nPatient: {patientName} ({age}/{gender})\nUHID: {uhid}\nService: {serviceType}\nTests: {tests}\nAddress: {address}\nTime: {date}, {slot}\nPhone: {patientPhone}\nNotes: {notes}\nPlease Accept in the app.',
+    body: 'New home care assignment\nPatient: {patientName} ({age}/{gender})\nUHID: {uhid}\nService: {serviceType}\nTests: {tests}\nAddress: {address}\nTime: {date}, {slot}\nPhone: {patientPhone}\nNotes: {notes}\nYour bag & checklist: {visitLink}\nPlease Accept in the app.',
   },
   {
     key: 'staff_rescheduled',
@@ -311,7 +312,7 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
 
 const empty = (v: unknown) => v == null || v === ''
 /** Fill {placeholders}. Optional ones: a line with an empty {uhid} / {tests} is left out; an empty {uhidTag} is nothing. */
-const LINE_OPTIONAL = ['uhid', 'tests']
+const LINE_OPTIONAL = ['uhid', 'tests', 'visitLink']
 export function renderText(tpl: string, vars: Record<string, unknown>) {
   return tpl
     .split('\n')

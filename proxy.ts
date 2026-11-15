@@ -24,6 +24,7 @@ export function proxy(req: NextRequest) {
 
 export const config = {
   // `.*\..*` = any path with a file extension (hero.jpg, icons, fonts…): static files are never gated
+  // v/ = no-login staff visit links (bag & checklist; the token + employee ID are the key)
   // s/ = short links, opengraph-image = the link-preview card (both must open without a session)
-  matcher: ['/((?!api|_next|login|m/login|m/forgot|feedback|privacy|terms|join|t/|s/|opengraph-image|my/login|my/register|my/complete|icons|.*\\..*).*)'],
+  matcher: ['/((?!api|_next|login|m/login|m/forgot|feedback|privacy|terms|join|t/|s/|v/|opengraph-image|my/login|my/register|my/complete|icons|.*\\..*).*)'],
 }

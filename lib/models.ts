@@ -476,6 +476,9 @@ const RequestSchema = new Schema<any>(
       driverId: { type: ObjectId, ref: 'User' },
       pickupAt: Date,
       returnAt: Date,
+      // the admin set the pick-up / return time (no automatic times): the requisition waits for this
+      timesSetBy: { type: ObjectId, ref: 'User' },
+      timesSetAt: Date,
       assignedBy: { type: ObjectId, ref: 'User' },
       assignedAt: Date,
       requestedBy: { type: ObjectId, ref: 'User' }, // who asked for the Unico car (requisition "Requester")
@@ -1051,6 +1054,32 @@ ApiUsageSchema.index({ day: 1, provider: 1, kind: 1 }, { unique: true })
 export const ApiUsage = model('ApiUsage', ApiUsageSchema, 'api_usage')
 
 // WhatsApp (Baileys) session + lease + meta, see lib/wa (strict off: creds/keys/lock rows have different shapes)
+/**
+ * No-login link for an assigned staff member (lib/services/staff-links.ts): the visit's bag + checklist. Only a hash of
+ * the token is used to find it; the token itself is kept encrypted (JWT_SECRET) so the request page can show it again.
+ * A phone is let in after the staff member types their employee ID once (deviceHashes); wrong IDs lock it for a while.
+ */
+const StaffLinkSchema = new Schema<any>(
+  {
+    tokenHash: { type: String, required: true, unique: true },
+    tokenEnc: { type: String, required: true },
+    requestId: { type: ObjectId, ref: 'HomecareRequest', required: true, index: true },
+    userId: { type: ObjectId, ref: 'User', required: true },
+    purpose: { type: String, default: 'VISIT' },
+    expiresAt: { type: Date, required: true },
+    revokedAt: Date,
+    deviceHashes: [String],
+    failCount: { type: Number, default: 0 },
+    lockedUntil: Date,
+    uses: { type: Number, default: 0 },
+    lastUsedAt: Date,
+    createdBy: { type: ObjectId, ref: 'User' },
+  },
+  { timestamps: true },
+)
+StaffLinkSchema.index({ requestId: 1, userId: 1, revokedAt: 1 })
+export const StaffLink = model('StaffLink', StaffLinkSchema, 'staff_links')
+
 const WaAuthSchema = new Schema<any>({ _id: String, value: String, owner: String, until: Date }, { strict: false, timestamps: true })
 export const WaAuth = model('WaAuth', WaAuthSchema, 'wa_auth')
 

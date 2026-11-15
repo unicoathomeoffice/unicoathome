@@ -186,6 +186,18 @@ export default async function RequestDetailPage({ params, searchParams }: { para
       slots: settings.general.slots,
       canOverride: can(user, 'requests.override'),
       canActForExternal: perms.assign,
+      // Unico car: the admin sets the pick-up / return time here before the requisition goes (unless already set)
+      car: (() => {
+        const hm = (d?: Date | string | null) => (d ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(d)) : '')
+        return {
+          needed: !!r.transport?.needed && (!r.transport.mode || r.transport.mode === 'UNICO_CAR'),
+          set: !!r.transport?.timesSetAt,
+          pickup: r.transport?.timesSetAt ? hm(r.transport.pickupAt) : '',
+          ret: r.transport?.timesSetAt ? hm(r.transport.returnAt) : '',
+          visitTime: r.scheduledAt ? hm(r.scheduledAt) : undefined,
+          recent: [...new Set(recentPickupDocs.map((d: any) => hm(d.transport.pickupAt)))].slice(0, 6),
+        }
+      })(),
     }
   }
 
@@ -315,7 +327,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
           canCar={canCar}
           canTimes={canCar || perms.manage}
           visitTime={visitAt ? hhmm(visitAt) : ''}
-          pickupAuto={!r.transport?.pickupAt}
+          pickupAuto={!r.transport?.timesSetAt}
           hasTeam={!!r.assignment?.primaryStaffId}
           recentPickups={[...new Set(recentPickupDocs.map((d: any) => hhmm(new Date(d.transport.pickupAt))))].slice(0, 6)}
           transport={{
@@ -323,8 +335,9 @@ export default async function RequestDetailPage({ params, searchParams }: { para
             mode: r.transport?.mode ?? null,
             vehicleId: r.transport?.vehicleId ? String(r.transport.vehicleId) : null,
             driverId: r.transport?.driverId ? String(r.transport.driverId) : null,
-            pickup: hhmm(r.transport?.pickupAt ? new Date(r.transport.pickupAt) : visitAt ? new Date(visitAt.getTime() - 40 * 60_000) : null),
-            ret: hhmm(r.transport?.returnAt ? new Date(r.transport.returnAt) : visitAt ? new Date(visitAt.getTime() + ((r.expectedDurationMin ?? 45) + 60) * 60_000) : null),
+            // only times an admin chose — nothing automatic
+            pickup: r.transport?.timesSetAt && r.transport.pickupAt ? hhmm(new Date(r.transport.pickupAt)) : '',
+            ret: r.transport?.timesSetAt && r.transport.returnAt ? hhmm(new Date(r.transport.returnAt)) : '',
           }}
           cars={carList.map((c: any) => ({ id: String(c._id), name: c.name, plate: c.plate, driverId: c.driverId ? String(c.driverId) : undefined, status: c.status }))}
           drivers={driverList.map((d: any) => ({ id: String(d._id), name: d.name, phone: d.phone }))}

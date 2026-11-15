@@ -10,6 +10,7 @@ import { directionsUrl } from '@/lib/maps'
 import { Field, MetricsTable, Panel, Stepper, SubTitle, VitalTiles } from './ui'
 import { bytes, GENDER, lifecycleSteps, timingMetrics, vitalRows, who, whoInitials, type People, type Sla, whoPhoto } from './lib'
 import { PatientCategoryTags } from '@/components/people/PatientInfoCard'
+import { StaffLinks } from './StaffLinks'
 import { Expander, EmailPreview, ResendButton, AttachmentUploader, DeleteAttachment } from './widgets'
 import { PettyTag } from './actions'
 import { ComposeButton } from '@/components/comms/Compose'
@@ -196,6 +197,9 @@ export function OverviewTab({
                 <Field k="Secondary">{r.secondaryStaff?.length ? r.secondaryStaff.map((s: any) => (s.supporting ? `${s.name} (supporting)` : s.name)).join(', ') : '—'}</Field>
                 <Field k="Notify">Push ✓{staffWhatsAppAt ? ` · WhatsApp ✓ ${time(staffWhatsAppAt)}` : ' · WhatsApp —'}</Field>
               </div>
+              {!['CANCELLED', 'CLOSED', 'COMPLETED'].includes(r.status) && (
+                <StaffLinks requestId={String(r._id)} team={[primary, ...(r.secondaryStaff ?? [])].filter((x: any) => x?.id).map((x: any) => ({ id: String(x.id), name: x.name }))} />
+              )}
             </>
           ) : (
             <div className="rounded-[10px] border border-dashed border-slate-300 px-4 py-6 text-center">

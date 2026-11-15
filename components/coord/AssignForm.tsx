@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { Check, Loader2, ChevronDown, HeartHandshake, X } from 'lucide-react'
 import { api, useAction, useToast, Toggle } from '@/components/client'
 import { NotifyPicker } from '@/components/client/NotifyPicker'
+import { PickupQuickPicks } from '@/components/client/PickupQuickPicks'
 import { HisStaffSearch, type AddedStaff } from '@/components/assign/HisStaffSearch'
 import { cx } from '@/lib/format'
 import { FLabel, SLabel, FixedBottom, bbtn, scoreColor } from './ui'
@@ -141,7 +142,11 @@ export function MobileTeamPicker({ candidates: ranked, need = {}, picked, setPic
 type Support = { id: string; name: string; designation?: string; employeeId: string }
 
 /** S3 / M18 — team number, ranked candidates grouped by role, primary + others, instructions, "Notify on WhatsApp". */
-export function AssignForm({ id, requestNo, candidates, need, initialTeam, initialSize, instructions: initialInstr, transport, canOverride = false, canActForExternal = false, initialSupport = [] }: { id: string; requestNo: string; candidates: Cand[]; need: Record<string, number>; initialTeam: string[]; initialSize: number; instructions?: string; transport: boolean; canOverride?: boolean; canActForExternal?: boolean; initialSupport?: Support[] }) {
+export function AssignForm({ id, requestNo, candidates, need, initialTeam, initialSize, instructions: initialInstr, transport, canOverride = false, canActForExternal = false, initialSupport = [], car }: { id: string; requestNo: string; candidates: Cand[]; need: Record<string, number>; initialTeam: string[]; initialSize: number; instructions?: string; transport: boolean; canOverride?: boolean; canActForExternal?: boolean; initialSupport?: Support[]; car?: { set: boolean; pickup: string; ret: string; visitTime?: string; recent?: string[] } }) {
+  const CAR = car
+  const needTimes = transport && !!car && !car.set
+  const [pickup, setPickup] = useState(car?.pickup ?? '')
+  const [ret, setRet] = useState(car?.ret ?? '')
   const [acceptNow, setAcceptNow] = useState(true)
   const toast = useToast()
   // supporting staff from the HIS: help on the visit, see it in the app — apart from the care-team picks
@@ -203,17 +208,34 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
           <Toggle on={acceptNow} onChange={setAcceptNow} label="Accept on their behalf" />
         </div>
       )}
+        {needTimes && (
+          <div className="rounded-lg bg-[#FFFBEB] p-3 ring-1 ring-[#FDE68A]">
+            <div className="mb-2 text-[13px] font-semibold text-[#92400E]">Unico car · set the times for the requisition *</div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <label>
+                <span className="hc-label">Pick-up at hospital</span>
+                <input type="time" className="hc-input hc-input-lg bg-white" value={pickup} onChange={(e) => setPickup(e.target.value)} />
+              </label>
+              <label>
+                <span className="hc-label">Back at hospital</span>
+                <input type="time" className="hc-input hc-input-lg bg-white" value={ret} onChange={(e) => setRet(e.target.value)} />
+              </label>
+            </div>
+            <PickupQuickPicks visitTime={CAR?.visitTime} recent={CAR?.recent} value={pickup} onChange={setPickup} />
+            <div className="mt-1.5 text-[11.5px] text-[#92400E]/80">The vehicle requisition goes to the security supervisor with the team names and these times.</div>
+          </div>
+        )}
       <NotifyPicker params={picked.length ? { events: ['ASSIGNED'], requestId: id, staffIds: [...picked, ...support.map((s) => s.id)] } : null} value={notify} onChange={setNotify} preview={{ templateKey: 'patient_assigned' }} />
       <div className="text-center text-[12px] text-slate-400">Score = skill 40 · availability 30 · zone 20 · workload 10. The first pick is primary{accepting ? '.' : ' and must accept within the timeout.'}</div>
 
       <FixedBottom note={!picked.length ? undefined : !ready ? `Pick ${size - picked.length} more or lower the team number` : transport ? 'The car requisition goes with this assignment' : undefined}>
         <button
           type="button"
-          disabled={busy || !ready}
+          disabled={busy || !ready || (needTimes && (!pickup || !ret))}
           className={bbtn('p', 'flex-1')}
           onClick={() =>
             run(
-              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), supportStaffIds: support.map((s) => s.id).filter((x) => !picked.includes(x)), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: accepting ? true : undefined, notify: notify ?? undefined } }),
+              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), supportStaffIds: support.map((s) => s.id).filter((x) => !picked.includes(x)), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: accepting ? true : undefined, ...(needTimes ? { pickupTime: pickup, returnTime: ret } : {}), notify: notify ?? undefined } }),
               `${requestNo} assigned · team notified`,
               { redirect: `/m/admin/requests/${id}` },
             )

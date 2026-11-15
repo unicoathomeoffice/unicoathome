@@ -61,6 +61,8 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
   // Section A must name the staff who travel: never make or send a requisition before the care team is assigned
   // (it would name whoever asked for the car instead). Assigning the team sends it.
   if (!r.assignment?.primaryStaffId) return { sent: 0, skipped: 'no staff assigned yet' }
+  // and the car times must have been chosen by an admin (no automatic "40 min before" on an official form)
+  if (!r.transport?.timesSetAt) return { sent: 0, skipped: 'car times not set' }
   await withPeople([r])
   const team = [r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean)
   const [requester, allotter, patient, vehicle] = await Promise.all([
@@ -79,8 +81,8 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
     signatureOf(allotter?.id),
   ])
   const visit = r.scheduledAt ? new Date(r.scheduledAt) : null
-  const pickup = r.transport.pickupAt ? new Date(r.transport.pickupAt) : visit ? new Date(visit.getTime() - 40 * 60_000) : null
-  const back = r.transport.returnAt ? new Date(r.transport.returnAt) : visit ? new Date(visit.getTime() + ((r.expectedDurationMin ?? 45) + 60) * 60_000) : null
+  const pickup = r.transport.pickupAt ? new Date(r.transport.pickupAt) : null // set by an admin (guarded above)
+  const back = r.transport.returnAt ? new Date(r.transport.returnAt) : null
   const hours = pickup && back ? Math.max(1, Math.round(((back.getTime() - pickup.getTime()) / 3600_000) * 2) / 2) : null
   const address = [patient?.address?.house && `House ${patient.address.house}`, patient?.address?.flat && `Flat ${patient.address.flat}`, r.patientSnapshot?.address].filter(Boolean).join(', ')
   const allotted = stage === 'allotted' && !!vehicle
@@ -170,6 +172,7 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
 /** Sends the requisition the first time (or "UPDATED"), once the care team is assigned. */
 export async function carRequested(requestId: unknown, userId: string, opts: { updated?: boolean; only?: NotifyOnly } = {}): Promise<boolean> {
   const r = await HomecareRequest.findById(requestId).select('transport status assignment.primaryStaffId').lean<any>()
+  if (!r?.transport?.timesSetAt) return false // waits for the admin's pick-up / return time
   if (!r?.transport?.needed || r.status === 'CANCELLED') return false
   if (!r.assignment?.primaryStaffId) return false // goes out when the care team is assigned (Section A names them)
   if (r.transport.mode && r.transport.mode !== 'UNICO_CAR') return false

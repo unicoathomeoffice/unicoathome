@@ -63,7 +63,11 @@ export default async function AssignPage({ params }: { params: Promise<{ id: str
         initialTeam={team}
         initialSize={team.length || needTotal}
         instructions={r.assignment?.instructions}
-        transport={!!r.transport?.needed}
+        transport={!!r.transport?.needed && (!r.transport.mode || r.transport.mode === 'UNICO_CAR')}
+        car={(() => {
+          const hm = (d?: Date | string | null) => (d ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(d)) : '')
+          return { set: !!r.transport?.timesSetAt, pickup: r.transport?.timesSetAt ? hm(r.transport.pickupAt) : '', ret: r.transport?.timesSetAt ? hm(r.transport.returnAt) : '', visitTime: r.scheduledAt ? hm(r.scheduledAt) : undefined }
+        })()}
         canOverride={can(user, 'requests.override')}
         canActForExternal={can(user, 'requests.assign')}
         initialSupport={supportPeople.map((u) => ({ id: String(u._id), name: u.name, designation: u.hisDesignation ?? undefined, employeeId: u.employeeId ?? '' }))}

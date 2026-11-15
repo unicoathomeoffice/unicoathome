@@ -1,4 +1,5 @@
 'use client'
+import { PickupQuickPicks } from '@/components/client/PickupQuickPicks'
 // W06 Assign drawer — schedule, care team (TeamPicker: ranked candidates), fee, instructions, "Notify on WhatsApp".
 import { useEffect, useMemo, useState } from 'react'
 import { Check, Loader2 } from 'lucide-react'
@@ -39,6 +40,8 @@ export type AssignProps = {
   canOverride?: boolean
   /** coordinator: may accept for outside staff from the HIS (they have no app) */
   canActForExternal?: boolean
+  /** Unico car on this visit: the admin must set pick-up / return times before the requisition (unless already set) */
+  car?: { needed: boolean; set: boolean; pickup: string; ret: string; visitTime?: string; recent?: string[] }
 }
 
 export function AssignDrawer(p: AssignProps) {
@@ -57,6 +60,11 @@ export function AssignDrawer(p: AssignProps) {
   const [duration, setDuration] = useState(String(p.duration || 45))
   const [fee, setFee] = useState(p.fee?.toString() ?? '')
   const [instructions, setInstructions] = useState(p.instructions)
+  const CAR = p.car
+  const needTimes = !!CAR?.needed && !CAR.set
+  const [pickup, setPickup] = useState(CAR?.pickup ?? '')
+  const [ret, setRet] = useState(CAR?.ret ?? '')
+  const timesMissing = needTimes && (!pickup || !ret)
   const [notify, setNotify] = useState<string[] | null>(null)
   const [paired, setPaired] = useState(true)
   const [acceptNow, setAcceptNow] = useState(!!p.canOverride)
@@ -92,7 +100,7 @@ export function AssignDrawer(p: AssignProps) {
   }
 
   async function submit() {
-    if (!primary) return
+    if (!primary || timesMissing) return
     const sec = secondary.filter((s) => s !== primary)
     const r = await run(
       () =>
@@ -107,6 +115,7 @@ export function AssignDrawer(p: AssignProps) {
             instructions: instructions.trim() || undefined,
             fee: fee === '' ? undefined : Number(fee),
             acceptNow: accepting ? true : undefined,
+            ...(needTimes ? { pickupTime: pickup, returnTime: ret } : {}),
             notify: notify ?? undefined,
           },
         }),
@@ -161,7 +170,7 @@ export function AssignDrawer(p: AssignProps) {
           <button className={btnClass('o', 'md', 'h-10 px-[18px]')} onClick={p.onClose}>
             Cancel
           </button>
-          <button className={btnClass('p', 'md', 'h-10 px-[18px]')} disabled={busy || !primary || !date} onClick={submit}>
+          <button className={btnClass('p', 'md', 'h-10 px-[18px]')} disabled={busy || !primary || !date || timesMissing} onClick={submit} title={timesMissing ? 'Set the car pick-up and return time' : undefined}>
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
             {team.length > 1 ? `${p.reassign ? 'Reassign' : 'Assign'} team of ${team.length}` : `${p.reassign ? 'Reassign to' : 'Assign'} ${primary ? nameOf(primary) : ''}`}
           </button>
@@ -209,6 +218,23 @@ export function AssignDrawer(p: AssignProps) {
           known={p.supportPeople}
         />
 
+        {needTimes && (
+          <div className="rounded-lg bg-[#FFFBEB] p-3 ring-1 ring-[#FDE68A]">
+            <div className="mb-2 text-[13px] font-semibold text-[#92400E]">Unico car · set the times for the requisition *</div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <label>
+                <span className="hc-label">Pick-up at hospital</span>
+                <input type="time" className="hc-input bg-white" value={pickup} onChange={(e) => setPickup(e.target.value)} />
+              </label>
+              <label>
+                <span className="hc-label">Back at hospital</span>
+                <input type="time" className="hc-input bg-white" value={ret} onChange={(e) => setRet(e.target.value)} />
+              </label>
+            </div>
+            <PickupQuickPicks visitTime={CAR?.visitTime} recent={CAR?.recent} value={pickup} onChange={setPickup} />
+            <div className="mt-1.5 text-[11.5px] text-[#92400E]/80">The vehicle requisition goes to the security supervisor with the team names and these times.</div>
+          </div>
+        )}
         <label>
           <span className="hc-label">Fee (৳)</span>
           <input type="number" min={0} className="hc-input" value={fee} onChange={(e) => setFee(e.target.value)} />
