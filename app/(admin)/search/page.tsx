@@ -3,8 +3,7 @@ import { redirect } from 'next/navigation'
 import { Search, UserRound } from 'lucide-react'
 import { requireWebUser } from '@/lib/auth'
 import { can } from '@/lib/constants'
-import { HomecareRequest, Patient } from '@/lib/models'
-import { withPeople } from '@/lib/services/requests'
+import { searchAll } from '@/lib/services/search'
 import { shortName } from '@/lib/services/dashboard'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { Avatar, Card, Empty, LinkButton, PriorityBadge, StatusChip, Table, Tr } from '@/components/ui'
@@ -12,58 +11,16 @@ import { ageGender, dayNum, phone as fmtPhone, relDay, time, clock } from '@/lib
 
 export const metadata = { title: 'Search · Unico HomeCare' }
 
-const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const REQ_COLS = '170px minmax(200px,1.4fr) minmax(150px,1.2fr) 100px 140px 140px minmax(120px,1fr)'
 const PAT_COLS = 'minmax(220px,1.5fr) 170px 120px minmax(140px,1fr) minmax(200px,1.2fr)'
 
 export default async function SearchPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   const user = await requireWebUser()
   const q = ((await searchParams).q ?? '').trim()
-  const readAll = can(user, 'requests.readAll')
 
-  let requests: any[] = []
-  let patients: any[] = []
-  if (q) {
-    const rx = escRe(q)
-    const digits = q.replace(/\D/g, '')
-    const short = /^#\s*\d{1,4}$/.test(q) ? `-${digits.padStart(4, '0')}$` : null
-    const reqOr: any[] = [
-      { requestNo: new RegExp(short ?? rx, 'i') },
-      { 'patientSnapshot.name': new RegExp(rx, 'i') },
-      { 'patientSnapshot.uhid': new RegExp(`^${rx}`, 'i') },
-      ...(digits.length >= 4 ? [{ 'patientSnapshot.phone': new RegExp(digits.slice(-10)) }] : []),
-    ]
-    const reqFilter: Record<string, any> = { deletedAt: null, $or: reqOr }
-    if (!readAll) reqFilter.$and = [{ $or: [{ 'assignment.primaryStaffId': user.id }, { 'assignment.secondaryStaffIds': user.id }, { createdBy: user.id }] }]
-
-    // A request number that matches exactly one request goes straight to it
-    if (/^(hc-?|#)/i.test(q) || /^\d{6}-\d{1,4}$/.test(q)) {
-      const byNo = await HomecareRequest.find({ ...(reqFilter.$and ? { $and: reqFilter.$and } : {}), deletedAt: null, requestNo: new RegExp(short ?? rx, 'i') })
-        .select('_id')
-        .limit(2)
-        .lean<any[]>()
-      if (byNo.length === 1) redirect(`/requests/${byNo[0]._id}`)
-    }
-
-    ;[requests, patients] = await Promise.all([
-      HomecareRequest.find(reqFilter).select('requestNo status priority patientId patientSnapshot services scheduledAt slot preferred assignment createdAt timeline').sort({ createdAt: -1 }).limit(50).lean<any[]>(),
-      Patient.find({ deletedAt: null, $or: [{ name: new RegExp(rx, 'i') }, { uhid: new RegExp(`^${rx}`, 'i') }, ...(digits.length >= 4 ? [{ phone: new RegExp(digits.slice(-10)) }] : [])] })
-        .sort({ updatedAt: -1 })
-        .limit(30)
-        .lean<any[]>(),
-    ])
-    await withPeople(requests)
-    const counts = await HomecareRequest.aggregate([
-      { $match: { patientId: { $in: patients.map((p) => p._id) }, deletedAt: null } },
-      { $sort: { createdAt: -1 } },
-      { $group: { _id: '$patientId', n: { $sum: 1 }, last: { $first: '$createdAt' } } },
-    ])
-    for (const p of patients) {
-      const c = counts.find((x) => String(x._id) === String(p._id))
-      p.visits = c?.n ?? 0
-      p.last = c?.last ?? null
-    }
-  }
+  const { exact, requests, patients } = await searchAll(user, q)
+  // A request number that matches exactly one request goes straight to it
+  if (exact) redirect(`/requests/${exact}`)
 
   return (
     <AdminPage title="Search" crumbs={q ? <>Results for “{q}”</> : undefined}>

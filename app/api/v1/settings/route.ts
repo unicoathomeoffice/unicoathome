@@ -84,11 +84,13 @@ const HodPatch = z
   .strict()
   .refine((v) => !v.contacts || !v.groups || v.contacts.every((c) => v.groups!.some((g) => g.id === c.groupId)), 'Every person must belong to a group')
 
-/** PATCH /api/v1/settings { key: 'sla', value: {...} } — non-secret config only. Online booking: requests.manage. */
+/** PATCH /api/v1/settings { key: 'sla', value: {...} } — non-secret config only. Online booking: requests.manage; transport documents: transport.manage too. */
 export const PATCH = route(
   async ({ req, user }) => {
     const input = await body(req, Patch)
-    if (!(input.key === 'booking' ? can(user, 'requests.manage') : canOpenSettings(user))) throw forbidden()
+    // Online booking: coordinators. Transport documents: also the car supervisor (Fleet & drivers page).
+    const ok = input.key === 'booking' ? can(user, 'requests.manage') : input.key === 'transportDocs' ? canOpenSettings(user) || can(user, 'transport.manage') : canOpenSettings(user)
+    if (!ok) throw forbidden()
     if (input.key === 'maps') {
       const r = z.object({ useGoogle: z.boolean(), monthlyFree: z.number().int().min(100).max(1_000_000), reservePct: z.number().int().min(0).max(50), dailyCap: z.union([z.literal('none'), z.literal('auto'), z.number().int().min(1).max(100_000)]) }).partial().strict().safeParse(input.value)
       if (!r.success) throw bad(`Maps: ${r.error.issues[0]?.path.join('.')} ${r.error.issues[0]?.message}`)

@@ -6,7 +6,7 @@ import { SignJWT, jwtVerify } from 'jose'
 import bcrypt from 'bcryptjs'
 import { randomUUID } from 'crypto'
 import { db } from './db'
-import { Session } from './models'
+import { Device, Session } from './models'
 import { sessionProfile } from './session-profile'
 import { forget, memo } from './memo'
 import { can, type Permission, type Role } from './constants'
@@ -71,7 +71,7 @@ export async function createSession(userId: string, role: Role, client: Client, 
     lastSeenAt: new Date(),
     expiresAt,
   })
-  return { token, expiresAt }
+  return { token, expiresAt, jti }
 }
 
 export async function verifyToken(token: string) {
@@ -166,14 +166,21 @@ export async function setSessionCookie(token: string, expiresAt: Date) {
   })
 }
 
+/** Revoke one session by its token id, and stop push messages to the phone that used it. */
+export async function revokeSession(jti: string) {
+  await db()
+  const now = new Date()
+  await Session.updateOne({ jti }, { revokedAt: now })
+  await Device.updateMany({ jti }, { $unset: { pushToken: 1, jti: 1 }, waHost: false })
+  forgetAuth(jti)
+}
+
+/** Sign out the current session: the browser cookie or the native app's bearer token. */
 export async function clearSession() {
-  const token = (await cookies()).get(COOKIE)?.value
+  const token = await readToken()
   if (token) {
     const p = await verifyToken(token)
-    if (p?.jti) {
-      await Session.updateOne({ jti: p.jti }, { revokedAt: new Date() })
-      forgetAuth(p.jti)
-    }
+    if (p?.jti) await revokeSession(p.jti)
   }
   ;(await cookies()).delete(COOKIE)
 }

@@ -9,45 +9,25 @@ import { VisitCard, SectionLabel, svcName, ageG, vHref } from '@/components/fiel
 import { AvailabilitySeg, InMin } from '@/components/field/home'
 import { RespondInline } from '@/components/field/visit'
 import { SyncBanner } from '@/components/field/live'
-import { teamFilter, isDesk } from '@/components/field/data'
 import { requireAppUser } from '@/lib/auth'
-import { db, plain } from '@/lib/db'
-import { HomecareRequest, Note, Notification } from '@/lib/models'
-import { withPeople } from '@/lib/services/requests'
+import { plain } from '@/lib/db'
+import { myDay } from '@/lib/services/home'
 import { can } from '@/lib/constants'
-import { cx, dayRange, time } from '@/lib/format'
+import { cx, time } from '@/lib/format'
 
 export const metadata = { title: 'Today' }
-
-const ACTIVE = ['ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS']
 
 /** M03 Home (v2 · 3a) */
 export default async function Home() {
   const user = await requireAppUser()
   if (user.role === 'DRIVER' || user.role === 'TRANSPORT_SUPERVISOR') redirect('/m/trips')
-  await db()
-  const desk = isDesk(user.role)
-  const mine = teamFilter(user)
-  const { start, end } = dayRange()
-  const todayFilter: any = { deletedAt: null, scheduledAt: { $gte: start, $lt: end }, status: { $nin: ['CANCELLED', 'NEW', 'VERIFIED'] } }
-  if (!desk) Object.assign(todayFilter, mine)
-
-  const [today, next, awaiting, notes, unread] = await Promise.all([
-    HomecareRequest.find(todayFilter).select('-visit.notes -deviceStamps -clinical.notes').sort({ scheduledAt: 1 }).limit(60).lean<any[]>(),
-    HomecareRequest.find({ deletedAt: null, ...mine, status: { $in: ACTIVE }, scheduledAt: { $gte: new Date(start.getTime() - 86400_000) } })
-      .select('requestNo status scheduledAt patientSnapshot services expectedDurationMin timeline patientId')
-      .sort({ scheduledAt: 1 })
-      .limit(10)
-      .lean<any[]>(),
-    HomecareRequest.countDocuments({ deletedAt: null, status: 'ASSIGNED', ...(desk ? {} : { 'assignment.primaryStaffId': user.id }) }),
-    Note.countDocuments({ authorId: user.id, deletedAt: null }),
-    Notification.countDocuments({ userId: user.id, readAt: null }),
-  ])
-  await withPeople(today)
+  // shared with GET /api/v1/app/home (the native app's Today screen)
+  const day = await myDay(user)
+  const { desk, awaiting, notes, unread } = day
   // Hero: the visit in progress, else the next one that is not yet started
-  const hero = plain(next.find((r) => r.status === 'IN_PROGRESS') ?? next.find((r) => r.status === 'EN_ROUTE') ?? next.find((r) => new Date(r.scheduledAt).getTime() > Date.now() - 60 * 60_000) ?? null)
-  const rows = plain(today)
-  const completed = rows.filter((r: any) => ['COMPLETED', 'CLOSED'].includes(r.status)).length
+  const hero = plain(day.hero)
+  const rows = plain(day.today)
+  const completed = day.completed
   const isMine = (r: any) => [r.assignment?.primaryStaffId, ...(r.assignment?.secondaryStaffIds ?? [])].map(String).includes(user.id)
 
   const quick = [

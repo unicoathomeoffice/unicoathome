@@ -133,6 +133,23 @@ export const DEFAULT_SETTINGS = {
     toPatient: false, // a friendlier summary for the patient
   },
   quietHours: { from: '22:00', to: '07:00' },
+  /** Native Android app control (Settings → App control, GET /api/v1/app/config) */
+  app: {
+    /** newest released build: the app offers the update when its own build number is lower */
+    latestBuild: 0,
+    latestVersion: '',
+    releaseNotes: '',
+    /** attachment id of the signed APK the in-app updater downloads */
+    apkAttachmentId: null as string | null,
+    /** builds below this must update before they can be used */
+    minBuild: 0,
+    /** shown on every phone and blocks use while set */
+    maintenance: '',
+    /** replacement API address for installed apps (empty = keep the built-in one) */
+    apiBase: '',
+    /** modules switched off per role: { NURSE: ['store'] } (keys from lib/app-modules.ts) */
+    hiddenModules: {} as Record<string, string[]>,
+  },
   /** E4 notification matrix: event → recipients → channels */
   notificationRules: {
     REQUEST_CREATED: { HC_ADMIN: ['inapp', 'push'] },

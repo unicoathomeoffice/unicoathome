@@ -287,6 +287,31 @@ const SessionSchema = new Schema<any>(
 )
 export const Session = model('Session', SessionSchema, 'sessions')
 
+/**
+ * A phone running the native Android app (POST /api/v1/devices). installId is a random id the app makes once per
+ * install; jti ties the device to the session that registered it, so signing out also stops its push messages.
+ */
+const DeviceSchema = new Schema<any>(
+  {
+    installId: { type: String, required: true, unique: true },
+    userId: { type: ObjectId, ref: 'User', required: true, index: true },
+    jti: { type: String, index: true },
+    platform: { type: String, default: 'android' },
+    model: String,
+    osVersion: String,
+    appVersion: String,
+    appBuild: Number,
+    pushToken: { type: String, index: true },
+    pushUpdatedAt: Date,
+    /** this phone holds the WhatsApp connection (one at a time, lib/wa host mode) */
+    waHost: { type: Boolean, default: false },
+    lastSeenAt: Date,
+    revokedAt: Date,
+  },
+  opts,
+)
+export const Device = model('Device', DeviceSchema, 'devices')
+
 // ---------------------------------------------------------------- patients
 const PatientSchema = new Schema<any>(
   {

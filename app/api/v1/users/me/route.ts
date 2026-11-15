@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { route, body, clientMeta, bad } from '@/lib/api'
-import { User, Session } from '@/lib/models'
+import { User, Session, Device } from '@/lib/models'
 import { forgetAuth, hashPassword, verifyPassword } from '@/lib/auth'
 import { audit } from '@/lib/audit'
 import { plain } from '@/lib/db'
@@ -42,8 +42,15 @@ export const PATCH = route(async ({ req, user }) => {
     await audit(user, 'user.password_change', 'user', u._id, { label: u.name }, meta)
   }
   await u.save()
-  if (input.signOutSessionId) await Session.updateOne({ _id: input.signOutSessionId, userId: user.id }, { revokedAt: new Date() })
-  if (input.signOutOthers) await Session.updateMany({ userId: user.id, jti: { $ne: user.jti }, revokedAt: null }, { revokedAt: new Date() })
+  if (input.signOutSessionId) {
+    const s = await Session.findOneAndUpdate({ _id: input.signOutSessionId, userId: user.id }, { revokedAt: new Date() }).lean<any>()
+    // that phone stops receiving push messages too
+    if (s?.jti) await Device.updateMany({ jti: s.jti }, { $unset: { pushToken: 1, jti: 1 }, waHost: false })
+  }
+  if (input.signOutOthers) {
+    await Session.updateMany({ userId: user.id, jti: { $ne: user.jti }, revokedAt: null }, { revokedAt: new Date() })
+    await Device.updateMany({ userId: user.id, jti: { $ne: user.jti } }, { $unset: { pushToken: 1, jti: 1 }, waHost: false })
+  }
   forgetAuth() // availability, sign-outs
   return { ok: true }
 })

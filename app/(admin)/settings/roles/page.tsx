@@ -61,8 +61,7 @@ export default async function RolesPage() {
       <div className="mb-4 flex items-start gap-2.5 rounded-card bg-white px-4 py-3 text-[13px] text-slate-600 shadow-card">
         <Info size={17} className="mt-px flex-none text-primary" />
         <span>
-          Fixed roles are defined in code and enforced on every page and API call — this matrix is exactly what the app checks. <b className="text-slate-800">Custom roles are templates</b>: they document a permission set copied from a fixed role, but users still
-          get a fixed base role until custom roles are wired into enforcement.
+          Fixed roles are defined in code and enforced on every page and API call — this matrix is exactly what the app checks. <b className="text-slate-800">Custom roles are enforced too</b>: a user given a custom role gets exactly the permissions ticked on it, in place of their base role's column.
         </span>
       </div>
 
@@ -82,7 +81,7 @@ export default async function RolesPage() {
               {roles.map((r) => (
                 <span key={r._id} className="flex flex-col items-center gap-1 px-1 text-center" title={r.name}>
                   <span className="max-w-full truncate rounded bg-[#EDE9FE] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[#6D28D9]">{r.code}</span>
-                  <span className="text-[11px] text-slate-500">template</span>
+                  <span className="text-[11px] text-slate-500">custom</span>
                 </span>
               ))}
             </div>

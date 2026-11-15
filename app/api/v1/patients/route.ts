@@ -1,13 +1,15 @@
 import { z } from 'zod'
-import { route, body, clientMeta, qp, bad } from '@/lib/api'
+import { route, body, clientMeta, qp, bad, forbidden } from '@/lib/api'
+import { can } from '@/lib/constants'
 import { Patient, HomecareRequest } from '@/lib/models'
 import { audit } from '@/lib/audit'
 import { plain } from '@/lib/db'
 import { PatientInput } from '@/lib/schemas'
 
 /** GET /api/v1/patients?q=&zone=&limit= — search by phone (fastest), UHID or name */
-export const GET = route(
-  async ({ req }) => {
+export const GET = route(async ({ req, user }) => {
+    // people who create requests search here; so do the read-all roles (management) who open the patient board
+    if (!can(user, 'requests.create') && !can(user, 'requests.readAll')) throw forbidden()
     const p = qp(req)
     const f: Record<string, any> = { deletedAt: null }
     const q = p.get('q')?.trim()
@@ -26,9 +28,7 @@ export const GET = route(
     ])
     for (const i of items) i.latest = latest.find((l) => String(l._id) === String(i._id)) ?? null
     return { items: plain(items) }
-  },
-  { perm: 'requests.create' },
-)
+})
 
 
 export const POST = route(

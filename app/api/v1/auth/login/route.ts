@@ -53,5 +53,5 @@ export const POST = publicRoute(async ({ req }) => {
   const isField = !user.platformAccess.includes('web') || input.client === 'app'
   // Browsers rely on the httpOnly cookie; only a native app (x-hc-native: 1) receives the bearer token.
   const native = req.headers.get('x-hc-native') === '1'
-  return { ok: true, ...(native ? { token } : {}), redirect: isField ? '/m' : '/dashboard', user: { id: String(user._id), name: user.name, role: user.role } }
+  return { ok: true, ...(native ? { token, expiresAt: expiresAt.toISOString() } : {}), redirect: isField ? '/m' : '/dashboard', user: { id: String(user._id), name: user.name, role: user.role } }
 })

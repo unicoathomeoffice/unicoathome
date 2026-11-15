@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { route, body, clientMeta, notFound, bad } from '@/lib/api'
-import { User, Session, Vehicle, HomecareRequest, isOid } from '@/lib/models'
+import { User, Session, Device, Vehicle, HomecareRequest, isOid } from '@/lib/models'
 import { forgetAuth, hashPassword } from '@/lib/auth'
 import { audit, diff } from '@/lib/audit'
 import { plain } from '@/lib/db'
@@ -55,7 +55,10 @@ export const PATCH = route<{ id: string }>(
       await settleNewUserApproval(u._id, input.status === 'ACTIVE', user)
       if (input.status === 'ACTIVE') background(() => emailStaffApproved(u))
     }
-    if (forceSignOut || input.status === 'SUSPENDED' || resetPassword) await Session.updateMany({ userId: u._id, revokedAt: null }, { revokedAt: new Date() })
+    if (forceSignOut || input.status === 'SUSPENDED' || resetPassword) {
+      await Session.updateMany({ userId: u._id, revokedAt: null }, { revokedAt: new Date() })
+      await Device.updateMany({ userId: u._id }, { $unset: { pushToken: 1, jti: 1 }, waHost: false }) // and their phones stop getting alerts
+    }
     forgetAuth() // role, permissions, status or sign-out take effect on the next click
     await audit(user, input.status && input.status !== before.status ? `user.${input.status.toLowerCase()}` : 'user.update', 'user', u._id, { ...diff(before, pick(u.toObject())), label: u.name }, clientMeta(req, user))
     if (forceSignOut) await audit(user, 'user.force_sign_out', 'user', u._id, { label: u.name }, clientMeta(req, user))
