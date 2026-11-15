@@ -184,6 +184,11 @@ export function ActionBar({
             <Undo2 size={16} /> Undo “{r.revert.step}”
           </button>
         )}
+        {perms.create && (
+          <a href={`/requests/new?from=${r.id}`} className={iconBtn(['COMPLETED', 'CLOSED', 'CANCELLED'].includes(r.status) ? 'p' : 'o')} title="A new request with the same patient, services and tests — pick the new date">
+            <RefreshCw size={16} /> Book again
+          </a>
+        )}
         {perms.delete && !['EN_ROUTE', 'IN_PROGRESS'].includes(r.status) && (
           <button className={cx(iconBtn(), 'text-[#DC2626] hover:bg-[#FEF2F2]')} onClick={() => setDlg('delete')} title="Delete this request">
             <Trash2 size={16} /> Delete

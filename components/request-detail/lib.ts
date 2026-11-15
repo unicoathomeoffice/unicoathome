@@ -116,7 +116,7 @@ export function vitalRows(v: any): VitalRow[] {
 }
 
 // ---------------------------------------------------------------- permissions for the action bar
-export type Perms = { manage: boolean; assign: boolean; invoice: boolean; send: boolean; decide: boolean; edit: boolean; delete: boolean }
+export type Perms = { manage: boolean; assign: boolean; invoice: boolean; send: boolean; decide: boolean; edit: boolean; delete: boolean; create: boolean }
 export function permsFor(role: Actor): Perms {
   return {
     manage: can(role, 'requests.manage'),
@@ -126,6 +126,7 @@ export function permsFor(role: Actor): Perms {
     decide: can(role, 'approvals.decide'),
     edit: can(role, 'patients.edit'),
     delete: can(role, 'requests.delete'),
+    create: can(role, 'requests.create'),
   }
 }
 

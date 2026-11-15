@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Users } from 'lucide-react'
+import { RefreshCw, Users } from 'lucide-react'
 import { requireWebUser } from '@/lib/auth'
 import { User } from '@/lib/models'
 import { activeServices, activeZones } from '@/lib/cached'
@@ -16,7 +16,15 @@ import { dayNum, phone as fmtPhone, relDay, time, clock } from '@/lib/format'
 export const metadata = { title: 'Patients · Unico HomeCare' }
 
 const PAGE = 25
-const COLS = 'minmax(190px,1.4fr) 140px 130px 124px minmax(110px,1fr) 96px 104px 164px'
+const COLS = 'minmax(200px,1.4fr) 136px 124px 124px minmax(150px,1.1fr) 64px minmax(110px,1fr) 200px'
+const VIEWS: [string, string][] = [
+  ['', 'All patients'],
+  ['active', 'Active now'],
+  ['schedule', 'On a schedule'],
+  ['due30', 'Due again · 30+ days'],
+  ['due60', '60+ days'],
+  ['due90', '90+ days'],
+]
 
 type SP = Promise<Record<string, string | undefined>>
 
@@ -32,7 +40,7 @@ export default async function PatientsPage({ searchParams }: { searchParams: SP 
   const sp = await searchParams
   const page = Math.max(1, Number(sp.page ?? 1) || 1)
   const [rows, zoneNames, services, staff] = await Promise.all([
-    loadPatientBoard({ q: sp.q, zone: sp.zone, status: sp.status, priority: sp.priority, staff: sp.staff, service: sp.service }),
+    loadPatientBoard({ q: sp.q, zone: sp.zone, status: sp.status, priority: sp.priority, staff: sp.staff, service: sp.service, view: sp.view }),
     activeZones(), // cached master lists (lib/cached.ts)
     activeServices(),
     User.find({ role: { $in: FIELD_ROLES }, status: 'ACTIVE', deletedAt: null }).sort({ name: 1 }).select('name').lean<any[]>(),
@@ -49,10 +57,22 @@ export default async function PatientsPage({ searchParams }: { searchParams: SP 
     n.set('page', String(p))
     return `/patients?${n}`
   }
-  const filtered = !!(sp.q || sp.zone || sp.status || sp.priority || sp.staff || sp.service)
+  const filtered = !!(sp.q || sp.zone || sp.status || sp.priority || sp.staff || sp.service || sp.view)
+  const viewHref = (v: string) => {
+    const n = new URLSearchParams(Object.entries(sp).filter(([k, x]) => x && k !== 'view' && k !== 'page') as [string, string][])
+    if (v) n.set('view', v)
+    return `/patients${n.size ? `?${n}` : ''}`
+  }
 
   return (
-    <AdminPage title={`Patient board · ${active} active`}>
+    <AdminPage title="Home care patients" crumbs={`${rows.length} patient${rows.length === 1 ? '' : 's'} · ${active} active now`}>
+      <div className="mb-3 flex flex-wrap gap-1.5">
+        {VIEWS.map(([v, label]) => (
+          <Link key={v || 'all'} href={viewHref(v)} scroll={false} className={`flex h-8 items-center rounded-full px-3 text-[12.5px] font-semibold transition ${(sp.view ?? '') === v ? (v.startsWith('due') ? 'bg-[#B45309] text-white' : 'bg-slate-900 text-white') : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'}`}>
+            {label}
+          </Link>
+        ))}
+      </div>
       <div className="mb-4 flex flex-wrap items-center gap-2.5">
         <SearchBox placeholder="UHID, phone or name (+ H360)" className="w-full sm:w-[230px]" />
         <FilterSelect label="Status" param="status" options={[{ value: 'ACTIVE', label: 'Any active' }, ...STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] })), { value: 'NONE', label: 'No requests' }]} />
@@ -68,7 +88,7 @@ export default async function PatientsPage({ searchParams }: { searchParams: SP 
 
       <Table
         cols={COLS}
-        head={['Patient', 'Phone', 'Latest status', 'Next visit', 'Staff', 'Priority', 'Zone', 'Quick actions']}
+        head={['Patient', 'Phone', 'Latest status', 'Next visit', 'Last service', 'Visits', 'Staff', 'Quick actions']}
         empty={
           <Empty
             icon={<Users size={24} />}
@@ -99,7 +119,10 @@ export default async function PatientsPage({ searchParams }: { searchParams: SP 
                     {' '}
                     {r.ageYears ?? ''} {r.gender ?? ''}
                   </span>
-                  {r.uhid && <span className="block truncate text-[11.5px] text-slate-500">UHID {r.uhid}</span>}
+                  <span className="block truncate text-[11.5px] text-slate-500">
+                    {[r.uhid && `UHID ${r.uhid}`, r.zone].filter(Boolean).join(' · ')}
+                    {r.schedule && <span className={`ml-1 rounded px-1 text-[10.5px] font-bold ${r.schedule === 'ACTIVE' ? 'bg-[#E0F2FE] text-[#0369A1]' : 'bg-slate-100 text-slate-500'}`}>{r.schedule === 'ACTIVE' ? 'Schedule' : 'Schedule paused'}</span>}
+                  </span>
                 </span>
               </Link>
               <span className="whitespace-nowrap">{masked ? maskPhone(r.phone) : fmtPhone(r.phone)}</span>
@@ -111,6 +134,15 @@ export default async function PatientsPage({ searchParams }: { searchParams: SP 
                 <span className="text-slate-400">—</span>
               )}
               <span className="whitespace-nowrap">{nextVisit(c)}</span>
+              {r.last ? (
+                <Link href={`/requests/${r.last.requestId}`} className="min-w-0" title={`${r.last.requestNo} · ${r.last.service}`}>
+                  <span className="block truncate text-slate-800">{r.last.service || 'Visit'}</span>
+                  <span className={`block text-[11.5px] ${r.last.daysAgo >= 30 && !r.active ? 'font-semibold text-[#B45309]' : 'text-slate-500'}`}>{r.last.daysAgo === 0 ? 'today' : `${r.last.daysAgo} day${r.last.daysAgo === 1 ? '' : 's'} ago`}</span>
+                </Link>
+              ) : (
+                <span className="text-slate-300">—</span>
+              )}
+              <span className="text-center font-semibold tabular-nums text-slate-700">{r.visits || '—'}</span>
               {c?.staffName ? (
                 <span className="flex min-w-0 items-center gap-2">
                   <Avatar name={c.staffName} size={24} />
@@ -119,9 +151,14 @@ export default async function PatientsPage({ searchParams }: { searchParams: SP 
               ) : (
                 <span className="text-slate-400">{c ? 'Unassigned' : '—'}</span>
               )}
-              {c ? <PriorityBadge priority={c.priority} /> : <span className="text-slate-300">—</span>}
-              <span className="block truncate">{r.zone ?? '—'}</span>
-              <PatientRowActions id={r.id} name={r.name} phone={r.phone} text={text} canMessage={canMessage} canCreate={canCreate} />
+              <span className="flex items-center gap-1.5">
+                {canCreate && r.last && (
+                  <Link href={`/requests/new?from=${r.last.requestId}`} className="flex h-8 flex-none items-center gap-1 rounded-lg bg-primary-50 px-2 text-[12px] font-semibold text-primary-700 hover:bg-primary-100" title={`Book ${r.last.service || 'the same service'} again`}>
+                    <RefreshCw size={13} /> Again
+                  </Link>
+                )}
+                <PatientRowActions id={r.id} name={r.name} phone={r.phone} text={text} canMessage={canMessage} canCreate={canCreate} />
+              </span>
             </Tr>
           )
         })}

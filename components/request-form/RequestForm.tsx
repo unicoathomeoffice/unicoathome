@@ -29,6 +29,20 @@ export type FormPatient = {
   latest?: { requestId: string; requestNo: string; status: string; scheduledAt?: string; count: number } | null
 }
 type Service = { code: string; name: string; category: string; fee: number; duration: number }
+export type RepeatFrom = {
+  requestNo: string
+  when: string | null
+  serviceCodes: string[]
+  otherService: string
+  tests: string[]
+  testItems: TestItem[]
+  transport: boolean
+  duration: number | null
+  complaint: string
+  priority: string
+  refDoctor: string
+  instructions: string
+}
 
 const SOURCE_LABEL: Record<string, string> = { PHONE: 'Phone call', WALK_IN: 'Walk-in', WHATSAPP: 'WhatsApp', WEBSITE: 'Website', APP: 'App' }
 const DRAFT_KEY = 'hc:new-request-draft'
@@ -83,6 +97,7 @@ export function RequestForm({
   canConfirm,
   canAssign,
   waPaired,
+  repeat,
 }: {
   nextNo: string
   today: string
@@ -97,12 +112,30 @@ export function RequestForm({
   canAssign: boolean
   /** hospital WhatsApp paired: the confirmation goes out automatically */
   waPaired: boolean
+  /** "Book again": the earlier request this one copies (services, tests, car, duration, notes — the date is new) */
+  repeat?: RepeatFrom | null
 }) {
   const router = useRouter()
   const toast = useToast()
   // default day: the first one with an open slot, like the public form
   const startDate = booking.enabled ? firstOpen(booking.days, today) : today
-  const [f, setF] = useState<F>(() => (initialPatient ? pickPatient(blank(startDate), initialPatient) : blank(startDate)))
+  const [f, setF] = useState<F>(() => {
+    const base = initialPatient ? pickPatient(blank(startDate), initialPatient) : blank(startDate)
+    if (!repeat) return base
+    return {
+      ...base,
+      serviceCodes: repeat.serviceCodes,
+      otherService: repeat.otherService,
+      tests: repeat.tests,
+      testItems: repeat.testItems,
+      transport: repeat.transport,
+      duration: repeat.duration ? String(repeat.duration) : '',
+      complaint: repeat.complaint,
+      priority: (repeat.priority as F['priority']) || 'ROUTINE',
+      refDoctor: repeat.refDoctor,
+      remarks: `Again after ${repeat.requestNo}`,
+    }
+  })
   const [step, setStep] = useState<Step>(1)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState<null | 'save' | 'confirm' | 'assign'>(null)
@@ -112,7 +145,7 @@ export function RequestForm({
   const [team, setTeam] = useState<string[]>([])
   const [outside, setOutside] = useState<string[]>([]) // outside staff from the HIS (no app): accepted for them on save
   const [teamSize, setTeamSize] = useState(1)
-  const [instructions, setInstructions] = useState('')
+  const [instructions, setInstructions] = useState(repeat?.instructions ?? '')
   const [notify, setNotify] = useState<string[] | null>(null) // "Notify on WhatsApp" (null = Settings defaults)
   const restored = useRef(false)
   const steps = STEPS.filter((s) => s.n < 4 || canAssign)
@@ -125,7 +158,7 @@ export function RequestForm({
   useEffect(() => {
     if (restored.current) return
     restored.current = true
-    if (initialPatient) return
+    if (initialPatient || repeat) return
     try {
       const raw = localStorage.getItem(DRAFT_KEY)
       if (!raw) return
