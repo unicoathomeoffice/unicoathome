@@ -1,19 +1,20 @@
 'use client'
 // Public landing. EN / বাংলা; every link / button goes to a real page or section.
 //  · Desktop (lg+): split screen — hero copy + photo on the left, the booking card in its own scroll panel on the right.
-//  · Phones / tablets: a scrolling landing page (MobileLanding) with a bottom tab bar; "Book a visit" opens the same
-//    booking form as a full-screen, step-by-step flow (the #book section becomes a fixed dialog).
+//  · The booking form goes one step at a time everywhere (progress strip on top, Back / Next at the bottom of the card).
+//  · Phones / tablets: a compact blue hero, then the same booking form right there, one step at a time (so people can
+//    start filling it at once), then the landing sections (MobileLanding) and a bottom tab bar.
 //  · Two ways in, always in sight: Patient login and Staff login (header pills on desktop, the Login sheet on phones).
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/components/client/api'
-import { ArrowRight, CalendarDays, ChevronDown, Clock3, FlaskConical, House, LayoutGrid, Mouse, Phone, PhoneCall, ShieldCheck, Smile, Stethoscope, Truck, UserRound, Users, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, ChevronDown, Clock3, FlaskConical, House, LayoutGrid, Mouse, Phone, PhoneCall, Stethoscope, Truck, UserRound, X } from 'lucide-react'
 import { telUrl } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { BookingForm, type BookingDay, type BookingPrefill } from './BookingForm'
 import { LangProvider, LangSwitch, useLang } from './i18n'
-import { LoginCards, LoginSheet, staffLoginHref, type PublicSession } from './LoginSheet'
-import { MobileLanding, SiteFooter, type Hospital } from './MobileLanding'
+import { LoginSheet, staffLoginHref, type PublicSession } from './LoginSheet'
+import { MobileHero, MobileLanding, type Hospital } from './MobileLanding'
 import styles from './PublicHome.module.css'
 
 type Props = {
@@ -36,7 +37,7 @@ export function PublicHome(p: Props) {
 const pill = 'flex h-10 items-center gap-2 whitespace-nowrap rounded-full px-4 text-[14px] font-semibold transition'
 const pillWhite = cx(pill, 'bg-white text-navy shadow-card ring-1 ring-slate-200 hover:bg-slate-50')
 const roundBtn = 'flex size-11 flex-none items-center justify-center rounded-full transition'
-const PHONE = '(max-width: 1023px)' // below lg: the landing page + full-screen booking
+const PHONE = '(max-width: 1023px)' // below lg: the phone page
 
 type Session = PublicSession & { prefill: BookingPrefill | null }
 
@@ -52,68 +53,27 @@ function Page({ hospital: h, services, zones, booking, legacySlots, bnFont }: Pr
   const panel = useRef<HTMLElement>(null)
   const [menu, setMenu] = useState(false)
   const [login, setLogin] = useState(false)
-  // ---- phones: the booking form is a full-screen flow; its progress strip and Back / Next bar are drawn into these
-  const [phone, setPhone] = useState(false)
-  const [bookOpen, setBookOpen] = useState(false)
+  // ---- the booking form goes one step at a time; its progress strip and Back / Next bar are drawn into these
   const [progressHost, setProgressHost] = useState<HTMLElement | null>(null)
   const [barHost, setBarHost] = useState<HTMLElement | null>(null)
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [scroller, setScroller] = useState<HTMLElement | null>(null)
   const [preselect, setPreselect] = useState<{ code: string; n: number } | null>(null)
-  useEffect(() => {
-    const mq = window.matchMedia(PHONE)
-    const on = () => setPhone(mq.matches)
-    on()
-    mq.addEventListener('change', on)
-    return () => mq.removeEventListener('change', on)
-  }, [])
 
-  /** Any "Book a visit": the full-screen flow on phones, the right-hand card on desktop. A service code ticks it. */
+  /** Any "Book a visit": bring the form into view (its own scroll panel on desktop). A service code ticks it. */
   const openBooking = useCallback((serviceCode?: string) => {
     setMenu(false)
     setLogin(false)
     if (serviceCode) setPreselect({ code: serviceCode, n: Date.now() })
-    if (window.matchMedia(PHONE).matches) {
-      if (!window.history.state?.hcBook) window.history.pushState({ ...window.history.state, hcBook: 1 }, '')
-      setBookOpen(true)
-    } else {
-      panel.current?.scrollTo({ top: 0, behavior: 'smooth' })
-      document.getElementById('f-name')?.focus({ preventScroll: true })
+    if (window.matchMedia(PHONE).matches) panel.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    else {
+      document.getElementById('f-name')?.focus()
     }
-  }, [])
-  /** Close the flow; the phone's Back button does the same (the answers stay in the form). */
-  const closeBooking = useCallback(() => {
-    if (window.history.state?.hcBook) window.history.back()
-    else setBookOpen(false)
-  }, [])
-  useEffect(() => {
-    // a reload while the flow was open leaves its history marker behind: drop it, or Close would leave the page
-    if (window.history.state?.hcBook) {
-      const { hcBook: _, ...rest } = window.history.state
-      window.history.replaceState(rest, '')
-    }
-    const onPop = () => setBookOpen(false)
-    window.addEventListener('popstate', onPop)
-    return () => window.removeEventListener('popstate', onPop)
   }, [])
   // "?book=1" / "#book" (from the patient portal) → straight to the form
   useEffect(() => {
     if (window.location.hash === '#book' || new URLSearchParams(window.location.search).has('book')) openBooking()
   }, [openBooking])
-  // while the flow is open on a phone the page behind does not scroll; Esc closes it
-  const flow = phone && bookOpen
-  useEffect(() => {
-    if (!flow) return
-    const root = document.documentElement
-    const was = root.style.overflow
-    root.style.overflow = 'hidden'
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeBooking()
-    window.addEventListener('keydown', onKey)
-    window.dispatchEvent(new Event('resize')) // the map was measured while hidden
-    return () => {
-      root.style.overflow = was
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [flow, closeBooking])
 
   const scrollTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
   const features = [
@@ -122,17 +82,16 @@ function Page({ hospital: h, services, zones, booking, legacySlots, bnFont }: Pr
     { icon: Clock3, title: t.feat3, sub: t.feat3s },
     { icon: House, title: t.feat4, sub: t.feat4s },
   ]
-  const stats = [
-    { icon: Users, n: t.statVisitsN, l: t.statVisits },
-    { icon: Smile, n: t.statFamiliesN, l: t.statFamilies },
-    { icon: UserRound, n: t.statStaffN, l: t.statStaff },
-    { icon: ShieldCheck, n: t.statSafe, l: t.statSafeS },
+  const how = [
+    { title: t.how1, sub: t.how1s },
+    { title: t.how2, sub: t.how2s },
+    { title: t.how3, sub: t.how3s },
   ]
   const nav = [
     { href: '#top', label: t.navHome, active: true },
     { href: '#services', label: t.navServices },
-    { href: '#why', label: t.navWhy },
-    { href: '#book', label: t.navHow },
+    { href: '#how', label: t.navHow },
+    { href: '#book', label: t.navBook },
     { href: '#contact', label: t.navContact },
   ]
   const accountHref = patient ? '/my' : '/my/login'
@@ -165,7 +124,7 @@ function Page({ hospital: h, services, zones, booking, legacySlots, bnFont }: Pr
           </button>
         )}
       </header>
-      <MobileLanding hospital={h} services={services} session={session} onBook={openBooking} onLogin={() => setLogin(true)} />
+      <MobileHero />
 
       {/* ------------------------------------------------------------ desktop: hero */}
       <section className={cx(styles.hero, 'relative hidden flex-col overflow-hidden lg:flex lg:h-dvh lg:min-h-0')}>
@@ -229,7 +188,7 @@ function Page({ hospital: h, services, zones, booking, legacySlots, bnFont }: Pr
                 <UserRound size={18} /> {patient ? t.ctaMy : t.ctaAccount}
               </Link>
             </div>
-            <div className="mt-4 inline-flex items-center gap-2.5 rounded-2xl bg-white/85 py-1.5 pl-1.5 pr-3.5 shadow-sm ring-1 ring-white backdrop-blur">
+            <div className={cx(styles.chip, 'mt-4 inline-flex items-center gap-2.5 rounded-2xl bg-white/85 py-1.5 pl-1.5 pr-3.5 shadow-sm ring-1 ring-white backdrop-blur')}>
               <span className="flex size-8 flex-none items-center justify-center rounded-xl bg-primary text-white">
                 <PhoneCall size={15} />
               </span>
@@ -254,19 +213,18 @@ function Page({ hospital: h, services, zones, booking, legacySlots, bnFont }: Pr
             ))}
           </ul>
 
-          <div id="why" className={cx(styles.stats, 'mt-8 grid scroll-mt-6 grid-cols-4 gap-4 rounded-3xl bg-white/90 p-5 shadow-[0_12px_40px_rgba(31,56,100,.10)] ring-1 ring-white backdrop-blur')}>
-            {stats.map((s) => (
-              <div key={s.l} className="flex items-center gap-3 border-l border-slate-200 pl-4 first:border-0 first:pl-0">
-                <span className={cx(styles.statIcon, 'flex size-12 flex-none items-center justify-center rounded-full bg-primary-50 text-primary')}>
-                  <s.icon size={22} />
-                </span>
+          {/* how it works: three steps */}
+          <ol id="how" className={cx(styles.stats, 'mt-7 grid scroll-mt-6 grid-cols-3 gap-4 rounded-3xl bg-white/90 p-5 shadow-[0_12px_40px_rgba(31,56,100,.10)] ring-1 ring-white backdrop-blur')}>
+            {how.map((x, i) => (
+              <li key={x.title} className="flex min-w-0 items-start gap-3 border-l border-slate-200 pl-4 first:border-0 first:pl-0">
+                <span className="flex size-9 flex-none items-center justify-center rounded-full bg-gradient-to-br from-primary to-teal text-[15px] font-extrabold text-white shadow-[0_6px_14px_rgba(0,144,202,.3)]">{lang === 'bn' ? (i + 1).toLocaleString('bn-BD') : i + 1}</span>
                 <span className="min-w-0">
-                  <span className="block text-[19px] font-extrabold leading-tight text-navy">{s.n}</span>
-                  <span className="block text-[12.5px] leading-[17px] text-slate-500">{s.l}</span>
+                  <span className="block text-[14.5px] font-bold leading-snug text-navy">{x.title}</span>
+                  <span className={cx(styles.stepSub, 'mt-0.5 block text-[12.5px] leading-[17px] text-slate-500')}>{x.sub}</span>
                 </span>
-              </div>
+              </li>
             ))}
-          </div>
+          </ol>
         </div>
 
         <button type="button" onClick={() => openBooking()} className={cx(styles.hint, 'relative z-10 mx-auto mb-3.5 flex flex-col items-center gap-0.5 text-[13px] font-semibold text-slate-500 hover:text-navy')}>
@@ -276,53 +234,61 @@ function Page({ hospital: h, services, zones, booking, legacySlots, bnFont }: Pr
         </button>
       </section>
 
-      {/* ------------------------------------------------------------ booking: the right-hand card on desktop · a full-screen step-by-step flow on phones */}
-      <section
-        id="book"
-        ref={panel}
-        {...(phone && { role: 'dialog', 'aria-modal': true, 'aria-label': t.ctaBook })}
-        className={cx('hc-scroll max-lg:fixed max-lg:inset-0 max-lg:z-50 max-lg:flex-col max-lg:bg-[#EEF5FA] lg:relative lg:z-10 lg:block lg:h-dvh lg:overflow-y-auto lg:py-4 lg:pr-4', bookOpen ? 'max-lg:flex' : 'max-lg:hidden')}
-      >
-        {/* phones: the flow's top bar — close, title, language, then the progress strip (drawn by the form) */}
-        <div className="flex-none bg-white shadow-[0_6px_20px_rgba(31,56,100,.07)] lg:hidden">
-          <div className="flex items-center gap-2.5 px-3 pb-2.5 pt-[max(10px,env(safe-area-inset-top))]">
-            <button type="button" onClick={closeBooking} className={cx(roundBtn, 'size-10 bg-slate-100 text-slate-700 active:bg-slate-200')} aria-label={t.close}>
-              <X size={20} />
-            </button>
-            <span className="min-w-0 flex-1 truncate text-[18px] font-extrabold text-navy">{t.ctaBook}</span>
-            <LangSwitch className="!h-9 bg-slate-100 [&>button]:!h-7 [&>button]:!px-2.5" />
-          </div>
-          <div ref={setProgressHost} />
-        </div>
-
-        <div ref={setScroller} className="max-lg:min-h-0 max-lg:flex-1 max-lg:overflow-y-auto max-lg:overscroll-contain">
-          <div className="mx-auto max-w-[640px] max-lg:px-3 max-lg:py-3.5 lg:pb-4">
-            <div className="lg:overflow-hidden lg:rounded-[28px] lg:bg-white lg:shadow-[0_24px_60px_rgba(31,56,100,.18)] lg:ring-1 lg:ring-white/70">
-              <div className="hidden items-start justify-between gap-3.5 bg-gradient-to-r from-primary to-[#1FB6E8] px-6 py-5 text-white lg:flex">
-                <div className="min-w-0">
-                  <h2 className="text-[26px] font-extrabold leading-tight">{t.ctaBook}</h2>
-                  <p className="mt-1 text-[13.5px] text-white/85">{t.bookSub}</p>
-                </div>
-                <span className="flex size-11 flex-none items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/40">
-                  <CalendarDays size={22} />
-                </span>
+      {/* ------------------------------------------------------------ booking: the right-hand card on desktop · on phones the card right under the hero, one step at a time */}
+      <section id="book" ref={(el) => ((panel.current = el), setAnchor(el))} className="relative z-10 scroll-mt-[68px] max-lg:-mt-[52px] max-lg:px-3 sm:max-lg:px-8 lg:flex lg:h-dvh lg:min-h-0 lg:flex-col lg:py-4 lg:pr-4">
+        {/* desktop: the card fills the screen height — title, progress and Back / Next stay put, the step's fields scroll */}
+        <div className="mx-auto w-full max-w-[640px] max-lg:max-w-[720px] lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+          <div className="overflow-hidden rounded-[26px] bg-white shadow-[0_18px_44px_rgba(31,56,100,.18)] ring-1 ring-white/70 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col lg:rounded-[28px] lg:shadow-[0_24px_60px_rgba(31,56,100,.18)]">
+            {/* desktop: gradient title bar */}
+            <div className={cx(styles.cardHead, 'hidden flex-none items-center justify-between gap-3.5 bg-gradient-to-r from-primary to-[#1FB6E8] px-6 py-4 text-white lg:flex')}>
+              <div className="min-w-0">
+                <h2 className="text-[24px] font-extrabold leading-tight">{t.ctaBook}</h2>
+                <p className="mt-0.5 truncate text-[13.5px] text-white/85">{t.bookSub}</p>
               </div>
-              <div className="lg:bg-[#EEF5FA] lg:p-4">
-                <BookingForm services={services} zones={zones} booking={booking} legacySlots={legacySlots} hotline={h.phone} hours={h.hours} prefill={prefill} signedIn={!!patient} wizard={phone ? { progress: progressHost, bar: barHost, scroller } : null} preselect={preselect} />
+              <span className="flex size-11 flex-none items-center justify-center rounded-xl bg-white/20 ring-1 ring-white/40">
+                <CalendarDays size={22} />
+              </span>
+            </div>
+            {/* phones: title · then, everywhere, the progress strip (drawn by the form) */}
+            <div className="flex items-center gap-3 px-4 pt-4 lg:hidden">
+              <span className="flex size-11 flex-none items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-[#12A5B8] text-white shadow-[0_8px_18px_rgba(0,144,202,.35)]">
+                <CalendarDays size={22} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-[20px] font-extrabold leading-tight text-navy">{t.ctaBook}</h2>
+                <p className="truncate text-[12.5px] text-slate-500">{t.how1}</p>
               </div>
             </div>
-
-            {/* desktop: the two logins and the footer sit under the card */}
-            <div className="hidden lg:block">
-              <LoginCards session={session} phone={false} className="mt-4" />
-              <SiteFooter hospital={h} session={session} phone={false} className="mb-6 mt-4" />
+            <div ref={setProgressHost} className="flex-none" />
+            <div ref={setScroller} className="hc-scroll bg-[#EEF5FA] p-3 sm:p-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:overscroll-contain">
+              <BookingForm services={services} zones={zones} booking={booking} legacySlots={legacySlots} hotline={h.phone} hours={h.hours} prefill={prefill} signedIn={!!patient} wizard={{ progress: progressHost, bar: barHost, anchor, scroller }} preselect={preselect} />
             </div>
+            {/* Back / Next (drawn by the form) */}
+            <div ref={setBarHost} className="flex-none border-t border-slate-100 bg-white empty:hidden" />
           </div>
-        </div>
 
-        {/* phones: Back / Next (drawn by the form) */}
-        <div ref={setBarHost} className="flex-none border-t border-slate-200 bg-white/95 backdrop-blur empty:hidden lg:hidden" />
+          {/* desktop: one slim line under the card (the header has both logins) */}
+          <footer id="contact" className="mt-2.5 hidden flex-none items-center gap-x-3 rounded-2xl bg-white/90 px-4 py-2 text-[12px] text-slate-500 shadow-sm ring-1 ring-white backdrop-blur lg:flex">
+            <span className="min-w-0 flex-1 truncate">
+              © {new Date().getFullYear()} {h.name} · {h.address}
+            </span>
+            {[
+              { href: '/privacy', label: t.privacyTitle },
+              { href: '/terms', label: t.terms },
+            ].map((l) => (
+              <Link key={l.href} href={l.href} className="flex-none font-medium text-slate-600 hover:text-primary-700 hover:underline">
+                {l.label}
+              </Link>
+            ))}
+            <a href={telUrl(h.phone)} className="flex flex-none items-center gap-1.5 font-bold text-primary-700 hover:underline">
+              <Phone size={13} /> {h.phone}
+            </a>
+          </footer>
+        </div>
       </section>
+
+      {/* ------------------------------------------------------------ phones / tablets: everything after the form */}
+      <MobileLanding hospital={h} services={services} session={session} onBook={openBooking} onLogin={() => setLogin(true)} />
 
       {/* ------------------------------------------------------------ phones: bottom tab bar (Book raised in the middle) + "More" menu + Login sheet */}
       <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 rounded-t-[26px] border-t border-white/70 bg-white/90 pb-[env(safe-area-inset-bottom)] text-[11.5px] font-semibold text-slate-500 shadow-[0_-8px_30px_rgba(31,56,100,.12)] backdrop-blur-xl lg:hidden" aria-label={t.menu}>

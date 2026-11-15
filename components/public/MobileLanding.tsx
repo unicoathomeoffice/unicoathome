@@ -1,10 +1,11 @@
 'use client'
-// Phones and tablets (below lg): the public home as a real landing page — photo hero, one big "Book a visit", quick
-// actions, the services (tap one to book it), how it works, why us, the two logins and the footer. Booking itself
-// opens as a full-screen step-by-step flow (PublicHome). The desktop split screen is a separate tree in PublicHome.
+// Phones and tablets (below lg): the public home. MobileHero is a compact blue band with the photo; the booking card
+// (PublicHome) sits right under it, so the form is the first thing on the screen. MobileLanding is everything after
+// the form: quick actions, the services (tap one to book it), how it works, why us, the two logins and the footer.
+// The desktop split screen is a separate tree in PublicHome.
 import Link from 'next/link'
 import { useEffect, useRef, type ReactNode } from 'react'
-import { ArrowRight, CalendarDays, ChevronRight, House, MessageCircle, Phone, PhoneCall, ShieldCheck, Smile, Truck, UserRound, Users } from 'lucide-react'
+import { CalendarDays, ChevronRight, Clock3, FlaskConical, House, MessageCircle, Phone, Stethoscope, Truck, UserRound } from 'lucide-react'
 import { telUrl } from '@/components/ui'
 import { cx } from '@/lib/format'
 import { useLang } from './i18n'
@@ -60,6 +61,37 @@ function Head({ title, sub }: { title: string; sub?: string }) {
   )
 }
 
+/** Phones / tablets: a compact blue band — the title, one line about the service and the photo. The booking card
+ *  overlaps its bottom edge, so the form is on the first screen. */
+export function MobileHero() {
+  const { t, lang } = useLang()
+  const fade = 'linear-gradient(to right, transparent 6%, #000 56%)'
+  return (
+    <section className="relative overflow-hidden bg-gradient-to-br from-[#0A6FB5] via-primary to-[#12A5B8] px-5 pb-[70px] pt-5 text-white sm:px-8 lg:hidden">
+      {/* the portrait photo, zoomed on the two faces and faded into the blue (desktop has its own hero: 1px GIF there) */}
+      <picture aria-hidden="true">
+        <source media="(min-width: 1024px)" srcSet="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
+        <source type="image/avif" srcSet="/home-care-mobile.avif" />
+        <img src="/home-care-mobile.webp" alt="" fetchPriority="high" decoding="async" className="absolute right-0 top-[-34%] h-[165%] w-auto max-w-none" style={{ maskImage: fade, WebkitMaskImage: fade }} />
+      </picture>
+      <span className="pointer-events-none absolute -left-16 -top-20 size-56 rounded-full bg-white/10" aria-hidden />
+      <span className="pointer-events-none absolute inset-y-0 left-0 w-[62%] bg-gradient-to-r from-[#0A6FB5]/70 to-transparent" aria-hidden />
+      <div className="relative mx-auto max-w-[720px]">
+        <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#0A5C9C]/55 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-[.08em] text-white ring-1 ring-white/25 backdrop-blur">
+          <span className="size-1.5 flex-none rounded-full bg-[#9BE8DD]" />
+          <span className="truncate">{t.heroKicker}</span>
+        </span>
+        <div className="max-w-[64%] sm:max-w-[52%]">
+          <h1 className={cx('mt-2.5 font-extrabold drop-shadow-[0_2px_10px_rgba(10,60,110,.35)]', lang === 'bn' ? 'text-[clamp(23px,6.6vw,34px)] leading-[1.25]' : 'text-[clamp(27px,7.8vw,40px)] leading-[1.06] tracking-[-.02em]')}>
+            {t.heroTitle1} <span className="text-[#BDF3EA]">{t.heroTitle2}</span>
+          </h1>
+          <p className="mt-2 text-[13.5px] font-medium leading-[20px] text-white/90 sm:text-[15px] sm:leading-[23px]">{t.heroSubM}</p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function MobileLanding({ hospital: h, services, session, onBook, onLogin }: { hospital: Hospital; services: Service[]; session: PublicSession; onBook: (serviceCode?: string) => void; onLogin: () => void }) {
   const { t, lang } = useLang()
   const { patient } = session
@@ -74,72 +106,18 @@ export function MobileLanding({ hospital: h, services, session, onBook, onLogin 
     { title: t.how2, sub: t.how2s },
     { title: t.how3, sub: t.how3s },
   ]
-  const stats = [
-    { icon: Users, n: t.statVisitsN, l: t.statVisits },
-    { icon: Smile, n: t.statFamiliesN, l: t.statFamilies },
-    { icon: UserRound, n: t.statStaffN, l: t.statStaff },
-    { icon: ShieldCheck, n: t.statSafe, l: t.statSafeS },
+  const points = [
+    { icon: Stethoscope, title: t.feat1, sub: t.feat1s },
+    { icon: FlaskConical, title: t.feat2, sub: t.feat2s },
+    { icon: Clock3, title: t.feat3, sub: t.feat3s },
+    { icon: House, title: t.feat4, sub: t.feat4s },
   ]
   const tile = 'flex flex-col items-center gap-1.5 rounded-2xl bg-white px-1 py-3 text-[12.5px] font-semibold text-slate-700 shadow-[0_6px_20px_rgba(31,56,100,.07)] ring-1 ring-slate-100 active:scale-[.97]'
 
   return (
-    <main className="lg:hidden">
-      {/* ------------------------------------------------------------ hero: the photo, with the words in its empty part */}
-      <section className="relative overflow-hidden bg-[#EAF6FD]">
-        {/* one photo per device: portrait on phones, landscape on tablets, none here on desktop (its own hero has it) */}
-        <picture aria-hidden="true">
-          <source media="(min-width: 1024px)" srcSet="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
-          <source media="(min-width: 640px)" type="image/avif" srcSet="/home-care-desktop.avif" />
-          <source media="(min-width: 640px)" srcSet="/home-care-desktop.webp" />
-          <source type="image/avif" srcSet="/home-care-mobile.avif" />
-          <img src="/home-care-mobile.webp" alt="" fetchPriority="high" decoding="async" className="block h-[150vw] max-h-[640px] w-full object-cover object-[78%_100%] sm:aspect-[3/2] sm:h-auto sm:max-h-[560px] sm:object-right" />
-        </picture>
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-[56%] bg-gradient-to-b from-[#EAF6FD] via-[#EAF6FD]/80 to-transparent sm:hidden" aria-hidden />
-        <div className="pointer-events-none absolute inset-y-0 left-0 hidden w-[64%] bg-gradient-to-r from-[#F2FAFF] via-[#F2FAFF]/85 to-transparent sm:block" aria-hidden />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[32%] bg-gradient-to-t from-navy/55 to-transparent" aria-hidden />
-
-        <div className="absolute inset-0 flex flex-col px-5 pb-[52px] pt-4 sm:justify-center sm:px-8 sm:pb-16">
-          <span className="inline-flex items-center gap-2 self-start rounded-full bg-white/85 px-3 py-1.5 text-[11.5px] font-bold uppercase tracking-[.12em] text-primary-700 shadow-sm ring-1 ring-white backdrop-blur">
-            <span className="size-1.5 rounded-full bg-teal shadow-[0_0_0_3px_rgba(58,181,167,.28)]" />
-            {t.heroKicker}
-          </span>
-          {/* Bangla is wider and taller per letter: a smaller size keeps the title on two lines, clear of the photo */}
-          <h1 className={cx('mt-3 font-extrabold text-navy', lang === 'bn' ? 'text-[clamp(27px,8.5vw,38px)] leading-[1.22] sm:text-[44px]' : 'text-[clamp(34px,10.6vw,46px)] leading-[1.02] tracking-[-.03em] sm:text-[52px]')}>
-            {t.heroTitle1}
-            <br />
-            <span className="bg-gradient-to-r from-[#0085ff] to-[#00a7a8] bg-clip-text text-transparent">{t.heroTitle2}</span>
-          </h1>
-          <p className="mt-3 max-w-[80%] text-[15px] font-medium leading-[22px] text-slate-700 sm:max-w-[44%] sm:text-[16px] sm:leading-[25px]">{t.heroSubM}</p>
-
-          <div className="mt-auto flex items-center gap-2.5 self-start rounded-2xl bg-white/90 py-2 pl-2 pr-3.5 shadow-[0_10px_30px_rgba(15,23,42,.18)] ring-1 ring-white backdrop-blur sm:mt-6">
-            <span className="flex size-9 flex-none items-center justify-center rounded-xl bg-primary text-white">
-              <PhoneCall size={17} />
-            </span>
-            <span className="min-w-0 leading-tight">
-              <span className="block text-[12.5px] font-bold text-navy">{t.heroChip}</span>
-              <span className="block truncate text-[11.5px] text-slate-500">
-                {t.openHours} {h.hours}
-              </span>
-            </span>
-          </div>
-        </div>
-      </section>
-
-      {/* ------------------------------------------------------------ the sheet: Book a visit + quick actions */}
-      <div className="relative -mt-9 rounded-t-[32px] bg-[#F2F8FD] px-4 pb-32 pt-5 shadow-[0_-10px_30px_rgba(31,56,100,.10)] sm:px-8">
-        <div className="mx-auto max-w-[720px]">
-          <button type="button" onClick={() => onBook()} className="flex h-[60px] w-full items-center gap-3 rounded-[20px] bg-gradient-to-r from-primary to-[#12A5B8] pl-5 pr-2.5 text-left text-white shadow-[0_14px_30px_rgba(0,144,202,.38)] active:scale-[.99]">
-            <CalendarDays size={22} className="flex-none" />
-            <span className="min-w-0 flex-1 leading-tight">
-              <span className="block text-[17px] font-extrabold">{t.ctaBook}</span>
-              <span className="block truncate text-[12px] font-medium text-white/85">{t.how1}</span>
-            </span>
-            <span className="flex size-10 flex-none items-center justify-center rounded-full bg-white/20 ring-1 ring-white/40">
-              <ArrowRight size={19} />
-            </span>
-          </button>
-
-          <div className="mt-3.5 grid grid-cols-4 gap-2.5">
+    <main className="px-4 pb-32 pt-4 sm:px-8 lg:hidden">
+      <div className="mx-auto max-w-[720px]">
+          <div className="grid grid-cols-4 gap-2.5">
             {quick.map((q) => {
               const body = (
                 <>
@@ -223,11 +201,11 @@ export function MobileLanding({ hospital: h, services, session, onBook, onLogin 
                   {t.badge1}, <span className="text-[#9BE8DD]">{t.badge2}</span>
                 </h2>
                 <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-                  {stats.map((s) => (
-                    <div key={s.l} className="rounded-2xl bg-white/10 p-3 ring-1 ring-white/15 backdrop-blur-sm">
-                      <s.icon size={20} className="text-[#9BE8DD]" />
-                      <div className="mt-2 text-[20px] font-extrabold leading-tight">{s.n}</div>
-                      <div className="text-[12px] leading-[16px] text-white/75">{s.l}</div>
+                  {points.map((x) => (
+                    <div key={x.title} className="rounded-2xl bg-white/10 p-3 ring-1 ring-white/15 backdrop-blur-sm">
+                      <x.icon size={20} className="text-[#9BE8DD]" />
+                      <div className="mt-2 text-[14.5px] font-bold leading-snug">{x.title}</div>
+                      <div className="mt-0.5 text-[12px] leading-[16px] text-white/75">{x.sub}</div>
                     </div>
                   ))}
                 </div>
@@ -249,7 +227,6 @@ export function MobileLanding({ hospital: h, services, session, onBook, onLogin 
           <Reveal className="mt-7">
             <SiteFooter hospital={h} session={session} phone />
           </Reveal>
-        </div>
       </div>
     </main>
   )

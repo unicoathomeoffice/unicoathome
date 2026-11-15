@@ -1,8 +1,9 @@
 'use client'
 // Public "book a home visit" form — phone first: one column, 48px+ targets, 16px inputs (no iOS zoom), sticky send bar.
 // English / বাংলা via useLang(); slots come live from Settings → Online booking and grey out as visits are confirmed.
-// `wizard` (phones / tablets): one step per screen — the progress strip and the Back / Next bar are drawn into the
-// two host elements the page gives (its full-screen booking dialog); every section stays mounted, so answers are kept.
+// `wizard` (phones / tablets): one step at a time, right on the page — the progress strip and the Back / Next bar are
+// drawn into the two host elements the page gives (top and bottom of the booking card); every section stays mounted,
+// so answers are kept.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
@@ -22,8 +23,10 @@ export type BookingDay = { date: string; weekday: number; closed: boolean; slots
 type Doc = { uid: number; name: string; kind: 'image' | 'pdf'; preview?: string; busy: boolean; id?: string; token?: string; err?: string; original?: File }
 let docSeq = 1
 
-/** Step-by-step mode: where the progress strip and the Back / Next bar are drawn (null until the dialog is mounted). */
-export type BookingWizard = { progress: HTMLElement | null; bar: HTMLElement | null; scroller: HTMLElement | null }
+/** Step-by-step mode: where the progress strip and the Back / Next bar are drawn; the card to bring back into view
+ *  when the step changes (phones: the page scrolls) and the box the fields scroll in (desktop: the card is one screen
+ *  tall). All null until mounted. */
+export type BookingWizard = { progress: HTMLElement | null; bar: HTMLElement | null; anchor: HTMLElement | null; scroller?: HTMLElement | null }
 /** which step each field belongs to (1 patient · 2 address · 3 service · 4 day & time · 5 documents & notes) */
 const STEP_OF: Record<string, number> = { name: 1, phone: 1, ageYears: 1, gender: 1, email: 1, road: 2, house: 2, flat: 2, area: 2, landmark: 2, lat: 2, lng: 2, serviceCodes: 3, date: 4, slot: 4, attachments: 5, notes: 5 }
 const LAST_STEP = 5
@@ -136,15 +139,25 @@ export function BookingForm({
     setErrors(({ serviceCodes: _, ...rest }) => rest)
   }, [preselect])
 
-  // a new step starts at its top; the map (hidden until its step shows) needs a nudge to measure itself
-  const scroller = wizard?.scroller
+  // a new step starts at the top of the card (not on first paint — the page must not jump); the map (hidden until
+  // its step shows) needs a nudge to measure itself
+  const stepped = useRef(false)
+  /** back to the top of the step: the fields' own scroll box (desktop) and the card on the page (phones) */
+  const toTop = () => {
+    wizard?.scroller?.scrollTo({ top: 0 })
+    wizard?.anchor?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   useEffect(() => {
     if (!wizard) return
-    scroller?.scrollTo({ top: 0 })
+    if (!stepped.current) {
+      stepped.current = true
+      return
+    }
+    toTop()
     const id = setTimeout(() => window.dispatchEvent(new Event('resize')), 60)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, !!wizard, scroller])
+  }, [step, !!wizard])
 
   async function addFiles(list: FileList | null) {
     if (!list) return
@@ -255,7 +268,7 @@ export function BookingForm({
       })
       setDone(r)
       setStep(1)
-      if (wizard) wizard.scroller?.scrollTo({ top: 0 })
+      if (wizard) toTop()
       else window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e: any) {
       if (e.code === 'PRESCRIPTION_REQUIRED') {
@@ -338,7 +351,7 @@ export function BookingForm({
     >
       {wizard?.progress &&
         createPortal(
-          <div className="px-4 pb-3">
+          <div className="px-4 pb-3.5 pt-3">
             <div className="flex items-baseline justify-between gap-3">
               <span className="truncate text-[15px] font-bold text-navy">{stepNames[step - 1]}</span>
               <span className="flex-none text-[12.5px] font-semibold text-slate-500">{t.stepOf(step, LAST_STEP)}</span>
@@ -353,7 +366,7 @@ export function BookingForm({
         )}
       {wizard?.bar &&
         createPortal(
-          <div className="flex gap-2.5 px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
+          <div className="flex gap-2.5 p-3">
             {step > 1 && (
               <button type="button" onClick={() => (setFormErr(''), setStep((x) => Math.max(1, x - 1)))} className="flex h-[52px] flex-none items-center gap-1.5 rounded-2xl bg-white px-5 text-[15px] font-bold text-navy ring-1 ring-slate-200 active:bg-slate-50">
                 <ArrowLeft size={18} /> {t.back}
