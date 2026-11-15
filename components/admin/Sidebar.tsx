@@ -2,7 +2,7 @@
 import Link, { useLinkStatus } from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Suspense, use, useEffect, useState } from 'react'
-import { Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X, MapPinned, Receipt, Send, Package } from 'lucide-react'
+import { CalendarClock, Home, KanbanSquare, Users, UserRound, BarChart3, Mail, Bell, Settings, MoreVertical, LogOut, Smartphone, KeyRound, Menu, X, MapPinned, Receipt, Send, Package } from 'lucide-react'
 import { cx } from '@/lib/format'
 import { api } from '@/components/client/api'
 import { OutboxBadge } from '@/components/client/WaReview'
@@ -17,6 +17,7 @@ type Perm = Permission | ((perms: Permission[]) => boolean)
 const NAV: { href: string; label: string; icon: any; countKey?: string; perm?: Perm }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: Home },
   { href: '/requests', label: 'Requests', icon: KanbanSquare, countKey: 'open', perm: 'requests.readAll' },
+  { href: '/schedules', label: 'Schedules', icon: CalendarClock, perm: 'requests.readAll' }, // repeating visits
   { href: '/live', label: 'Live map', icon: MapPinned, perm: 'requests.readAll' },
   { href: '/patients', label: 'Patients', icon: Users, perm: 'requests.readAll' },
   { href: '/staff', label: 'Staff', icon: UserRound, perm: 'users.read' },

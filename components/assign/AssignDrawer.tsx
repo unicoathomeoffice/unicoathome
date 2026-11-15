@@ -42,6 +42,8 @@ export type AssignProps = {
   canActForExternal?: boolean
   /** Unico car on this visit: the admin must set pick-up / return times before the requisition (unless already set) */
   car?: { needed: boolean; set: boolean; pickup: string; ret: string; visitTime?: string; recent?: string[] }
+  /** part of a repeating schedule: offer "use this team for every visit" */
+  series?: { rule: string } | null
 }
 
 export function AssignDrawer(p: AssignProps) {
@@ -65,6 +67,7 @@ export function AssignDrawer(p: AssignProps) {
   const [pickup, setPickup] = useState(CAR?.pickup ?? '')
   const [ret, setRet] = useState(CAR?.ret ?? '')
   const timesMissing = needTimes && (!pickup || !ret)
+  const [series, setSeries] = useState(!!p.series)
   const [notify, setNotify] = useState<string[] | null>(null)
   const [paired, setPaired] = useState(true)
   const [acceptNow, setAcceptNow] = useState(!!p.canOverride)
@@ -116,6 +119,7 @@ export function AssignDrawer(p: AssignProps) {
             fee: fee === '' ? undefined : Number(fee),
             acceptNow: accepting ? true : undefined,
             ...(needTimes ? { pickupTime: pickup, returnTime: ret } : {}),
+            ...(p.series && series ? { applyToSeries: true } : {}),
             notify: notify ?? undefined,
           },
         }),
@@ -234,6 +238,15 @@ export function AssignDrawer(p: AssignProps) {
             <PickupQuickPicks visitTime={CAR?.visitTime} recent={CAR?.recent} value={pickup} onChange={setPickup} />
             <div className="mt-1.5 text-[11.5px] text-[#92400E]/80">The vehicle requisition goes to the security supervisor with the team names and these times.</div>
           </div>
+        )}
+        {p.series && (
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg bg-[#F0F9FF] px-3 py-2.5 ring-1 ring-[#BAE6FD]">
+            <input type="checkbox" className="mt-0.5 size-4 accent-[#0090CA]" checked={series} onChange={(e) => setSeries(e.target.checked)} />
+            <span className="text-[13px]">
+              <b>Use this team for every visit in this schedule</b>
+              <span className="block text-[12px] text-slate-500">{p.series.rule} — the other coming visits and every new one get this team{needTimes ? ' and car times' : ''}.</span>
+            </span>
+          </label>
         )}
         <label>
           <span className="hc-label">Fee (৳)</span>

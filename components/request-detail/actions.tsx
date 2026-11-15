@@ -13,6 +13,7 @@ import { availableActions, type Perms } from './lib'
 import { AssignDrawer, type AssignProps } from '@/components/assign/AssignDrawer'
 import { openConfirmLink, reserveTab, type WaInfo } from './PatientWhatsApp'
 import { NotifyPicker } from '@/components/client/NotifyPicker'
+import { RepeatPicker, REPEAT_DEFAULT, repeatToInput, type Repeat } from '@/components/schedule/RepeatPicker'
 import { useConfirmSend } from '@/components/client/ConfirmSend'
 import { DeleteRequestsDialog } from '@/components/board/DeleteRequests'
 
@@ -28,6 +29,8 @@ export type ReqLite = {
   serviceCodes: string[]
   otherService: string
   serviceOptions: { code: string; name: string; fee: number | null }[]
+  /** part of a repeating schedule (link + "Mon · Wed · Fri · ongoing") */
+  schedule: { id: string; rule: string } | null
   /** "Undo last step": what the last step was and where Undo goes (null = nothing to undo) */
   revert: { step: string; toWord: string } | null
   patientCategory?: string
@@ -113,7 +116,7 @@ export function ActionBar({
   const router = useRouter()
   const pathname = usePathname()
   const sp = useSearchParams()
-  const [dlg, setDlg] = useState<null | 'confirm' | 'reschedule' | 'cancel' | 'close' | 'email' | 'whatsapp' | 'delete' | 'undo'>(null)
+  const [dlg, setDlg] = useState<null | 'confirm' | 'reschedule' | 'cancel' | 'close' | 'email' | 'whatsapp' | 'delete' | 'undo' | 'repeat'>(null)
   const [assigning, setAssigning] = useState(assignOpen)
   useEffect(() => setAssigning(assignOpen), [assignOpen])
   const a = availableActions(r.status)
@@ -184,6 +187,18 @@ export function ActionBar({
             <Undo2 size={16} /> Undo “{r.revert.step}”
           </button>
         )}
+        {r.schedule ? (
+          <a href={`/schedules/${r.schedule.id}`} className={cx(iconBtn(), 'border-[#BAE6FD] bg-[#F0F9FF] text-[#0369A1]')} title="This visit is part of a repeating schedule">
+            <CalendarClock size={16} /> Schedule · {r.schedule.rule}
+          </a>
+        ) : (
+          perms.manage &&
+          !['CANCELLED'].includes(r.status) && (
+            <button className={iconBtn()} onClick={() => setDlg('repeat')} title="Make this the first visit of a repeating schedule">
+              <CalendarClock size={16} /> Repeat on a schedule
+            </button>
+          )
+        )}
         {perms.create && (
           <a href={`/requests/new?from=${r.id}`} className={iconBtn(['COMPLETED', 'CLOSED', 'CANCELLED'].includes(r.status) ? 'p' : 'o')} title="A new request with the same patient, services and tests — pick the new date">
             <RefreshCw size={16} /> Book again
@@ -199,6 +214,7 @@ export function ActionBar({
       {dlg === 'reschedule' && <RescheduleDialog r={r} slots={slots} onClose={close} />}
       {dlg === 'cancel' && <CancelDialog r={r} onClose={close} />}
       {dlg === 'undo' && r.revert && <UndoDialog r={r} onClose={close} />}
+      {dlg === 'repeat' && <RepeatDialog r={r} onClose={close} />}
       {dlg === 'close' && <CloseDialog r={r} perms={perms} onClose={close} />}
       {dlg === 'email' && <EmailDialog r={r} onClose={close} />}
       {dlg === 'whatsapp' && <WhatsAppDialog r={r} onClose={close} />}
@@ -410,6 +426,47 @@ function RescheduleDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; 
 
 // ---------------------------------------------------------------- cancel
 const CANCEL_REASONS = ['Patient cancelled', 'Patient unreachable', 'Admitted to hospital', 'Duplicate request', 'No staff available', 'Other']
+// ---------------------------------------------------------------- repeat on a schedule
+function RepeatDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
+  const router = useRouter()
+  const { run, busy } = useAction()
+  const [rep, setRep] = useState<Repeat>(REPEAT_DEFAULT)
+  const ready = repeatToInput(rep)
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title="Repeat on a schedule"
+      sub={`${r.requestNo} · ${r.patientName} becomes visit #1`}
+      footer={
+        <Foot onClose={onClose}>
+          <button
+            className={btnClass('p')}
+            disabled={busy || typeof ready === 'string'}
+            onClick={async () => {
+              if (typeof ready === 'string') return
+              const res = await run(() => api<{ id: string; made: number }>('/schedules', { body: { fromRequestId: r.id, ...ready, time: r.time || undefined } }), 'Schedule made')
+              if (res) {
+                onClose()
+                router.push(`/schedules/${(res as any).id}`)
+              }
+            }}
+          >
+            {busy && <Loader2 size={16} className="animate-spin" />} <CalendarClock size={16} /> Make schedule
+          </button>
+        </Foot>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <RepeatPicker value={rep} onChange={setRep} start={r.date} time={r.time || undefined} />
+        <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-[12.5px] text-slate-600">
+          Each new visit copies this one: services, tests, car, duration and notes. {r.primaryStaffName ? `They are assigned to ${r.primaryStaffName}'s team.` : 'Assign a team on any visit and tick “every visit in this schedule”.'}
+        </div>
+      </div>
+    </Drawer>
+  )
+}
+
 // ---------------------------------------------------------------- undo a step clicked by mistake
 const UNDO_REASONS = ['Clicked by mistake', 'Wrong request', 'Wrong time / date', 'Staff did not go yet', 'Patient not ready']
 function UndoDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {

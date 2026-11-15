@@ -1,4 +1,5 @@
 'use client'
+import { RepeatPicker, REPEAT_DEFAULT, repeatToInput, type Repeat } from '@/components/schedule/RepeatPicker'
 import Link from 'next/link'
 import { H360TestPicker } from '@/components/client/H360TestPicker'
 import { testsTotal, type TestItem } from '@/lib/schemas'
@@ -72,6 +73,9 @@ const blank = (today: string) => ({
   payment: '' as '' | (typeof PAYMENT_METHODS)[number],
   source: 'PHONE' as (typeof REQUEST_SOURCES)[number],
   remarks: '',
+  // one visit, or repeating on a schedule (lib/services/schedules.ts makes the next visits)
+  repeating: false,
+  repeat: REPEAT_DEFAULT as Repeat,
 })
 type F = ReturnType<typeof blank>
 
@@ -308,11 +312,30 @@ export function RequestForm({
         paymentMethod: kind === 'assign' ? f.payment || undefined : undefined,
         notify: notify ?? undefined,
       }
+      const plan = f.repeating ? repeatToInput(f.repeat) : null
+      if (typeof plan === 'string') {
+        tab?.close()
+        setStep(2)
+        toast(plan, 'err')
+        return
+      }
       const r = await api<{ id: string; requestNo: string }>('/requests', { body })
       try {
         localStorage.removeItem(DRAFT_KEY)
       } catch {}
       if (kind === 'confirm') await openConfirmLink(tab, r.id)
+      if (plan) {
+        // repeating: this request is visit #1; the schedule makes the next ones (confirmed, same team once assigned)
+        try {
+          const sch = await api<{ id: string; made: number }>('/schedules', { body: { fromRequestId: r.id, ...plan, time: f.timeMode === 'time' && f.time ? f.time : undefined } })
+          toast(`${r.requestNo} created · schedule made with ${sch.made} more visit${sch.made === 1 ? '' : 's'} in the next 2 weeks`, 'ok')
+        } catch (e: any) {
+          toast(`${r.requestNo} created, but the schedule could not be made: ${e?.message ?? 'error'} — use “Repeat on a schedule” on the request`, 'err')
+        }
+        // assign the team next — "use this team for every visit" fills the whole schedule
+        router.push(`/requests/${r.id}${kind !== 'assign' && canAssign ? '?assign=1' : ''}`)
+        return
+      }
       toast(kind === 'save' ? `${r.requestNo} created` : kind === 'confirm' ? `${r.requestNo} created and confirmed` : `${r.requestNo} created and assigned`, 'ok')
       router.push(`/requests/${r.id}`)
     } catch (e: any) {
@@ -854,6 +877,25 @@ function StepService({ f, set, services, slots, booking, today, errors, autoDura
             </div>
           </div>
         </div>
+      </SectionCard>
+      <SectionCard title="Visits" right={<span className="text-[12px] text-slate-400">One visit, or repeating on a schedule</span>}>
+        <div className="grid max-w-[420px] grid-cols-2 gap-2">
+          {(
+            [
+              [false, 'One visit'],
+              [true, 'Repeating'],
+            ] as const
+          ).map(([v, l]) => (
+            <button key={l} type="button" onClick={() => set('repeating', v)} className={cx('h-11 rounded-lg border text-sm font-semibold', f.repeating === v ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50')}>
+              {l}
+            </button>
+          ))}
+        </div>
+        {f.repeating && (
+          <div className="mt-3">
+            <RepeatPicker value={f.repeat} onChange={(v) => set('repeat', v)} start={f.date} time={f.timeMode === 'time' ? f.time : undefined} />
+          </div>
+        )}
       </SectionCard>
     </>
   )

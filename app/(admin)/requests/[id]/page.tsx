@@ -1,12 +1,13 @@
 import { notFound } from 'next/navigation'
 import { activeServices } from '@/lib/cached'
+import { describeSchedule } from '@/lib/schedule-dates'
 import { revertPreview } from '@/lib/services/requests'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { AutoRefresh } from '@/components/client'
 import { PriorityBadge, SlaPill, StatusChip, Tabs } from '@/components/ui'
 import { requireWebUser } from '@/lib/auth'
 import { db, plain } from '@/lib/db'
-import { AssignmentLog, Attachment, AuditLog, ChatMessage, HomecareRequest, LabResult, MessageLog, Patient, Prescription, User, Vehicle, isOid } from '@/lib/models'
+import { AssignmentLog, Attachment, AuditLog, ChatMessage, HomecareRequest, LabResult, MessageLog, Patient, Prescription, User, Vehicle, isOid, CarePlan } from '@/lib/models'
 import { canView, slaInfo, withPeople } from '@/lib/services/requests'
 import { getSettings } from '@/lib/settings'
 import { initialsOf, isoDay, dayRange, dayNum, time, time24, dur, date } from '@/lib/format'
@@ -113,7 +114,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   }
 
   // everything that only needs the request, all at once (these used to wait for each other)
-  const [[serviceCatalog, undoInfo], settings, [patient, msgCount, attCount, auditCount, logCount, waPaired, confirmMsg], , todays, supportPeople, [carList, driverList], recentPickupDocs] = await Promise.all([
+  const [[serviceCatalog, undoInfo], settings, [patient, msgCount, attCount, auditCount, logCount, waPaired, confirmMsg], , todays, supportPeople, [carList, driverList], recentPickupDocs, schedulePlan] = await Promise.all([
     withPeople([r]).then(() => Promise.all([activeServices(), revertPreview(r)] as const)), // catalog for "add a service" · "Undo last step"
     getSettings(),
     Promise.all([
@@ -143,6 +144,8 @@ export default async function RequestDetailPage({ params, searchParams }: { para
     r.transport?.needed
       ? HomecareRequest.find({ _id: { $ne: r._id }, 'transport.pickupAt': { $ne: null } }).sort({ 'transport.pickupAt': -1 }).limit(30).select('transport.pickupAt').lean<any[]>()
       : Promise.resolve([] as any[]),
+    // part of a repeating schedule (only the new kind, with a pattern)
+    r.carePlanId ? CarePlan.findOne({ _id: r.carePlanId, 'pattern.kind': { $exists: true } }).select('pattern end').lean<any>() : Promise.resolve(null),
   ])
   const sla = settings.sla
 
@@ -186,6 +189,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
       slots: settings.general.slots,
       canOverride: can(user, 'requests.override'),
       canActForExternal: perms.assign,
+      series: schedulePlan ? { rule: describeSchedule(schedulePlan.pattern, schedulePlan.end) } : null,
       // Unico car: the admin sets the pick-up / return time here before the requisition goes (unless already set)
       car: (() => {
         const hm = (d?: Date | string | null) => (d ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(d)) : '')
@@ -220,6 +224,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
     otherService: (r.services ?? []).filter((x: any) => x.code === 'OTHER').map((x: any) => x.name).join(', '),
     serviceOptions: serviceCatalog.map((t) => ({ code: t.code, name: t.name, fee: t.fee ?? null })),
     revert: undoInfo ? { step: undoInfo.step, toWord: undoInfo.toWord } : null,
+    schedule: schedulePlan ? { id: String(schedulePlan._id), rule: describeSchedule(schedulePlan.pattern, schedulePlan.end) } : null,
     testItems: (r.testItems ?? []).map((t: any) => ({ code: t.code ?? '', name: t.name, price: t.price ?? 0, dept: t.dept })),
     patientCategory: (patient as any)?.category ?? undefined,
     date: r.scheduledAt ? isoDay(r.scheduledAt) : r.preferred?.date || isoDay(),

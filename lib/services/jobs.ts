@@ -28,6 +28,8 @@ export async function cleanupPendingUploads() {
 export async function sweep(force = false) {
   if (!force && g._hcLastSweep && Date.now() - g._hcLastSweep < 60_000) return { skipped: true }
   g._hcLastSweep = Date.now()
+  // repeating schedules: keep them 14 days ahead (at most once an hour across servers)
+  await (await import('./schedules')).rollSchedules().catch((e) => console.error('[schedules]', e))
   const now = new Date()
   const s = await getSettings()
   let timeouts = 0

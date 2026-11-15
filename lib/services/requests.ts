@@ -599,6 +599,8 @@ export const AssignInput = z.object({
   fee: z.coerce.number().nonnegative().optional(),
   /** override: put the team on the visit as already accepted — no waiting for the staff to tap Accept */
   acceptNow: z.boolean().optional(),
+  /** part of a repeating schedule: use this team (and car times) for every visit in it */
+  applyToSeries: z.boolean().optional(),
   /** Unico car: pick-up / return time (HH:mm, visit day) — required when a car is needed and no admin set them yet */
   pickupTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   returnTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
@@ -649,6 +651,12 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   await r.save()
   await AssignmentLog.create({ requestId: r._id, fromStaffId: prevPrimary ?? undefined, toStaffId: input.primaryStaffId, action: isReassign ? 'REASSIGN' : 'ASSIGN', by: user.id, reason: input.instructions })
   await (await import('./staff-links')).revokeLeavers(r._id, [input.primaryStaffId, ...input.secondaryStaffIds]).catch(() => {})
+  // schedule: the same team for the whole series (saved on the schedule, the other visits assigned in the background)
+  if (input.applyToSeries && r.carePlanId) {
+    const planId = r.carePlanId
+    const forSeries = { ...input, pickupTime: input.pickupTime, returnTime: input.returnTime }
+    background(async () => (await import('./schedules')).applyTeamToSeries(planId, forSeries, user, meta, r._id))
+  }
   if (forced) {
     await AssignmentLog.create({ requestId: r._id, toStaffId: input.primaryStaffId, action: 'ACCEPT_BY_OVERRIDE', by: user.id, reason: 'Assigned and accepted by coordinator' })
     await audit(user, 'request.accept_override', 'request', r._id, { after: { status: 'ACCEPTED', for: staff.find((x) => String(x._id) === input.primaryStaffId)?.name }, label: r.requestNo }, meta)

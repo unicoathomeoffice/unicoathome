@@ -901,9 +901,28 @@ const CarePlanSchema = new Schema<any>(
     status: { type: String, enum: ['ACTIVE', 'PAUSED', 'ENDED'], default: 'ACTIVE' },
     requestIds: [{ type: ObjectId, ref: 'HomecareRequest' }],
     createdBy: { type: ObjectId, ref: 'User' },
+    // ---- repeating schedule (lib/services/schedules.ts; plans with `pattern` roll forward automatically) ----
+    services: [{ _id: false, serviceTypeId: { type: ObjectId, ref: 'ServiceType' }, code: String, name: String }],
+    tests: [String],
+    testItems: [{ _id: false, code: String, name: String, price: Number, dept: String }],
+    pattern: { kind: { type: String, enum: ['DAILY', 'WEEKDAYS', 'EVERY_N'] }, daysOfWeek: [Number], everyDays: Number },
+    end: { kind: { type: String, enum: ['COUNT', 'UNTIL', 'ONGOING'] }, count: Number, until: String },
+    durationMin: Number,
+    instructions: String,
+    complaint: String,
+    fee: Number,
+    priority: String,
+    /** the team every generated visit is assigned to (set from the Assign drawer: "every visit in this schedule") */
+    team: { primaryStaffId: { type: ObjectId, ref: 'User' }, secondaryStaffIds: [{ type: ObjectId, ref: 'User' }], supportStaffIds: [{ type: ObjectId, ref: 'User' }] },
+    car: { needed: Boolean, pickupTime: String, returnTime: String },
+    generatedUntil: String, // YYYY-MM-DD: visits exist up to here
+    skipDates: [String],
+    householdKey: String,
+    rollingAt: Date, // one generator run per schedule at a time
   },
   opts,
 )
+CarePlanSchema.index({ status: 1 })
 export const CarePlan = model('CarePlan', CarePlanSchema, 'care_plans')
 
 const PrescriptionSchema = new Schema<any>(
