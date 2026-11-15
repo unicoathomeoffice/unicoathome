@@ -547,7 +547,7 @@ export const ConfirmInput = z.object({
 })
 
 /** `quiet`: an assignment follows at once (New request → Save & assign), so its messages say it all. */
-export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user: SessionUser, meta: Meta, opts: { quiet?: boolean } = {}) {
+export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user: SessionUser, meta: Meta, opts: { quiet?: boolean; household?: boolean } = {}) {
   const before = { status: r.status, scheduledAt: r.scheduledAt, tests: r.tests, uhid: r.patientSnapshot?.uhid }
   move(r, 'CONFIRMED', 'confirmedAt')
   if (input.date) r.scheduledAt = dhakaDate(input.date, input.time || slotStart(input.slot))
@@ -572,6 +572,8 @@ export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user:
   await r.save()
   const only = notifySet(input.notify)
   await audit(user, 'request.confirm', 'request', r._id, { before, after: { status: 'CONFIRMED', scheduledAt: r.scheduledAt, tests: r.tests, uhid: input.uhid, ...(only && { whatsappTo: [...only] }) }, label: r.requestNo }, meta)
+  // household: the others at this address are confirmed for the same time (quietly — this confirmation speaks for all)
+  if (!opts.household && r.household?.key) await (await household()).follow(r, ['NEW', 'VERIFIED'], (m) => confirm(m, { date: isoDay(r.scheduledAt), time: hm24(r.scheduledAt), slot: r.slot, notify: [] } as any, user, meta, { quiet: true, household: true }))
   background(async () => {
     if (!opts.quiet) await logDecision(r, ['CONFIRMED'], only, user)
     if (!opts.quiet && input.notifyPatient !== false) {
@@ -607,7 +609,7 @@ export const AssignInput = z.object({
   notify: NotifyField,
 })
 
-export async function assign(r: any, input: z.infer<typeof AssignInput>, user: SessionUser, meta: Meta) {
+export async function assign(r: any, input: z.infer<typeof AssignInput>, user: SessionUser, meta: Meta, opts: { household?: boolean } = {}) {
   // supporting staff ride along as team members (visibility, notices, requisition passengers) with their own label
   const support = [...new Set(input.supportStaffIds ?? [])].filter((x) => x !== input.primaryStaffId)
   input = { ...input, secondaryStaffIds: [...input.secondaryStaffIds, ...support.filter((x) => !input.secondaryStaffIds.includes(x))] }
@@ -663,6 +665,17 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   }
   const only = notifySet(input.notify)
   await audit(user, isReassign ? 'request.reassign' : 'request.assign', 'request', r._id, { before: { primaryStaffId: prevPrimary }, after: { team: staff.map((x) => x.name), scheduledAt: r.scheduledAt, ...(only && { whatsappTo: [...only] }) }, label: r.requestNo }, meta)
+  // household: one trip — the same team, time and car times for every patient at this address (their messages are
+  // left out: the team's assignment message and the one car requisition cover the trip)
+  if (!opts.household && r.household?.key) {
+    const at = { date: isoDay(r.scheduledAt), time: hm24(r.scheduledAt), slot: r.slot }
+    const car = r.transport?.timesSetAt ? { pickupTime: hm24(r.transport.pickupAt), returnTime: hm24(r.transport.returnAt) } : {}
+    await (await household()).follow(r, ['NEW', 'VERIFIED', 'CONFIRMED', 'RESCHEDULED', 'ASSIGNED', 'ACCEPTED'], async (m) => {
+      if (['NEW', 'VERIFIED'].includes(m.status)) await confirm(m, { ...at, notify: [] } as any, user, meta, { quiet: true, household: true })
+      // each patient keeps their own fee and duration
+      await assign(m, { ...input, ...at, ...car, fee: undefined, expectedDurationMin: undefined, secondaryStaffIds: input.secondaryStaffIds.filter((x) => !support.includes(x)), supportStaffIds: support, applyToSeries: false, notify: [] }, user, meta, { household: true })
+    })
+  }
   background(async () => {
     await logDecision(r, ['ASSIGNED'], only, user, { staffIds: ids })
     const when = `${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)}`
@@ -690,7 +703,7 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
 }
 
 export const RescheduleInput = z.object({ date: z.string(), time: z.string().optional(), slot: z.string().optional(), reason: z.string().min(2), notify: NotifyField })
-export async function reschedule(r: any, input: z.infer<typeof RescheduleInput>, user: SessionUser, meta: Meta) {
+export async function reschedule(r: any, input: z.infer<typeof RescheduleInput>, user: SessionUser, meta: Meta, opts: { household?: boolean } = {}) {
   const from = r.scheduledAt
   move(r, 'RESCHEDULED', 'rescheduledAt')
   r.scheduledAt = dhakaDate(input.date, input.time || slotStart(input.slot))
@@ -704,6 +717,7 @@ export async function reschedule(r: any, input: z.infer<typeof RescheduleInput>,
   await r.save()
   const only = notifySet(input.notify)
   await audit(user, 'request.reschedule', 'request', r._id, { before: { scheduledAt: from }, after: { scheduledAt: r.scheduledAt, reason: input.reason, ...(only && { whatsappTo: [...only] }) }, label: r.requestNo }, meta)
+  if (!opts.household && r.household?.key) await (await household()).follow(r, ['CONFIRMED', 'ASSIGNED', 'ACCEPTED'], (m) => reschedule(m, { ...input, notify: [] }, user, meta, { household: true }))
   background(async () => {
     await logDecision(r, ['RESCHEDULED'], only, user, { staffIds: team.map(String) })
     await notifyUsers(team, { type: 'RESCHEDULED', as: 'STAFF', title: `${r.requestNo} rescheduled`, body: `New time ${fmtDate(r.scheduledAt)} ${fmtTime(r.scheduledAt)} · needs re-assignment`, requestId: r._id, url: appUrl(r._id) })
@@ -775,7 +789,7 @@ export async function saveInvoice(r: any, input: Partial<z.infer<typeof CloseInp
 }
 
 // ============================================================== staff actions
-export async function accept(r: any, user: SessionUser, meta: Meta, deviceAt?: string) {
+export async function accept(r: any, user: SessionUser, meta: Meta, deviceAt?: string, opts: { household?: boolean } = {}) {
   const forced = onBehalf(user, r)
   if (!forced && String(r.assignment?.primaryStaffId) !== user.id && !isTeamMember(user, r)) throw forbidden('This visit is not assigned to you')
   if (r.status === 'ACCEPTED') return
@@ -786,6 +800,8 @@ export async function accept(r: any, user: SessionUser, meta: Meta, deviceAt?: s
   r.set('assignment.timedOutAt', undefined)
   if (!forced) deviceStamp(r, user, 'accept', deviceAt)
   await r.save()
+  // household: accepting one patient accepts the trip
+  if (!opts.household && r.household?.key) await (await household()).follow(r, ['ASSIGNED'], (m) => accept(m, user, meta, deviceAt, { household: true }))
   if (forced) {
     const staff = await User.findById(r.assignment.primaryStaffId).select('name').lean<any>()
     await AssignmentLog.create({ requestId: r._id, toStaffId: r.assignment.primaryStaffId, action: 'ACCEPT_BY_OVERRIDE', by: user.id, reason: `Accepted by ${user.name} for ${staff?.name ?? 'staff'}` })
@@ -817,7 +833,7 @@ export async function keepWaiting(r: any, user: SessionUser, meta: Meta) {
 }
 
 export const DeclineInput = z.object({ reason: z.string().min(2), note: z.string().optional() })
-export async function decline(r: any, input: z.infer<typeof DeclineInput>, user: SessionUser, meta: Meta) {
+export async function decline(r: any, input: z.infer<typeof DeclineInput>, user: SessionUser, meta: Meta, opts: { household?: boolean } = {}) {
   if (String(r.assignment?.primaryStaffId) !== user.id) throw forbidden('Only the primary staff member can decline')
   move(r, 'CONFIRMED')
   r.set('timeline.assignedAt', undefined)
@@ -827,6 +843,7 @@ export async function decline(r: any, input: z.infer<typeof DeclineInput>, user:
   await r.save()
   await AssignmentLog.create({ requestId: r._id, fromStaffId: user.id, action: 'DECLINE', reason: input.reason, by: user.id })
   await audit(user, 'request.decline', 'request', r._id, { after: { status: 'CONFIRMED', reason: input.reason }, label: r.requestNo }, meta)
+  if (!opts.household && r.household?.key) await (await household()).follow(r, ['ASSIGNED', 'ACCEPTED'], (m) => (String(m.assignment?.primaryStaffId) === user.id ? decline(m, input, user, meta, { household: true }) : Promise.resolve()))
   const next = (await rankCandidates(r, 1)).find((c) => c.id !== user.id)
   background(async () => {
     await notifyRoles(['HC_ADMIN'], {
@@ -1273,6 +1290,11 @@ export const TransportTimesInput = z.object({
   notify: NotifyField,
 })
 
+/** HH:mm (24 h, Dhaka) of a stored time — to carry a visit's time to the rest of its household. */
+const hm24 = (v?: Date | string | null) => (v ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(v)) : undefined)
+/** Household visits (lib/services/household.ts): carry a step to the other patients at the same address. */
+const household = () => import('./household')
+
 /** Car times chosen by an admin (assign drawer): on the visit day; pick-up before the visit, return after it. */
 function applyCarTimes(r: any, pickupTime: string, returnTime: string, user: SessionUser) {
   const day = isoDay(r.scheduledAt ?? new Date())
@@ -1309,6 +1331,12 @@ export async function setTransportTimes(r: any, input: z.infer<typeof TransportT
   r.version = (r.version ?? 0) + 1
   await r.save()
   await audit(user, 'transport.times', 'request', r._id, { before, after: { pickupAt: r.transport.pickupAt ?? null, returnAt: r.transport.returnAt ?? null, resend: !!input.resend }, label: r.requestNo }, meta)
+  // household: one car — the same times on every patient's visit
+  if (r.household?.key)
+    await HomecareRequest.updateMany(
+      { 'household.key': r.household.key, _id: { $ne: r._id }, deletedAt: null, 'transport.needed': true, status: { $nin: ['COMPLETED', 'CLOSED', 'CANCELLED'] } },
+      { $set: { 'transport.pickupAt': r.transport.pickupAt, 'transport.returnAt': r.transport.returnAt, 'transport.timesSetBy': user.id, 'transport.timesSetAt': new Date() } },
+    )
   // the requisition names the travelling staff: before they're assigned there's nothing to re-send — the new time
   // goes into the requisition that assigning the team sends
   const hasTeam = !!r.assignment?.primaryStaffId

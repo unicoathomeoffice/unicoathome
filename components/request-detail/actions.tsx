@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { H360TestPicker } from '@/components/client/H360TestPicker'
 import { testsTotal, type TestItem } from '@/lib/schemas'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { CalendarClock, CheckCircle2, FileText, Loader2, Mail, MessageCircle, Pencil, RefreshCw, ShieldCheck, Trash2, UserPlus, Users, AlertTriangle, Check, Search, Undo2 } from 'lucide-react'
+import { CalendarClock, CheckCircle2, FileText, Loader2, Mail, MessageCircle, Pencil, RefreshCw, ShieldCheck, Trash2, UserPlus, Users, Home, AlertTriangle, Check, Search, Undo2 } from 'lucide-react'
 import { api, useAction, ActionButton, Drawer, Segmented, Toggle, ChipPicker, WhatsAppButton } from '@/components/client'
 import { btnClass, Avatar } from '@/components/ui'
 import { PAYMENT_METHODS, PAYMENT_METHOD_LABEL, type Status } from '@/lib/constants'
@@ -16,6 +16,7 @@ import { NotifyPicker } from '@/components/client/NotifyPicker'
 import { RepeatPicker, REPEAT_DEFAULT, repeatToInput, type Repeat } from '@/components/schedule/RepeatPicker'
 import { useConfirmSend } from '@/components/client/ConfirmSend'
 import { DeleteRequestsDialog } from '@/components/board/DeleteRequests'
+import { HouseholdDialog, type HouseholdMember } from './Household'
 
 export type ReqLite = {
   id: string
@@ -31,6 +32,10 @@ export type ReqLite = {
   serviceOptions: { code: string; name: string; fee: number | null }[]
   /** part of a repeating schedule (link + "Mon · Wed · Fri · ongoing") */
   schedule: { id: string; rule: string } | null
+  /** household visit: every patient at this address on the same trip (null = only this patient) */
+  household: HouseholdMember[] | null
+  patientId: string
+  patientPhone: string
   /** "Undo last step": what the last step was and where Undo goes (null = nothing to undo) */
   revert: { step: string; toWord: string } | null
   patientCategory?: string
@@ -116,7 +121,7 @@ export function ActionBar({
   const router = useRouter()
   const pathname = usePathname()
   const sp = useSearchParams()
-  const [dlg, setDlg] = useState<null | 'confirm' | 'reschedule' | 'cancel' | 'close' | 'email' | 'whatsapp' | 'delete' | 'undo' | 'repeat'>(null)
+  const [dlg, setDlg] = useState<null | 'confirm' | 'reschedule' | 'cancel' | 'close' | 'email' | 'whatsapp' | 'delete' | 'undo' | 'repeat' | 'household'>(null)
   const [assigning, setAssigning] = useState(assignOpen)
   useEffect(() => setAssigning(assignOpen), [assignOpen])
   const a = availableActions(r.status)
@@ -199,6 +204,18 @@ export function ActionBar({
             </button>
           )
         )}
+        {r.household ? (
+          <button className={cx(iconBtn(), 'border-[#FDE68A] bg-[#FFFBEB] text-[#92400E]')} onClick={() => setDlg('household')} title="Other patients at this address on the same trip">
+            <Home size={16} /> Household · {r.household.length}
+          </button>
+        ) : (
+          perms.create &&
+          !['EN_ROUTE', 'IN_PROGRESS', 'COMPLETED', 'CLOSED', 'CANCELLED'].includes(r.status) && (
+            <button className={iconBtn()} onClick={() => setDlg('household')} title="Another patient at the same address — one trip, same team and car">
+              <Home size={16} /> Add patient here
+            </button>
+          )
+        )}
         {perms.create && (
           <a href={`/requests/new?from=${r.id}`} className={iconBtn(['COMPLETED', 'CLOSED', 'CANCELLED'].includes(r.status) ? 'p' : 'o')} title="A new request with the same patient, services and tests — pick the new date">
             <RefreshCw size={16} /> Book again
@@ -215,6 +232,7 @@ export function ActionBar({
       {dlg === 'cancel' && <CancelDialog r={r} onClose={close} />}
       {dlg === 'undo' && r.revert && <UndoDialog r={r} onClose={close} />}
       {dlg === 'repeat' && <RepeatDialog r={r} onClose={close} />}
+      {dlg === 'household' && <HouseholdDialog r={r} onClose={close} />}
       {dlg === 'close' && <CloseDialog r={r} perms={perms} onClose={close} />}
       {dlg === 'email' && <EmailDialog r={r} onClose={close} />}
       {dlg === 'whatsapp' && <WhatsAppDialog r={r} onClose={close} />}

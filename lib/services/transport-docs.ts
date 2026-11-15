@@ -61,6 +61,10 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
   // Section A must name the staff who travel: never make or send a requisition before the care team is assigned
   // (it would name whoever asked for the car instead). Assigning the team sends it.
   if (!r.assignment?.primaryStaffId) return { sent: 0, skipped: 'no staff assigned yet' }
+  // household: one car for the whole trip — only one visit (the lead) makes the requisition, naming every patient
+  const hh = await import('./household')
+  if (!(await hh.carriesCar(r))) return { sent: 0, skipped: 'household: the car goes with the lead visit' }
+  const hhPurpose = await hh.householdPurpose(r)
   // and the car times must have been chosen by an admin (no automatic "40 min before" on an official form)
   if (!r.transport?.timesSetAt) return { sent: 0, skipped: 'car times not set' }
   await withPeople([r])
@@ -95,7 +99,7 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
     tripDate: visit ? fmtDate(visit) : 'To be confirmed',
     reporting: `${pickup ? hm(pickup) : 'Time to be confirmed'} · ${s.general.hospitalName}, ${s.general.address}`,
     destination: address || r.patientSnapshot?.area || '',
-    purpose: `Home care visit · ${(r.services ?? []).map((x: any) => x.name).join(', ')} · Patient ${r.patientSnapshot?.name ?? ''}`,
+    purpose: hhPurpose ?? `Home care visit · ${(r.services ?? []).map((x: any) => x.name).join(', ')} · Patient ${r.patientSnapshot?.name ?? ''}`,
     passengers: team.length ? `${team.length} (${team.map((p: any) => p.name).join(', ')})` : '1',
     duration: hours ? `About ${hours} h · return by ${hm(back)}` : '',
     vehicleType: cfg.vehicleType ?? 'Car',
@@ -119,7 +123,7 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
       outTime: hm(pickup),
       returnTime: hm(back),
       destination: address || r.patientSnapshot?.area || '',
-      purpose: `Home care visit · ${(r.services ?? []).map((x: any) => x.name).join(', ')}`,
+      purpose: hhPurpose ?? `Home care visit · ${(r.services ?? []).map((x: any) => x.name).join(', ')}`,
       issuedBy: allotter ? `${allotter.name}${allotter.designation ? ` · ${allotter.designation}` : ''}` : 'Transport section',
       issuedSign: allotterSign,
       hospital: { name: s.general.hospitalName, address: s.general.address, phone: s.general.hospitalPhone },
@@ -171,8 +175,9 @@ export async function sendTransportDocs(requestId: unknown, stage: 'requested' |
 
 /** Sends the requisition the first time (or "UPDATED"), once the care team is assigned. */
 export async function carRequested(requestId: unknown, userId: string, opts: { updated?: boolean; only?: NotifyOnly } = {}): Promise<boolean> {
-  const r = await HomecareRequest.findById(requestId).select('transport status assignment.primaryStaffId').lean<any>()
+  const r = await HomecareRequest.findById(requestId).select('transport status assignment.primaryStaffId household').lean<any>()
   if (!r?.transport?.timesSetAt) return false // waits for the admin's pick-up / return time
+  if (!(await (await import('./household')).carriesCar(r))) return false // household: one requisition, from the lead
   if (!r?.transport?.needed || r.status === 'CANCELLED') return false
   if (!r.assignment?.primaryStaffId) return false // goes out when the care team is assigned (Section A names them)
   if (r.transport.mode && r.transport.mode !== 'UNICO_CAR') return false

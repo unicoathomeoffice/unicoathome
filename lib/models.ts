@@ -593,6 +593,8 @@ const RequestSchema = new Schema<any>(
     ],
     feedback: { rating: Number, comment: String, at: Date },
     carePlanId: { type: ObjectId, ref: 'CarePlan' },
+    // household visit: 2–4 patients at one address, one trip (same time, team and car); the lead carries the car requisition
+    household: { _id: false, key: String, lead: Boolean },
     source: { type: String, enum: REQUEST_SOURCES, default: 'PHONE' },
     // public booking form: how the address/location was given (GPS, map search, hand-placed pin or typed)
     intake: { _id: false, locationSource: { type: String, enum: ['gps', 'search', 'pin', 'typed'] }, accuracyM: Number, autoFields: [String] },
@@ -664,6 +666,7 @@ RequestSchema.index({ 'tracking.shareToken': 1 }, { sparse: true })
 RequestSchema.index({ 'assignment.primaryStaffId': 1, status: 1, scheduledAt: 1 })
 RequestSchema.index({ 'assignment.secondaryStaffIds': 1, scheduledAt: 1 })
 RequestSchema.index({ patientId: 1, createdAt: -1 })
+RequestSchema.index({ 'household.key': 1 }, { sparse: true })
 RequestSchema.index({ priority: 1, status: 1 })
 RequestSchema.index({ 'transport.driverId': 1, scheduledAt: 1 })
 // dashboard / board / reports date filters and the board sort (were collection scans)
