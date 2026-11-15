@@ -21,6 +21,12 @@ export default async function MobileLogin() {
           <LoginForm client="app" />
         </Suspense>
         <div className="mt-auto pt-10 text-center text-[13px] text-slate-500">
+          <div className="mb-2">
+            Coordinator, front desk or admin?{' '}
+            <a href="/login" className="font-semibold text-primary">
+              Web sign in
+            </a>
+          </div>
           Trouble signing in? Call the Home Care coordinator.
           <div className="mt-1 text-[12px] text-slate-400">Unico Hospitals PLC · Family Medicine</div>
         </div>

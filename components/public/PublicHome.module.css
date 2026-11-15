@@ -1,6 +1,6 @@
+/* Desktop hero (lg+) of the public landing. Phones / tablets use MobileLanding, styled with utilities. */
 .hero {
   isolation: isolate;
-  min-height: 740px;
   background: #eef9ff;
 }
 
@@ -10,6 +10,13 @@
   inset: 0;
 }
 
+/* the photo: pinned bottom-right, faded at its top and bottom edge */
+.backdrop {
+  top: auto;
+  bottom: 5%;
+  aspect-ratio: 3 / 2;
+  mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 85%, transparent);
+}
 .backdrop img {
   display: block;
   width: 100%;
@@ -19,7 +26,7 @@
 }
 
 .scrim {
-  background: linear-gradient(90deg, rgb(245 252 255 / 65%), transparent 65%);
+  background: linear-gradient(90deg, rgb(245 252 255 / 94%) 0%, rgb(245 252 255 / 78%) 36%, transparent 60%);
 }
 
 .wave {
@@ -27,40 +34,52 @@
 }
 
 .copy { max-width: 600px; }
+.copy h1 { font-size: clamp(48px, 5.2vw, 80px); }
+.copy p { max-width: 72%; }
+.features { max-width: 500px; }
+.stats { max-width: 860px; }
 
-/* phones: no hero, only the top bar above the booking card */
-@media (max-width: 639px) {
-  .hero { min-height: 0; background: transparent; padding-bottom: 10px; }
-  .backdrop, .scrim, .wave, .content { display: none; }
-}
-
-@media (min-width: 640px) {
-  .backdrop {
-    top: auto;
-    bottom: 5%;
-    aspect-ratio: 3 / 2;
-    mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 85%, transparent);
-  }
-  .backdrop img { object-position: right bottom; }
-  .scrim {
-    background: linear-gradient(90deg, rgb(245 252 255 / 94%) 0%, rgb(245 252 255 / 78%) 36%, transparent 60%);
-  }
-  .copy p { max-width: 72%; }
-  .content ul { max-width: 60%; }
-  .copy h1 { font-size: clamp(48px, 5.2vw, 80px); }
-}
-
+/* narrow split (hero column ≈ 480–680px): the words at the top, the numbers at the bottom, the photo between them */
 @media (min-width: 1024px) and (max-width: 1279px) {
-  .content { padding-left: 28px; padding-right: 28px; }
+  .content { justify-content: flex-start; }
   .copy h1 { font-size: 48px; }
-  .copy p { max-width: 90%; font-size: 15px; line-height: 1.5; }
-  .content ul { max-width: 100%; gap: 10px; }
-  .content ul + div + div { gap: 8px; padding: 12px; }
-  .content ul + div + div > div { flex-direction: column; align-items: flex-start; padding-left: 8px; }
+  .copy p { max-width: 92%; font-size: 15px; line-height: 1.5; }
+  .cta2, .features, .statIcon { display: none; }
+  .stats { margin-top: auto; gap: 8px; padding: 12px; }
+  .stats > div { padding-left: 10px; }
 }
 
-@media (min-width: 1024px) and (max-height: 800px) {
-  .content { padding-top: 20px; }
-  .content ul { margin-top: 20px; }
-  .content ul + div + div { margin-top: 20px; }
+/* not-so-tall screens: the scroll hint goes */
+@media (min-width: 1024px) and (max-height: 980px) {
+  .hint { display: none; }
+  .content { padding-bottom: 18px; }
+}
+
+/* short screens (laptops): tighter */
+@media (min-width: 1024px) and (max-height: 820px) {
+  .content { padding-top: 14px; padding-bottom: 14px; }
+  .copy h1 { margin-top: 12px; font-size: clamp(42px, 4.3vw, 60px); }
+  .copy p { margin-top: 12px; font-size: 15.5px; line-height: 1.5; }
+}
+@media (min-width: 1280px) and (max-height: 820px) {
+  .features { margin-top: 18px; }
+  .featSub { display: none; }
+  .stats { margin-top: 16px; padding: 12px 16px; }
+}
+@media (min-width: 1024px) and (max-width: 1279px) and (max-height: 820px) {
+  .copy h1 { font-size: 40px; }
+  .copy p { font-size: 14.5px; }
+}
+
+/* blocks that fade up as they scroll into view (MobileLanding → Reveal) */
+.rv {
+  transition: opacity 0.55s ease, transform 0.55s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.pre {
+  opacity: 0;
+  transform: translateY(18px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .rv { transition: none; }
+  .pre { opacity: 1; transform: none; }
 }

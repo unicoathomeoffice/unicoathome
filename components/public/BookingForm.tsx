@@ -1,9 +1,12 @@
 'use client'
 // Public "book a home visit" form — phone first: one column, 48px+ targets, 16px inputs (no iOS zoom), sticky send bar.
 // English / বাংলা via useLang(); slots come live from Settings → Online booking and grey out as visits are confirmed.
+// `wizard` (phones / tablets): one step per screen — the progress strip and the Back / Next bar are drawn into the
+// two host elements the page gives (its full-screen booking dialog); every section stays mounted, so answers are kept.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { AlertTriangle, CalendarDays, Check, CheckCircle2, ChevronRight, FileText, ImagePlus, Loader2, Phone, Send, UserRound, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, FileText, ImagePlus, Loader2, PenLine, Phone, Send, UserRound, X } from 'lucide-react'
 import { api } from '@/components/client/api'
 import { compressImage } from '@/components/client'
 import { AddressBlock, type AddressMeta, type AddressValue } from '@/components/client/AddressBlock'
@@ -18,6 +21,12 @@ type SlotState = 'open' | 'full' | 'past' | 'blocked' | 'closed'
 export type BookingDay = { date: string; weekday: number; closed: boolean; slots: { start: string; end: string; label: string; booked: number; capacity: number; state: SlotState }[] }
 type Doc = { uid: number; name: string; kind: 'image' | 'pdf'; preview?: string; busy: boolean; id?: string; token?: string; err?: string; original?: File }
 let docSeq = 1
+
+/** Step-by-step mode: where the progress strip and the Back / Next bar are drawn (null until the dialog is mounted). */
+export type BookingWizard = { progress: HTMLElement | null; bar: HTMLElement | null; scroller: HTMLElement | null }
+/** which step each field belongs to (1 patient · 2 address · 3 service · 4 day & time · 5 documents & notes) */
+const STEP_OF: Record<string, number> = { name: 1, phone: 1, ageYears: 1, gender: 1, email: 1, road: 2, house: 2, flat: 2, area: 2, landmark: 2, lat: 2, lng: 2, serviceCodes: 3, date: 4, slot: 4, attachments: 5, notes: 5 }
+const LAST_STEP = 5
 
 const dhakaDay = (offset: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(new Date(Date.now() + offset * 86400_000))
 const loc = (lang: Lang) => (lang === 'bn' ? 'bn-BD' : 'en-GB')
@@ -35,8 +44,33 @@ const input = 'hc-input hc-input-lg !text-[16px]'
 export type BookingPrefill = Partial<Pick<typeof blank, 'name' | 'phone' | 'ageYears' | 'gender' | 'email' | 'house' | 'flat' | 'road' | 'area' | 'landmark' | 'lat' | 'lng'>>
 const blank = { name: '', phone: '', ageYears: '', gender: '' as '' | 'M' | 'F' | 'O', email: '', house: '', flat: '', road: '', area: '', landmark: '', lat: null as number | null, lng: null as number | null, serviceCodes: [] as string[], date: '', slot: '', notes: '', website: '' }
 
-export function BookingForm({ services, zones, booking, legacySlots, hotline, hours, prefill, signedIn }: { services: Service[]; zones: string[]; booking: { enabled: boolean; days: BookingDay[] }; legacySlots: string[]; hotline: string; hours: string; prefill?: BookingPrefill; signedIn?: boolean }) {
+export function BookingForm({
+  services,
+  zones,
+  booking,
+  legacySlots,
+  hotline,
+  hours,
+  prefill,
+  signedIn,
+  wizard = null,
+  preselect = null,
+}: {
+  services: Service[]
+  zones: string[]
+  booking: { enabled: boolean; days: BookingDay[] }
+  legacySlots: string[]
+  hotline: string
+  hours: string
+  prefill?: BookingPrefill
+  signedIn?: boolean
+  /** phones / tablets: one step per screen */
+  wizard?: BookingWizard | null
+  /** a service picked on the landing page: tick it (`n` changes on every tap) */
+  preselect?: { code: string; n: number } | null
+}) {
   const { t, lang } = useLang()
+  const [step, setStep] = useState(1)
   const [days, setDays] = useState<BookingDay[]>(booking.days)
   const firstOpen = (list: BookingDay[]) => list.find((d) => d.slots.some((s) => s.state === 'open'))?.date ?? list[0]?.date ?? dhakaDay(0)
   const [f, setF] = useState(() => ({ ...blank, ...prefill, date: booking.enabled ? firstOpen(booking.days) : dhakaDay(0) }))
@@ -95,6 +129,23 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
     return () => (clearInterval(id), document.removeEventListener('visibilitychange', onVis))
   }, [booking.enabled, refresh])
 
+  // a service tapped on the landing page arrives ticked
+  useEffect(() => {
+    if (!preselect) return
+    setF((x) => (x.serviceCodes.includes(preselect.code) ? x : { ...x, serviceCodes: [...x.serviceCodes, preselect.code] }))
+    setErrors(({ serviceCodes: _, ...rest }) => rest)
+  }, [preselect])
+
+  // a new step starts at its top; the map (hidden until its step shows) needs a nudge to measure itself
+  const scroller = wizard?.scroller
+  useEffect(() => {
+    if (!wizard) return
+    scroller?.scrollTo({ top: 0 })
+    const id = setTimeout(() => window.dispatchEvent(new Event('resize')), 60)
+    return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, !!wizard, scroller])
+
   async function addFiles(list: FileList | null) {
     if (!list) return
     const room = 3 - docs.length
@@ -145,7 +196,8 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
     }
   }
 
-  function validate() {
+  /** every problem with what is filled in so far (nothing is shown yet) */
+  function check() {
     const e: Errors = {}
     if (f.name.trim().length < 2) e.name = t.eName
     if (!/^(?:880|0)?1[3-9]\d{8}$/.test(f.phone.replace(/\D/g, ''))) e.phone = t.ePhone
@@ -158,14 +210,32 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
     if (!f.serviceCodes.length) e.serviceCodes = t.eService
     if (!f.slot) e.slot = t.eSlot
     if (rxNeeded.length && !docs.some((d) => d.id)) e.attachments = t.eDocs
+    return e
+  }
+
+  /** bring a field into view — in step mode, on its own step */
+  function reveal(field: string) {
+    const to = STEP_OF[field] ?? 1
+    if (wizard && to !== step) setStep(to)
+    setTimeout(() => document.getElementById(`f-${field}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), wizard ? 120 : 0)
+  }
+
+  /** show the problems — of one step (Next) or of the whole form (Send) — and go to the first */
+  function validate(only?: number) {
+    const all = check()
+    const e = only ? Object.fromEntries(Object.entries(all).filter(([k]) => (STEP_OF[k] ?? 1) === only)) : all
     setErrors(e)
     const first = Object.keys(e)[0]
-    if (first) document.getElementById(`f-${first}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (first) reveal(first)
     return !first
   }
 
-  async function submit(ev: React.FormEvent) {
-    ev.preventDefault()
+  function next() {
+    setFormErr('')
+    if (validate(step)) setStep((x) => Math.min(LAST_STEP, x + 1))
+  }
+
+  async function send() {
     setFormErr('')
     if (!validate()) return
     setBusy(true)
@@ -184,19 +254,26 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         },
       })
       setDone(r)
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      setStep(1)
+      if (wizard) wizard.scroller?.scrollTo({ top: 0 })
+      else window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (e: any) {
       if (e.code === 'PRESCRIPTION_REQUIRED') {
         setErrors({ attachments: t.eDocs })
         setFormErr(e.message)
-        document.getElementById('f-attachments')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        reveal('attachments')
       } else if (e.code === 'SLOT_TAKEN') {
         setErrors({ slot: t.eTaken })
         setFormErr(t.eTaken)
         await refresh()
-        document.getElementById('f-slot')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        reveal('slot')
       } else {
-        if (e.fields) setErrors(Object.fromEntries(Object.entries(e.fields as Errors).map(([k, v]) => [k.split('.')[0], v])))
+        if (e.fields) {
+          const fe = Object.fromEntries(Object.entries(e.fields as Errors).map(([k, v]) => [k.split('.')[0], v]))
+          setErrors(fe)
+          const first = Object.keys(fe)[0]
+          if (first && wizard) reveal(first)
+        }
         setFormErr(e.message)
       }
     } finally {
@@ -242,12 +319,62 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
     : legacySlots.map((s) => ({ value: s, label: legacySlot(s, lang), state: 'open' as SlotState }))
   const stateText: Record<SlotState, string> = { open: '', full: t.booked, past: t.unavailable, blocked: t.unavailable, closed: t.closed }
 
+  // ---- ticks: a section turns green once what it needs is filled in correctly
+  const live = check()
+  const clean = (n: number) => !Object.keys(live).some((k) => (STEP_OF[k] ?? 1) === n)
+  const sectionDone = [false, clean(1), clean(2), clean(3), clean(4), docs.some((d) => d.id), !!f.notes.trim()]
+  const off = (n: number) => !!wizard && step !== n // step mode: only the current step shows
+  const stepNames = [t.sPatient, t.sAddress, t.sService, t.sWhen, t.stDocs]
+
   return (
-    <form onSubmit={submit} noValidate className="flex flex-col gap-3.5">
+    <form
+      onSubmit={(ev) => {
+        ev.preventDefault()
+        if (wizard && step < LAST_STEP) next()
+        else send()
+      }}
+      noValidate
+      className="flex flex-col gap-3.5"
+    >
+      {wizard?.progress &&
+        createPortal(
+          <div className="px-4 pb-3">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="truncate text-[15px] font-bold text-navy">{stepNames[step - 1]}</span>
+              <span className="flex-none text-[12.5px] font-semibold text-slate-500">{t.stepOf(step, LAST_STEP)}</span>
+            </div>
+            <div className="mt-2 grid grid-cols-5 gap-1.5" role="progressbar" aria-valuemin={1} aria-valuemax={LAST_STEP} aria-valuenow={step}>
+              {stepNames.map((name, i) => (
+                <button key={name} type="button" aria-label={name} disabled={i + 1 > step} onClick={() => setStep(i + 1)} className={cx('h-1.5 rounded-full transition-colors', i + 1 < step ? 'bg-primary' : i + 1 === step ? 'bg-gradient-to-r from-primary to-teal' : 'bg-slate-200')} />
+              ))}
+            </div>
+          </div>,
+          wizard.progress,
+        )}
+      {wizard?.bar &&
+        createPortal(
+          <div className="flex gap-2.5 px-4 pb-[max(12px,env(safe-area-inset-bottom))] pt-3">
+            {step > 1 && (
+              <button type="button" onClick={() => (setFormErr(''), setStep((x) => Math.max(1, x - 1)))} className="flex h-[52px] flex-none items-center gap-1.5 rounded-2xl bg-white px-5 text-[15px] font-bold text-navy ring-1 ring-slate-200 active:bg-slate-50">
+                <ArrowLeft size={18} /> {t.back}
+              </button>
+            )}
+            {step < LAST_STEP ? (
+              <button type="button" onClick={next} className="flex h-[52px] flex-1 items-center justify-center gap-2 rounded-2xl bg-primary text-[16px] font-bold text-white shadow-[0_10px_24px_rgba(0,144,202,.35)] active:bg-primary-700">
+                {t.next} <ArrowRight size={18} />
+              </button>
+            ) : (
+              <button type="button" onClick={send} disabled={busy} className="flex h-[52px] flex-1 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-primary to-[#12A5B8] text-[16px] font-bold text-white shadow-[0_10px_24px_rgba(0,144,202,.35)] disabled:opacity-70">
+                {busy ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />} {busy ? t.sending : t.send}
+              </button>
+            )}
+          </div>,
+          wizard.bar,
+        )}
       {/* honeypot: hidden from people, irresistible to bots */}
       <input type="text" name="website" value={f.website} onChange={(e) => set('website', e.target.value)} tabIndex={-1} autoComplete="off" className="absolute -left-[9999px] h-0 w-0 opacity-0" aria-hidden />
 
-      <Section n={1} title={t.sPatient} icon={<UserRound size={15} />}>
+      <Section n={1} title={t.sPatient} icon={<UserRound size={15} />} done={sectionDone[1]} hidden={off(1)} bare={!!wizard}>
         <Field id="name" label={t.name} required error={errors.name}>
           <Iconed icon={<UserRound size={18} />}>
             <input id="f-name" className={cx(input, 'pl-11')} value={f.name} onChange={(e) => set('name', e.target.value)} autoComplete="name" placeholder={t.namePh} />
@@ -293,7 +420,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         </Field>
       </Section>
 
-      <Section n={2} title={t.sAddress} right={<span ref={setLocHost} className="flex min-w-0 flex-none" />}>
+      <Section n={2} title={t.sAddress} right={<span ref={setLocHost} className="flex min-w-0 flex-none" />} done={sectionDone[2]} hidden={off(2)} bare={!!wizard}>
         <AddressBlock
           locateInto={locHost}
           required={{ road: true, house: true, flat: true }}
@@ -338,7 +465,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         />
       </Section>
 
-      <Section n={3} title={t.sService} sub={t.sServiceSub}>
+      <Section n={3} title={t.sService} sub={t.sServiceSub} done={sectionDone[3]} hidden={off(3)} bare={!!wizard}>
         <div id="f-serviceCodes" className="grid gap-2.5 sm:grid-cols-2">
           {services.map((svc) => {
             const on = f.serviceCodes.includes(svc.code)
@@ -373,7 +500,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         {errors.serviceCodes && <Err>{errors.serviceCodes}</Err>}
       </Section>
 
-      <Section n={4} title={t.sWhen} sub={t.sWhenSub}>
+      <Section n={4} title={t.sWhen} sub={t.sWhenSub} done={sectionDone[4]} hidden={off(4)} bare={!!wizard}>
         <div className="flex items-start gap-2">
         <div className="-mx-1 flex min-w-0 flex-1 snap-x gap-2 overflow-x-auto px-1 pb-1 no-scrollbar" role="radiogroup" aria-label={t.sWhen}>
           {dayList.map((d) => {
@@ -437,7 +564,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         <p className="text-[13px] text-slate-500">{t.confirmByPhone}</p>
       </Section>
 
-      <Section n={5} title={t.sDocs}>
+      <Section n={5} title={t.sDocs} icon={wizard ? <FileText size={15} /> : undefined} done={sectionDone[5]} hidden={off(5)}>
         <div id="f-attachments" className={cx('rounded-xl border-[1.5px] border-dashed p-3', errors.attachments ? 'border-[#DC2626] bg-[#FEF2F2]' : rxNeeded.length ? 'border-[#F59E0B] bg-[#FFFBEB]' : 'border-slate-300 bg-slate-50')}>
           {rxNeeded.length > 0 && (
             <div className="mb-2 text-[13.5px] font-semibold text-[#B45309]">
@@ -488,7 +615,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         {errors.attachments && <Err>{errors.attachments}</Err>}
       </Section>
 
-      <Section n={6} title={t.sMore}>
+      <Section n={6} title={t.sMore} icon={wizard ? <PenLine size={15} /> : undefined} done={sectionDone[6]} hidden={off(5)}>
         <textarea id="f-notes" className="hc-input !text-[16px]" rows={4} maxLength={1000} value={f.notes} onChange={(e) => set('notes', e.target.value)} placeholder={t.notesPh} />
       </Section>
 
@@ -497,7 +624,7 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
           <AlertTriangle size={18} className="mt-px flex-none" /> {formErr}
         </div>
       )}
-      <p className="text-[12.5px] leading-[20px] text-slate-500">
+      <p className={cx('text-[12.5px] leading-[20px] text-slate-500', off(5) && 'hidden')}>
         {t.consent1}{' '}
         <Link href="/privacy" className="underline">
           {t.privacy}
@@ -505,24 +632,31 @@ export function BookingForm({ services, zones, booking, legacySlots, hotline, ho
         . {t.consent2}
       </p>
 
-      <button type="submit" disabled={busy} className={cx(btnClass('p', 'xl', 'w-full !rounded-2xl !text-[16px]'), 'shadow-[0_10px_24px_rgba(0,144,202,.35)]')}>
+      {/* step mode has its own Send in the bottom bar; a hidden submit keeps the keyboard's "Go" working */}
+      <button type="submit" disabled={busy} className={wizard ? 'sr-only' : cx(btnClass('p', 'xl', 'w-full !rounded-2xl !text-[16px]'), 'shadow-[0_10px_24px_rgba(0,144,202,.35)]')} tabIndex={wizard ? -1 : undefined} aria-hidden={wizard ? true : undefined}>
         {busy ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />} {busy ? t.sending : t.send}
       </button>
     </form>
   )
 }
 
-function Section({ n, title, sub, icon, right, children }: { n: number; title: string; sub?: string; icon?: ReactNode; right?: ReactNode; children: ReactNode }) {
+/** `done`: its number becomes a green tick · `hidden`: another step is showing (stays mounted) · `bare`: step mode —
+ *  the step's name is in the progress strip, so the heading only keeps what sits beside it (e.g. "Use my location"). */
+function Section({ n, title, sub, icon, right, done, hidden, bare, children }: { n: number; title: string; sub?: string; icon?: ReactNode; right?: ReactNode; done?: boolean; hidden?: boolean; bare?: boolean; children: ReactNode }) {
   return (
-    <section className="rounded-2xl bg-white p-4 shadow-[0_6px_24px_rgba(31,56,100,0.07)] ring-1 ring-slate-100 sm:p-5">
-      <div className="mb-3.5 flex items-center justify-between gap-3">
-        <h2 className="flex min-w-0 items-center gap-3 text-[16px] font-bold text-slate-900">
-          <span className={cx('flex flex-none items-center justify-center rounded-full bg-primary-50 font-bold text-primary-700', sub ? 'size-10 text-[15px]' : 'size-8 text-[13.5px]')}>{icon ?? n}</span>
-          <span className="min-w-0">
-            <span className="block truncate">{title}</span>
-            {sub && <span className="block truncate text-[12.5px] font-normal text-slate-500">{sub}</span>}
-          </span>
-        </h2>
+    <section className={cx('rounded-2xl bg-white p-4 shadow-[0_6px_24px_rgba(31,56,100,0.07)] ring-1 ring-slate-100 sm:p-5', hidden && 'hidden')}>
+      <div className={cx('mb-3.5 flex items-center justify-between gap-3', bare && !right && !sub && 'hidden')}>
+        {bare ? (
+          <p className="min-w-0 text-[13.5px] text-slate-500">{sub}</p>
+        ) : (
+          <h2 className="flex min-w-0 items-center gap-3 text-[16px] font-bold text-slate-900">
+            <span className={cx('flex flex-none items-center justify-center rounded-full font-bold transition-colors', done ? 'bg-[#DCFCE7] text-[#15803D]' : 'bg-primary-50 text-primary-700', sub ? 'size-10 text-[15px]' : 'size-8 text-[13.5px]')}>{done ? <Check size={sub ? 19 : 16} strokeWidth={3} /> : (icon ?? n)}</span>
+            <span className="min-w-0">
+              <span className="block truncate">{title}</span>
+              {sub && <span className="block truncate text-[12.5px] font-normal text-slate-500">{sub}</span>}
+            </span>
+          </h2>
+        )}
         {right}
       </div>
       <div className="flex flex-col gap-3.5">{children}</div>
