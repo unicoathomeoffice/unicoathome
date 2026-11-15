@@ -51,10 +51,24 @@ export async function queueWhatsApp(input: { to: string; toName?: string; text: 
     error: blocked ?? undefined,
     events: [{ status, at: new Date(), note: blocked ?? (hold ? 'Waiting for approval' : undefined) }],
   })
-  if (status === 'QUEUED') background(() => pumpSoon())
+  // approved by a person (typed, Send now): out at once, waiting for the session if one is busy; automatic ones batch
+  if (status === 'QUEUED') background(() => (input.approved ? pumpWhenFree(45_000) : pumpSoon()))
   // nobody is looking at a review window for this one (staff app step, timer, website…): tell the admins
   if (hold && !ctx) background(async () => (await import('./outbox')).noticePending())
   return log
+}
+
+/**
+ * Pump now, and if another session holds the WhatsApp lease (a check session, another send), wait for it and try again
+ * — up to `maxWaitMs`. Without this an approval made during a check session stayed QUEUED until something else pumped.
+ */
+export async function pumpWhenFree(maxWaitMs = 40_000): Promise<{ sent: number; failed: number; skipped?: string }> {
+  const until = Date.now() + maxWaitMs
+  for (;;) {
+    const r = await pumpWhatsApp()
+    if (r.skipped !== 'busy' || Date.now() > until) return r
+    await sleep(3_000)
+  }
 }
 
 /** Wait a few seconds so the messages of one action go out in one session, and keep 20 s between sessions. */
@@ -91,6 +105,7 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
     .sort({ force: -1, priority: -1, at: 1 })
     .limit(40)
   if (!rows.length) return { sent: 0, failed: 0, skipped: 'waiting for morning (quiet hours)' }
+  const sessionStart = new Date(Date.now() - 2_000)
   const lock = await acquireLock(90_000)
   if (!lock) return { sent: 0, failed: 0, skipped: 'busy' }
   const cfg = room.cfg
@@ -118,7 +133,21 @@ export async function pumpWhatsApp(): Promise<{ sent: number; failed: number; sk
         }
       })
     const started = Date.now()
-    for (const m of rows) {
+    // messages approved while this session is open join it (no waiting for another session)
+    const seen = new Set(rows.map((x) => String(x._id)))
+    const queue = [...rows]
+    const more = async () => {
+      const fresh = await MessageLog.find({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED', _id: { $nin: [...seen] }, at: { $gte: sessionStart }, ...(quiet ? { $or: [{ force: true }, { priority: { $gte: 10 } }, { initiatedBy: { $ne: null } }, { approvedBy: { $ne: null } }] } : {}) })
+        .sort({ force: -1, priority: -1, at: 1 })
+        .limit(20)
+      for (const f of fresh) {
+        seen.add(String(f._id))
+        queue.push(f)
+      }
+      return fresh.length
+    }
+    for (let qi = 0; qi < queue.length || (Date.now() - started < 50_000 && (await more()) > 0); qi++) {
+      const m = queue[qi]
       if (Date.now() - started > 60_000) break // stay inside the lease
       if (!m.force && sent >= room.left) continue // stay inside the limit ("Send now" messages excepted)
       if ((await contactState(m.to))?.optOut) {
@@ -328,6 +357,11 @@ export async function syncInbox(opts: { waitMs?: number; minGapMs?: number } = {
   const none = (skipped: string) => ({ ok: false, changed: 0, received: 0, skipped })
   if (!(await isPaired())) return none('WhatsApp is not linked')
   if (await pausedUntil()) return none('paused') // safety pause / circuit breaker: stay away
+  // fresh approved messages waiting? send them instead — a send session collects incoming messages and ticks as well
+  if (await MessageLog.exists({ channel: 'WHATSAPP', provider: PROVIDER, status: 'QUEUED', at: { $gte: new Date(Date.now() - 10 * 60_000) } })) {
+    const r = await pumpWhenFree(35_000)
+    return { ok: !r.skipped || r.sent > 0, changed: 0, received: 0, skipped: r.sent ? undefined : r.skipped }
+  }
   // one check session at a time for everyone, however many tabs or admins have the page open
   const gap = opts.minGapMs ?? 110_000
   const claimed = await WaAuth.updateOne({ _id: 'meta', $or: [{ inboxSyncAt: { $exists: false } }, { inboxSyncAt: { $lt: new Date(Date.now() - gap) } }] }, { $set: { inboxSyncAt: new Date() } }).catch(() => null)

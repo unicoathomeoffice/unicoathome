@@ -126,8 +126,9 @@ export async function approve(ids: Ids, user: SessionUser, opts: { edits?: Recor
     { $set: { status: 'QUEUED', approvedBy: user.id, approvedAt: now, at: now }, $push: { events: { status: 'QUEUED', at: now, note: `Approved by ${user.name}` } } },
   )
   await audit(user, 'message.approve', 'message', rows.length === 1 ? rows[0]._id : null, { after: { count: rows.length, to: rows.slice(0, 20).map((r) => r.toName ?? r.to) } }, meta)
-  const { pumpWhatsApp } = await import('./service')
-  background(() => pumpWhatsApp())
+  // out now — if a check / send session holds WhatsApp, wait for it instead of leaving the message QUEUED
+  const { pumpWhenFree } = await import('./service')
+  background(() => pumpWhenFree(30_000))
   return rows.length
 }
 
@@ -150,8 +151,9 @@ export async function retryFailed(ids: string[], user: SessionUser, meta: Meta =
     { $set: { status: 'QUEUED', at: now, error: null, approvedBy: user.id, approvedAt: now }, $push: { events: { status: 'QUEUED', at: now, note: `Retried by ${user.name}` } } },
   )
   await audit(user, 'message.retry', 'message', rows.length === 1 ? rows[0]._id : null, { after: { count: rows.length, to: rows.slice(0, 20).map((r) => r.toName ?? r.to) } }, meta)
-  const { pumpWhatsApp } = await import('./service')
-  background(() => pumpWhatsApp())
+  // out now — if a check / send session holds WhatsApp, wait for it instead of leaving the message QUEUED
+  const { pumpWhenFree } = await import('./service')
+  background(() => pumpWhenFree(30_000))
   return rows.length
 }
 
@@ -175,8 +177,9 @@ export async function forceSend(ids: string[], user: SessionUser, meta: Meta = {
     },
   )
   await audit(user, 'message.force', 'message', ok.length === 1 ? ok[0]._id : null, { after: { count: ok.length, to: ok.slice(0, 20).map((r) => r.toName ?? r.to), from: ok.map((r) => r.status) } }, meta)
-  const { pumpWhatsApp } = await import('./service')
-  const r = await pumpWhatsApp().catch((e: any) => ({ sent: 0, failed: 0, skipped: String(e?.message ?? e) }))
+  // wait for a busy session (inbox check / another send) rather than giving up — fits the 60 s request limit
+  const { pumpWhenFree } = await import('./service')
+  const r = await pumpWhenFree(25_000).catch((e: any) => ({ sent: 0, failed: 0, skipped: String(e?.message ?? e) }))
   return { count: ok.length, sent: r.sent, failed: r.failed, skipped: r.skipped ?? null }
 }
 
