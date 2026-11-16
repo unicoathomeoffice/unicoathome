@@ -13,7 +13,16 @@ export const GET = route<{ uhid: string }>(async ({ user, params }) => {
   if (!/^[\w-]{3,30}$/.test(uhid)) return { found: false, address: null }
   try {
     const p = await h360Profile(uhid)
-    return { found: !!p, address: h360Address(p?.presentAddress) }
+    // everything New request can fill: the address, the emergency contact (as the relative), family and personal details
+    const profile = p
+      ? {
+          dob: p.dob && !isNaN(+p.dob) ? p.dob.toISOString().slice(0, 10) : undefined,
+          bloodGroup: p.bloodGroup, religion: p.religion, maritalStatus: p.maritalStatus, nationality: p.nationality, occupation: p.occupation,
+          permanentAddress: p.permanentAddress, father: p.father, mother: p.mother, spouse: p.spouse, guardianName: p.guardianName,
+          email: p.email, altPhone: p.altPhone, emergency: p.emergency, flags: p.flags,
+        }
+      : null
+    return { found: !!p, address: h360Address(p?.presentAddress), profile }
   } catch (e) {
     if (e instanceof H360Error) return { found: false, address: null, offline: true }
     throw e
