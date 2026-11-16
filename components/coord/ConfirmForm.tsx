@@ -9,7 +9,7 @@ import { cx } from '@/lib/format'
 import { FLabel, FixedBottom, bbtn } from './ui'
 import { CancelRequestButton } from './actions'
 import { H360TestPicker } from '@/components/client/H360TestPicker'
-import { testsTotal, type TestItem } from '@/lib/schemas'
+import { type TestItem } from '@/lib/schemas'
 
 /** Tests & procedures chips with an "Add from 27 …" picker sheet (S2). */
 export function TestsPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
@@ -98,7 +98,7 @@ export function ConfirmForm(p: Props) {
   const h360Names = new Set((p.testItems ?? []).map((t) => t.name))
   const [tests, setTests] = useState<string[]>(p.tests.filter((t) => !h360Names.has(t)))
   const [testItems, setTestItems] = useState<TestItem[]>(p.testItems ?? [])
-  const [fee, setFee] = useState(p.fee != null ? String(p.fee) : '')
+  const fee = '' // no estimated fee: the bill comes from H360 or is typed in at the visit
   const [pay, setPay] = useState<string>(p.payment ?? '')
   const [transport, setTransport] = useState(p.transport)
   const [priority, setPriority] = useState(p.priority)
@@ -164,21 +164,6 @@ export function ConfirmForm(p: Props) {
         </FLabel>
         <div className="rounded-card bg-white px-3.5 py-3 shadow-card">
           <H360TestPicker value={testItems} onChange={setTestItems} plain={tests} onPlainChange={setTests} patientType={p.patientCategory} corporate={/corporate/i.test(p.patientCategory ?? '')} />
-          {testsTotal(testItems) > 0 && (
-            <button type="button" onClick={() => setFee(String(testsTotal(testItems)))} className="mt-2 text-[13px] font-semibold text-primary-700">
-              Use tests total as the fee
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-[1fr_auto] items-end gap-2.5">
-        <div>
-          <FLabel>Estimated fee</FLabel>
-          <label className="flex h-12 items-center gap-2 rounded-lg border-[1.5px] border-slate-300 bg-white px-3.5 focus-within:border-primary">
-            <span className="text-slate-400">৳</span>
-            <input className="min-w-0 flex-1 bg-transparent text-[17px] font-bold outline-none" inputMode="numeric" value={fee} onChange={(e) => setFee(e.target.value.replace(/[^\d]/g, ''))} placeholder="0" />
-          </label>
         </div>
       </div>
 

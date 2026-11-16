@@ -155,7 +155,6 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
   }, [q, patient])
 
   const svcByCode = useMemo(() => Object.fromEntries(services.map((s) => [s.code, s])), [services])
-  const estimate = codes.reduce((a, c) => a + (svcByCode[c]?.fee ?? 0), 0)
   const toggle = (c: string) => setCodes(codes.includes(c) ? codes.filter((x) => x !== c) : [...codes, c])
   const patientOk = !!patient || (name.trim().length >= 2 && phone.replace(/\D/g, '').length >= 6 && address.trim().length >= 3 && (mode === 'quick' ? !!age && !!gender : true))
   const serviceOk = codes.length > 0 || (showOther && other.trim().length > 1)
@@ -804,12 +803,6 @@ export function NewRequestForm({ me, services, initialPatient, from, backHref }:
             />
             {scanner}
           </div>
-          {estimate > 0 && (
-            <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3.5 py-2.5 text-[13px] text-slate-500">
-              <span>Estimated fee · set when confirming</span>
-              <b className="text-slate-900">{taka(estimate)}</b>
-            </div>
-          )}
           <div>
             <FLabel>Internal remarks</FLabel>
             <textarea className="hc-input hc-input-lg h-[76px] py-2.5" placeholder="Visible to coordinator only" value={remarks} onChange={(e) => setRemarks(e.target.value)} />

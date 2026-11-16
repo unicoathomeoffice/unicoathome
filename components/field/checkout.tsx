@@ -44,7 +44,7 @@ export function CheckoutScreen(p: CheckoutProps) {
   const router = useRouter()
   const toast = useToast()
   const [now, setNow] = useState(() => Date.now())
-  const [amount, setAmount] = useState(p.billing.billAmount != null ? String(p.billing.billAmount) : p.estimatedFee != null ? String(p.estimatedFee) : '')
+  const [amount, setAmount] = useState(p.billing.billAmount != null ? String(p.billing.billAmount) : '')
   const [status, setStatus] = useState<'PAID' | 'DUE' | ''>((p.billing.status as 'PAID') ?? '')
   const [method, setMethod] = useState<Pay>((p.billing.method as Pay) ?? 'CASH')
   const [asPlanned, setAsPlanned] = useState(!!p.transport.mode)
@@ -242,7 +242,7 @@ export function CheckoutScreen(p: CheckoutProps) {
             <span className="text-[22px] font-bold text-slate-500">৳</span>
             <input inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value.replace(/\D/g, '').slice(0, 7))} className="h-full min-w-0 flex-1 bg-transparent text-[22px] font-bold outline-none" aria-label="Total bill amount" />
           </span>
-          <span className="mt-1.5 block text-[12px] text-slate-500">{p.estimatedFee != null ? `Estimated at confirmation: ${taka(p.estimatedFee)} · numbers only` : 'Numbers only'}</span>
+          <span className="mt-1.5 block text-[12px] text-slate-500">Numbers only</span>
         </label>
 
         <div>

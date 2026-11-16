@@ -9,7 +9,7 @@ import { forget, memo } from './memo'
 // cookie), keep the session for ~9 h, and read the Patient List search. Read-only: nothing is ever written to H360.
 
 export type H360Config = { baseUrl: string; username: string; password: string }
-export type H360Patient = { uhid: string; name: string; dob?: string; ageYears?: number; gender?: string; ageGender?: string; company?: string; phone?: string; altPhone?: string; email?: string; address?: string; guardianName?: string; regType?: string; category?: string }
+export type H360Patient = { uhid: string; name: string; dob?: string; ageYears?: number; gender?: string; ageGender?: string; company?: string; phone?: string; altPhone?: string; email?: string; address?: string; guardianName?: string; regType?: string; category?: string; emergencyPhone?: string; spouseName?: string; contactPerson?: string; nationality?: string }
 
 const AAD = 'h360:v1'
 const TIMEOUT = 10_000
@@ -268,12 +268,19 @@ function fromAutocomplete(it: any): H360Patient | null {
     gender,
     ageYears,
     ageGender: [str(it.pat_age).replace(/\s+0 D$/, ''), g].filter(Boolean).join(' · ') || undefined,
-    dob: str(it.dob) || undefined,
+    // H360 writes 22-10-1962: kept as 1962-10-22
+    dob: str(it.dob).replace(/^(\d{2})[-/.](\d{2})[-/.](\d{4})$/, '$3-$2-$1') || undefined,
     phone: str(it.phone_mobile).replace(/[^\d+]/g, '') || undefined,
     altPhone: str(it.alt_phone_mobile).replace(/[^\d+]/g, '') || undefined,
     email: /@/.test(str(it.email)) ? str(it.email) : undefined,
     company: str(it.ccm_client_name) || undefined,
     guardianName: str(it.spouse_name) || str(it.contact_person) || undefined,
+    spouseName: str(it.spouse_name) || undefined,
+    contactPerson: str(it.contact_person) || undefined,
+    // the emergency contact's phone (a relative): becomes the requester / guardian phone in HomeCare
+    emergencyPhone: str(it.emergency_contact_contact).replace(/[^\d+]/g, '') || undefined,
+    // H360 sends an ID number here: a name only
+    nationality: /[A-Za-z]/.test(str(it.nationality)) ? str(it.nationality) : undefined,
     // pr_addr_thana / present_district are H360's ID numbers ("530", "47"), not names: never an address on their own
     address: [str(it.pr_addr_thana), str(it.present_district)].filter((x) => /[A-Za-z]/.test(x)).join(', ') || undefined,
   }

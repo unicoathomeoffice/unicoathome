@@ -189,7 +189,6 @@ export default async function CoordRequest({ params }: { params: Promise<{ id: s
 
       <SLabel>Billing</SLabel>
       <MCard>
-        <Line k="Estimate" v={taka(r.billing?.estimatedFee)} />
         {r.billing?.billAmount != null && <Line k="Bill" v={`${taka(r.billing.billAmount)} · ${r.billing.status === 'PAID' ? 'Paid' : r.billing.status === 'DUE' ? 'Payment due' : r.billing.status ?? ''}${r.billing.method ? ` · ${PAYMENT_METHOD_LABEL[r.billing.method as keyof typeof PAYMENT_METHOD_LABEL]}` : ''}`} />}
         {r.billing?.invoiceNo && <Line k="Invoice" v={`${r.billing.invoiceNo} · ${taka(r.billing.invoiceAmount)} · ${r.billing.invoicePrinted ? 'printed' : 'not printed'}`} />}
         {(r.pettyCash ?? []).map((p: any) => (

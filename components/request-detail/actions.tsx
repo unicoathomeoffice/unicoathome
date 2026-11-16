@@ -2,7 +2,7 @@
 // W04 header action bar + lifecycle dialogs (confirm, reschedule, cancel, close / invoice, email, WhatsApp, edit).
 import { useEffect, useState, type ReactNode } from 'react'
 import { H360TestPicker } from '@/components/client/H360TestPicker'
-import { testsTotal, type TestItem } from '@/lib/schemas'
+import { type TestItem } from '@/lib/schemas'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { CalendarClock, CheckCircle2, FileText, Loader2, Mail, MessageCircle, Pencil, RefreshCw, ShieldCheck, Trash2, UserPlus, Users, Home, AlertTriangle, Check, Search, Undo2 } from 'lucide-react'
 import { api, useAction, ActionButton, Drawer, Segmented, Toggle, ChipPicker, WhatsAppButton } from '@/components/client'
@@ -252,7 +252,7 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
     uhid: r.uhid,
     tests: plainTests(r),
     testItems: r.testItems ?? [],
-    estimatedFee: r.estimatedFee?.toString() ?? '',
+    estimatedFee: '',
     paymentMethod: r.paymentMethod ?? '',
     priority: r.priority,
     transportNeeded: r.transportNeeded,
@@ -353,9 +353,6 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
           />
         </div>
         <div className="grid grid-cols-2 gap-2.5">
-          <F label="Estimated fee (৳)">
-            <input type="number" min={0} className="hc-input" value={f.estimatedFee} onChange={(e) => set('estimatedFee', e.target.value)} />
-          </F>
           <F label="Expected duration (min)">
             <input type="number" min={5} step={5} className="hc-input" value={f.expectedDurationMin} onChange={(e) => set('expectedDurationMin', e.target.value)} />
           </F>
@@ -375,7 +372,6 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
         <div>
           <span className="hc-label">Tests / procedures {f.tests.length + f.testItems.length > 0 && <span className="text-slate-500">· {f.tests.length + f.testItems.length} selected</span>}</span>
           <H360TestPicker compact value={f.testItems} onChange={(v) => setF((s) => ({ ...s, testItems: v }))} plain={f.tests} onPlainChange={(v) => set('tests', v)} patientType={r.patientCategory} corporate={/corporate/i.test(r.patientCategory ?? '')} />
-          <FeeFromTests items={f.testItems} fee={f.estimatedFee} onUse={(n) => set('estimatedFee', String(n))} />
         </div>
         <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
           <div className="text-[13px]">
@@ -879,7 +875,7 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
   const [f, setF] = useState({
     priority: r.priority,
     expectedDurationMin: String(r.expectedDurationMin || 45),
-    estimatedFee: r.estimatedFee?.toString() ?? '',
+    estimatedFee: '',
     paymentMethod: r.paymentMethod ?? '',
     transportNeeded: r.transportNeeded,
     complaint: r.complaint,
@@ -894,7 +890,6 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
   const servicesLocked = ['COMPLETED', 'CLOSED', 'CANCELLED'].includes(r.status)
   const bagFixed = !['NEW', 'VERIFIED', 'CONFIRMED', 'RESCHEDULED', 'ASSIGNED', 'ACCEPTED'].includes(r.status)
   const servicesChanged = f.serviceCodes.join() !== r.serviceCodes.join() || f.otherService.trim() !== r.otherService
-  const servicesFee = r.serviceOptions.filter((o) => f.serviceCodes.includes(o.code)).reduce((a, o) => a + (o.fee ?? 0), 0)
   const toggleService = (code: string) => set('serviceCodes', f.serviceCodes.includes(code) ? f.serviceCodes.filter((c) => c !== code) : [...f.serviceCodes, code])
   async function save() {
     if (servicesChanged && !f.serviceCodes.length && !f.otherService.trim()) return toast('Pick at least one service', 'err')
@@ -985,16 +980,6 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
               <div className="mt-1.5 rounded-lg bg-[#EFF6FF] px-3 py-2 text-[12px] leading-[17px] text-[#1E40AF]">
                 The checklist gets the new services&apos; steps (ticked steps stay).{' '}
                 {bagFixed ? 'The team has left — the bag stays as packed.' : 'The bag is updated to match (packed items stay).'}
-                {servicesFee > 0 && (
-                  <>
-                    {' '}
-                    Services {taka(servicesFee)}
-                    {testsTotal(f.testItems) ? ` + tests ${taka(testsTotal(f.testItems))}` : ''} = <b>{taka(servicesFee + testsTotal(f.testItems))}</b> ·{' '}
-                    <button type="button" className="font-semibold underline" onClick={() => set('estimatedFee', String(servicesFee + testsTotal(f.testItems)))}>
-                      use as estimated fee
-                    </button>
-                  </>
-                )}
               </div>
             )}
           </div>
@@ -1011,12 +996,9 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
             onChange={(v) => set('priority', v)}
           />
         </div>
-        <div className="grid grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-2 gap-2.5">
           <F label="Duration (min)">
             <input type="number" min={5} step={5} className="hc-input" value={f.expectedDurationMin} onChange={(e) => set('expectedDurationMin', e.target.value)} />
-          </F>
-          <F label="Estimated fee (৳)">
-            <input type="number" min={0} className="hc-input" value={f.estimatedFee} onChange={(e) => set('estimatedFee', e.target.value)} />
           </F>
           <F label="Payment method">
             <select className="hc-input" value={f.paymentMethod} onChange={(e) => set('paymentMethod', e.target.value)}>
@@ -1041,7 +1023,6 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
         <div>
           <span className="hc-label">Tests / procedures</span>
           <H360TestPicker compact value={f.testItems} onChange={(v) => setF((s) => ({ ...s, testItems: v }))} plain={f.tests} onPlainChange={(v) => set('tests', v)} patientType={r.patientCategory} corporate={/corporate/i.test(r.patientCategory ?? '')} />
-          <FeeFromTests items={f.testItems} fee={f.estimatedFee} onUse={(n) => set('estimatedFee', String(n))} />
         </div>
         <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
           <div className="text-[13px] font-semibold">Transport needed</div>
@@ -1058,16 +1039,3 @@ function plainTests(r: { tests: string[]; testItems?: TestItem[] }) {
   return r.tests.filter((t) => !h.has(t))
 }
 
-/** "Tests total ৳X · use as estimated fee" under the H360 picker */
-function FeeFromTests({ items, fee, onUse }: { items: TestItem[]; fee: string; onUse: (n: number) => void }) {
-  const total = testsTotal(items)
-  if (!total) return null
-  return (
-    <div className="mt-1.5 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-[12.5px]">
-      <span className="text-slate-600">H360 tests total {taka(total)}{fee ? ` · estimate now ${taka(Number(fee))}` : ''}</span>
-      <button type="button" className="font-semibold text-primary-700 hover:underline" onClick={() => onUse(total)}>
-        Use as estimated fee
-      </button>
-    </div>
-  )
-}

@@ -589,7 +589,8 @@ function StepPatient({ f, set, setIn, zones, errors, initialQuery }: { f: F; set
     setIn('np', { name: h.name, phone: h.phone ?? '', ageYears: age != null ? String(age) : '', gender: (h.gender as 'M' | 'F' | 'O' | undefined) ?? '', uhid: h.uhid ?? '', altPhone: h.altPhone ?? '', email: h.email ?? '' })
     // a fresh address for this patient (not the previous one's house / flat / pin), filled from H360 below
     set('addr', { area: '', full: h.address ?? '', house: '', flat: '', landmark: '', lat: null, lng: null })
-    if (h.guardianName) setIn('requester', { type: 'RELATIVE', name: h.guardianName })
+    // the relative: H360's spouse / contact person and the emergency contact's phone
+    if (h.guardianName || h.emergencyPhone) setIn('requester', { type: 'RELATIVE', name: h.guardianName ?? 'Emergency contact', relation: h.spouseName && h.guardianName === h.spouseName ? 'Spouse' : '', phone: h.emergencyPhone ?? '' })
     setQ('')
     void addressFromH360(h.uhid)
   }

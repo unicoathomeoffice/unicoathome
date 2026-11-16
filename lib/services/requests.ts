@@ -27,7 +27,7 @@ import { date as fmtDate, dhakaDate, isoDay, time as fmtTime, minutesBetween, da
 import type { SessionUser } from '../auth'
 import { closeOpenReturns, startOut, startReturn, stopTracking } from './tracking'
 import { shortLink } from '../links'
-import { TestItemInput, testNames, testsTotal } from '../schemas'
+import { TestItemInput, testNames } from '../schemas'
 
 type Meta = { ip?: string; userAgent?: string; client?: string }
 const url = (id: unknown) => `/requests/${id}`
@@ -298,6 +298,13 @@ export const CreateRequestInput = z.object({
       uhid: z.string().optional(),
       email: z.string().email().optional().or(z.literal('')),
       bloodGroup: z.string().optional(),
+      // filled from H360 when the patient was picked there
+      dob: z.string().optional(),
+      guardian: z.object({ name: z.string().optional(), relation: z.string().optional(), phone: z.string().optional() }).optional(),
+      category: z.string().max(60).optional(),
+      company: z.string().max(120).optional(),
+      nationality: z.string().max(60).optional(),
+      spouse: z.string().max(80).optional(),
       address: z.object({ area: z.string().optional(), full: z.string().min(3), house: z.string().optional(), flat: z.string().optional(), landmark: z.string().optional(), lat: z.number().optional(), lng: z.number().optional() }),
     })
     .optional(),
@@ -401,6 +408,12 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
         uhid: p.uhid || undefined,
         email: p.email || undefined,
         bloodGroup: p.bloodGroup,
+        dob: p.dob && !isNaN(Date.parse(p.dob)) ? new Date(p.dob) : undefined,
+        guardian: p.guardian?.name || p.guardian?.phone ? p.guardian : undefined,
+        category: p.category || undefined,
+        company: p.company || undefined,
+        nationality: p.nationality || undefined,
+        family: p.spouse ? { spouse: p.spouse } : undefined,
         address: { ...p.address, district: 'Dhaka' },
         addressHistory: [{ full: p.address.full, area: p.address.area, from: new Date() }],
         source: input.source ?? 'PHONE',
@@ -463,7 +476,8 @@ export async function createRequest(input: CreateRequestInput, user: SessionUser
       kit: await (await import('./kit')).buildKit(types.map((t) => t._id)),
     },
     transport: { needed: !!input.transportNeeded, status: input.transportNeeded ? 'REQUESTED' : undefined },
-    billing: { estimatedFee: input.estimatedFee ?? types.reduce((a, t) => a + (t.fee ?? 0), 0) + testsTotal(input.testItems), method: input.paymentMethod },
+    // no estimated fee: the bill comes from H360 or is typed in at the visit
+    billing: { method: input.paymentMethod },
     source: input.source ?? (user.client === 'app' ? 'APP' : 'PHONE'),
     remarks: input.remarks,
     carePlanId: input.carePlanId && isOid(input.carePlanId) ? input.carePlanId : undefined,

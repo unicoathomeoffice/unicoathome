@@ -72,7 +72,8 @@ export async function buildVisitUpdate(requestId: unknown, opts: { forPatient?: 
 
   if (!opts.forPatient) {
     const b = r.billing ?? {}
-    const amount = b.invoiceAmount ?? b.billAmount ?? b.estimatedFee
+    // the real bill only (H360 invoice or typed in at the visit); never an estimate
+    const amount = b.invoiceAmount ?? b.billAmount
     if (amount != null) lines.push(`Bill: ${taka(amount)}${b.status ? ` · ${b.status === 'PARTIAL' ? 'Partially paid' : b.status[0] + b.status.slice(1).toLowerCase()}` : ''}${b.invoiceNo ? ` (#${b.invoiceNo})` : ''}`)
   }
   // next visit from the same care plan, if one is booked

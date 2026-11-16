@@ -221,7 +221,7 @@ export function VisitReport({ r, patient, labs, settings, names, signatureId, au
         {/* billing */}
         <div className="mt-4 grid grid-cols-4 gap-2 rounded-lg bg-slate-50 px-3 py-2 text-[12px]">
           <div>
-            <span className="text-slate-500">Bill</span> <b>{taka(b.billAmount ?? b.estimatedFee)}</b>
+            <span className="text-slate-500">Bill</span> <b>{taka(b.billAmount ?? b.invoiceAmount)}</b>
           </div>
           <div>
             <span className="text-slate-500">Payment</span> <b>{[b.status, b.method && PAYMENT_METHOD_LABEL[b.method as 'CASH']].filter(Boolean).join(' · ') || '—'}</b>

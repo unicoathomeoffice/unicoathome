@@ -6,7 +6,7 @@ import { Building2, Check, Loader2 } from 'lucide-react'
 import { api } from './api'
 import { cx } from '@/lib/format'
 
-export type H360Hit = { uhid: string; name: string; dob?: string; ageYears?: number; gender?: string; ageGender?: string; company?: string; phone?: string; altPhone?: string; email?: string; address?: string; guardianName?: string; regType?: string; category?: string; linkedPatientId: string | null }
+export type H360Hit = { uhid: string; name: string; dob?: string; ageYears?: number; gender?: string; ageGender?: string; company?: string; phone?: string; altPhone?: string; email?: string; address?: string; guardianName?: string; emergencyPhone?: string; spouseName?: string; regType?: string; category?: string; linkedPatientId: string | null }
 
 export function H360PatientSearch({ q, onUse, useLabel = 'Use', className }: { q: string; onUse: (p: H360Hit) => void; useLabel?: string; className?: string }) {
   const [state, setState] = useState<{ loading: boolean; items: H360Hit[]; error?: string; offline?: boolean; code?: string }>({ loading: false, items: [] })

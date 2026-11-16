@@ -60,7 +60,7 @@ export function AssignDrawer(p: AssignProps) {
   const [date, setDate] = useState(p.date)
   const [slot, setSlot] = useState(p.slot)
   const [duration, setDuration] = useState(String(p.duration || 45))
-  const [fee, setFee] = useState(p.fee?.toString() ?? '')
+  const fee = '' // no estimated fee
   const [instructions, setInstructions] = useState(p.instructions)
   const CAR = p.car
   const needTimes = !!CAR?.needed && !CAR.set
@@ -248,10 +248,6 @@ export function AssignDrawer(p: AssignProps) {
             </span>
           </label>
         )}
-        <label>
-          <span className="hc-label">Fee (৳)</span>
-          <input type="number" min={0} className="hc-input" value={fee} onChange={(e) => setFee(e.target.value)} />
-        </label>
         <label>
           <span className="hc-label">Instructions to staff</span>
           <input className="hc-input" value={instructions} placeholder="e.g. Bring resistance bands. Family requests female staff." onChange={(e) => setInstructions(e.target.value)} />

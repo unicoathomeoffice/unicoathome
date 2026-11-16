@@ -141,12 +141,6 @@ export function InvoiceTab({
             <div className={cx('mt-1 text-[20px] font-bold', k === 'Due' && (v as number) > 0 && 'text-[#B91C1C]')}>{taka(v as number)}</div>
           </div>
         ))}
-        {billing.estimatedFee != null && (
-          <div>
-            <div className="text-[12px] font-semibold uppercase tracking-[.06em] text-slate-500">Estimated</div>
-            <div className="mt-1 text-[20px] font-bold text-slate-400">{taka(billing.estimatedFee)}</div>
-          </div>
-        )}
         <div className="ml-auto flex flex-wrap gap-2">
           {canEdit && (
             <select className="hc-input h-10 w-auto" value={billing.override ?? ''} onChange={(e) => override(e.target.value || null)} aria-label="Status override">

@@ -125,15 +125,25 @@ export async function recordPing(r: any, input: z.infer<typeof PingInput>, user:
   if (!isTeamMember(user, r)) throw forbidden('Only the assigned care team shares location for this visit')
   const t = r.tracking
   if (!t?.active) return { active: false as const }
-  const at = new Date()
+  const now = new Date()
+  // a point taken with no signal and sent later keeps the time the phone took it (the last 12 hours, never the future)
+  const dev = input.deviceAt ? new Date(input.deviceAt) : null
+  const at = dev && !isNaN(+dev) && +dev >= +now - 12 * 3600_000 ? new Date(Math.min(+dev, +now)) : now
+  // only a point newer than the last one moves the pin; older ones fill in the trail
+  const newest = !t.at || +at >= +new Date(t.at)
   // two phones of one team (or a retry) within 3 s: one point is enough
-  if (t.at && at.getTime() - new Date(t.at).getTime() < 3000 && String(t.userId) !== user.id) return { active: true as const, phase: t.phase as Phase, skipped: true }
+  if (newest && t.at && at.getTime() - new Date(t.at).getTime() < 3000 && String(t.userId) !== user.id) return { active: true as const, phase: t.phase as Phase, skipped: true }
   // a very rough fix (network location, > 500 m): the phone is alive — keep "last heard" fresh, but don't move the pin
   if (input.accuracyM != null && input.accuracyM > 500) {
+    if (!newest) return { active: true as const, phase: t.phase as Phase, rough: true }
     await HomecareRequest.updateOne({ _id: r._id }, { $set: { 'tracking.at': at, 'tracking.userId': user.id, 'tracking.lostNotifiedAt': null, 'tracking.pausedAt': null, 'tracking.roughAt': at } })
     return { active: true as const, phase: t.phase as Phase, rough: true }
   }
   const point = { lat: input.lat, lng: input.lng, accuracyM: input.accuracyM, heading: input.heading ?? undefined, speed: input.speed ?? undefined }
+  if (!newest) {
+    await LocationPing.create({ requestId: r._id, userId: user.id, phase: t.phase, ...point, at })
+    return { active: true as const, phase: t.phase as Phase }
+  }
   await Promise.all([
     LocationPing.create({ requestId: r._id, userId: user.id, phase: t.phase, ...point, at }),
     HomecareRequest.updateOne({ _id: r._id }, { $set: { 'tracking.lat': point.lat, 'tracking.lng': point.lng, 'tracking.accuracyM': point.accuracyM, 'tracking.heading': point.heading, 'tracking.speed': point.speed, 'tracking.at': at, 'tracking.userId': user.id, 'tracking.lostNotifiedAt': null, 'tracking.pausedAt': null } }),

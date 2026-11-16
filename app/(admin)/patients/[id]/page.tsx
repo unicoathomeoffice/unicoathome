@@ -85,7 +85,7 @@ export default async function PatientProfile({ params, searchParams }: { params:
   const canCreate = can(user, 'requests.create')
   const ph = (p?: string) => (p ? (masked ? maskPhone(p) : fmtPhone(p)) : '—')
 
-  const billOf = (v: any) => v.billing?.invoiceAmount ?? v.billing?.billAmount ?? v.billing?.estimatedFee ?? 0
+  const billOf = (v: any) => v.billing?.invoiceAmount ?? v.billing?.billAmount ?? 0
   const due = visits.filter((v) => v.billing?.status === 'DUE').reduce((s, v) => s + billOf(v), 0)
   const outstanding = due + (patient.balance ?? 0)
   const paidVisits = visits.filter((v) => v.billing?.status === 'PAID')
