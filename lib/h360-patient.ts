@@ -89,6 +89,19 @@ export function h360Address(s?: string | null): { full: string; area?: string } 
   return { full: out.join(', '), area }
 }
 
+/** The patient's H360 billing class by UHID: corporate (its id gives H360's own discounts) and patient type. Null when
+ *  H360 isn't set up or the UHID is not registered there. Cached 30 min. */
+export async function h360BillingOf(uhid: string): Promise<{ corporateId?: string; corporate?: string; patientTypeId?: string; patientType?: string; name?: string } | null> {
+  const u = uhid?.trim()
+  if (!u || !(await getH360Config())) return null
+  return memo(`h360p:bill:${u}`, 30 * 60_000, async () => {
+    const hit = await findByUhid(u)
+    if (!hit) return null
+    const s = (v: unknown) => (v == null ? '' : String(v).trim()) || undefined
+    return { corporateId: s(hit.ccm_client_no_pk), corporate: s(hit.ccm_client_name), patientTypeId: s(hit.patient_type_no_pk), patientType: s(hit.patient_type_code), name: s(hit.patient_name) }
+  })
+}
+
 /** "section|label" → value, from the View Patient Information page. */
 function readView(html: string) {
   const doc = parse(html)

@@ -17,6 +17,8 @@ export type ServiceDoc = {
   requiredSkills?: string[]
   defaultDurationMin?: number
   fee?: number
+  /** H360 billing item for this service's charge (live bill prices it from H360) */
+  h360Code?: string
   requiresPrescription?: boolean
   checklist?: { key: string; label: string; mandatory?: boolean; sortOrder?: number }[]
   /** after return to the hospital (lab handover…); the page fills the defaults when never saved */
@@ -42,6 +44,7 @@ type Form = {
   category: string
   duration: string
   fee: string
+  h360Code: string
   skills: string[]
   vitals: string[]
   mix: { role: string; count: string }[]
@@ -65,6 +68,31 @@ const slug = (s: string) =>
     .replace(/^_|_$/g, '')
     .slice(0, 40) || 'item'
 
+/** The H360 billing item charged for this service (e.g. 26903829 Home Lab Sample Collection): the live bill takes its
+ *  price and the patient's discount from H360. Shows what H360 has under the code. */
+function H360ItemField({ value, onChange, error }: { value: string; onChange: (v: string) => void; error?: string }) {
+  const [hit, setHit] = useState<{ name: string; price: number } | null | 'none' | 'busy'>(null)
+  async function check(code = value.trim()) {
+    if (code.length < 2) return setHit(null)
+    setHit('busy')
+    try {
+      const r = await api<{ items: { code: string; name: string; price: number }[] }>(`/h360/items?q=${encodeURIComponent(code)}`)
+      const h = r.items.find((x) => x.code.toLowerCase() === code.toLowerCase())
+      setHit(h ? { name: h.name, price: h.price } : 'none')
+    } catch {
+      setHit('none')
+    }
+  }
+  return (
+    <Field label="H360 billing item (code)" error={error}>
+      <input className="hc-input font-mono" value={value} onChange={(e) => (onChange(e.target.value.trim()), setHit(null))} onBlur={() => check()} placeholder="e.g. 26903829" />
+      <span className="mt-1 block text-[12px] text-slate-500">
+        {hit === 'busy' ? 'Checking H360…' : hit === 'none' ? <span className="text-[#B45309]">No item with this code in H360</span> : hit ? <span className="text-[#15803D]">{hit.name} · {taka(hit.price)} in H360</span> : 'The live bill prices this service from H360 (empty = the fee above)'}
+      </span>
+    </Field>
+  )
+}
+
 function toForm(s?: ServiceDoc): Form {
   return {
     id: s?._id,
@@ -73,6 +101,7 @@ function toForm(s?: ServiceDoc): Form {
     category: s?.category ?? 'Nursing',
     duration: String(s?.defaultDurationMin ?? 45),
     fee: String(s?.fee ?? 0),
+    h360Code: s?.h360Code ?? '',
     skills: s?.requiredSkills ?? [],
     vitals: s?.vitalsRequired ?? [],
     mix: (s?.staffMix ?? [{ role: 'NURSE', count: 1 }]).map((m) => ({ role: m.role, count: String(m.count) })),
@@ -157,6 +186,7 @@ export function ServicesEditor({ services, canEdit, catalog = [] }: { services: 
       category: f.category,
       defaultDurationMin: Number(f.duration),
       fee: Number(f.fee || 0),
+      h360Code: f.h360Code.trim(),
       requiredSkills: f.skills,
       vitalsRequired: f.vitals,
       staffMix: f.mix.filter((m) => m.role).map((m) => ({ role: m.role, count: Number(m.count || 1) })),
@@ -281,6 +311,7 @@ export function ServicesEditor({ services, canEdit, catalog = [] }: { services: 
             <Field label="Fee (৳)" error={fe.errors.fee}>
               <input className="hc-input" inputMode="numeric" value={f.fee} onChange={(e) => upd({ fee: e.target.value.replace(/[^\d.]/g, '') })} />
             </Field>
+            <H360ItemField value={f.h360Code} onChange={(h360Code) => upd({ h360Code })} error={fe.errors.h360Code} />
             <div className="sm:col-span-2">
               <span className="hc-label">Active</span>
               <div className="flex h-10 items-center gap-3 text-[13px] text-slate-500">

@@ -845,6 +845,7 @@ function StepService({ f, set, services, slots, booking, today, errors, autoDura
             onPlainChange={(v) => set('tests', v)}
             patientType={f.mode === 'existing' ? (f.patient as any)?.category : undefined}
             corporate={f.mode === 'existing' && /corporate/i.test((f.patient as any)?.category ?? '')}
+            uhid={f.mode === 'existing' ? (f.patient as any)?.uhid : f.np.uhid}
           />
         </div>
       </SectionCard>

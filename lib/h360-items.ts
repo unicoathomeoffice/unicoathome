@@ -44,18 +44,22 @@ function token(as: H360Profile = 'main') {
   })
 }
 
-export type H360Item = { code: string; name: string; price: number; dept?: string; type?: string }
+/** discountPct: what H360's billing gives this patient's corporate on the item (e.g. 40 on lab tests for "Unico senior
+ *  citizens care", 0 on home care service charges) — only when searched with that corporate. */
+export type H360Item = { code: string; name: string; price: number; dept?: string; type?: string; discountPct?: number }
 
 // every billable kind except medicines — as H360's own billing screen searches
 const ITEM_TYPES = 'GENERIC,SERVICE,LAB,RAD,IPD,BED,SUR,AMB,FOOD,PTET,PTTE,OPD,COMS,ADM'
 
 /** Search H360's catalog by name or code (min 2 characters). Max 20, cached 10 min per term. */
-export async function searchH360Items(q: string, o: { patientType?: string } = {}): Promise<H360Item[]> {
+export async function searchH360Items(q: string, o: { patientType?: string; corporateId?: string } = {}): Promise<H360Item[]> {
   const term = q.trim()
   if (term.length < 2) return []
   if (!(await getH360Config())) throw new H360Error('NOT_CONFIGURED', 'H360 is not connected')
-  return memo(`h360i:${(o.patientType ?? '').toUpperCase()}:${term.toLowerCase()}`, 10 * 60_000, async () => {
-    const res = await readOnlyPost('/get-item-name-v1', { query: term, item_type: ITEM_TYPES, item_type_void: 'MED', su_no_id: '', corporate_id: '', patient_type: o.patientType ?? '', admission_id: '', patient_id: '' })
+  const corp = /^\d+$/.test(o.corporateId ?? '') ? o.corporateId! : ''
+  return memo(`h360i:${(o.patientType ?? '').toUpperCase()}:${corp}:${term.toLowerCase()}`, 10 * 60_000, async () => {
+    // corporate_id makes H360 answer with that corporate's discount per item (default_discount) — as its billing does
+    const res = await readOnlyPost('/get-item-name-v1', { query: term, item_type: ITEM_TYPES, item_type_void: 'MED', su_no_id: '', corporate_id: corp, patient_type: o.patientType ?? '', admission_id: '', patient_id: '' })
     if (!res.ok) throw new H360Error('DOWN', `H360 service search answered ${res.status}`)
     let rows: any[]
     try {
@@ -71,8 +75,17 @@ export async function searchH360Items(q: string, o: { patientType?: string } = {
         price: Number(r.item_rate) || 0,
         dept: String(r.item_dept ?? '').trim() || undefined,
         type: String(r.itemtype_code ?? r.item_type ?? '').trim() || undefined,
+        discountPct: corp ? Math.min(100, Math.max(0, Number(r.default_discount) || 0)) : undefined,
       }))
       .filter((x) => x.name)
       .slice(0, 20)
   })
+}
+
+/** One catalog item by its exact H360 code, priced for a corporate (null when H360 has no such code). */
+export async function h360ItemByCode(code: string, corporateId?: string): Promise<H360Item | null> {
+  const c = code.trim()
+  if (!c) return null
+  const hits = await searchH360Items(c, { corporateId })
+  return hits.find((h) => h.code.toLowerCase() === c.toLowerCase()) ?? null
 }

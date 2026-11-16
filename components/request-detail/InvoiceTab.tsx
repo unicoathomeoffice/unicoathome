@@ -12,6 +12,7 @@ import type { BillItem, ParsedBill } from '@/lib/bill-parse'
 import { btnClass } from '@/components/ui'
 import { useScanner } from '@/components/scanner/useScanner'
 import { cx, taka, time, day as dayOf } from '@/lib/format'
+import { LiveBill } from './LiveBill'
 
 type Invoice = {
   _id: string
@@ -170,6 +171,9 @@ export function InvoiceTab({
       </section>
 
       {h360 && <H360Bills requestId={requestId} canEdit={canEdit} hasNumbered={billing.invoices.some((i) => /^\d{4,7}$/.test(i.invoiceNo ?? ''))} />}
+
+      {/* the visit priced as H360 bills this patient (UHID), and the H360 bill on it checked line by line */}
+      <LiveBill requestId={requestId} stamp={billing.invoices.map((i) => `${i._id}:${i.payable}:${(i.items ?? []).length}`).join(',')} />
 
       {/* bill and request differ: suggest the fix */}
       <BillMatch requestId={requestId} canEdit={canEdit} stamp={billing.invoices.map((i) => `${i._id}:${(i.items ?? []).length}`).join(',')} />

@@ -46,6 +46,9 @@ const ServiceTypeSchema = new Schema<any>(
     requiredSkills: [String],
     defaultDurationMin: { type: Number, default: 45 },
     fee: { type: Number, default: 0 },
+    /** the H360 billing item for this service's home care charge (e.g. 26903829 Home Lab Sample Collection): the live
+     *  bill takes its price and discount from H360; unset = the fee above */
+    h360Code: String,
     requiresPrescription: { type: Boolean, default: false }, // public booking must attach a prescription (e.g. injections)
     checklist: [{ _id: false, key: String, label: String, mandatory: { type: Boolean, default: true }, sortOrder: Number }],
     // after the team is back at the hospital (e.g. samples handed to the lab). Left unset until an admin saves it,

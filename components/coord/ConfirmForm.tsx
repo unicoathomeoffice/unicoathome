@@ -163,7 +163,7 @@ export function ConfirmForm(p: Props) {
           Test / procedure details
         </FLabel>
         <div className="rounded-card bg-white px-3.5 py-3 shadow-card">
-          <H360TestPicker value={testItems} onChange={setTestItems} plain={tests} onPlainChange={setTests} patientType={p.patientCategory} corporate={/corporate/i.test(p.patientCategory ?? '')} />
+          <H360TestPicker value={testItems} onChange={setTestItems} plain={tests} onPlainChange={setTests} patientType={p.patientCategory} corporate={/corporate/i.test(p.patientCategory ?? '')} uhid={uhid || p.patientUhid} />
         </div>
       </div>
 

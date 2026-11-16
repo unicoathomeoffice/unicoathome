@@ -371,7 +371,7 @@ function ConfirmDialog({ r, slots, onClose }: { r: ReqLite; slots: string[]; onC
         </div>
         <div>
           <span className="hc-label">Tests / procedures {f.tests.length + f.testItems.length > 0 && <span className="text-slate-500">· {f.tests.length + f.testItems.length} selected</span>}</span>
-          <H360TestPicker compact value={f.testItems} onChange={(v) => setF((s) => ({ ...s, testItems: v }))} plain={f.tests} onPlainChange={(v) => set('tests', v)} patientType={r.patientCategory} corporate={/corporate/i.test(r.patientCategory ?? '')} />
+          <H360TestPicker compact value={f.testItems} onChange={(v) => setF((s) => ({ ...s, testItems: v }))} plain={f.tests} onPlainChange={(v) => set('tests', v)} patientType={r.patientCategory} corporate={/corporate/i.test(r.patientCategory ?? '')} uhid={r.uhid} />
         </div>
         <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
           <div className="text-[13px]">
@@ -1022,7 +1022,7 @@ function EditDialog({ r, onClose }: { r: ReqLite; onClose: () => void }) {
         </F>
         <div>
           <span className="hc-label">Tests / procedures</span>
-          <H360TestPicker compact value={f.testItems} onChange={(v) => setF((s) => ({ ...s, testItems: v }))} plain={f.tests} onPlainChange={(v) => set('tests', v)} patientType={r.patientCategory} corporate={/corporate/i.test(r.patientCategory ?? '')} />
+          <H360TestPicker compact value={f.testItems} onChange={(v) => setF((s) => ({ ...s, testItems: v }))} plain={f.tests} onPlainChange={(v) => set('tests', v)} patientType={r.patientCategory} corporate={/corporate/i.test(r.patientCategory ?? '')} uhid={r.uhid} />
         </div>
         <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2.5">
           <div className="text-[13px] font-semibold">Transport needed</div>

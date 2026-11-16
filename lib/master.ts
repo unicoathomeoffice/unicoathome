@@ -61,6 +61,7 @@ export const MASTER: Record<string, Master> = {
       requiredSkills: z.array(z.string()).default([]),
       defaultDurationMin: z.coerce.number().int().positive().default(45),
       fee: z.coerce.number().nonnegative().default(0),
+      h360Code: z.string().trim().max(40).optional(),
       requiresPrescription: z.boolean().default(false),
       checklist: z.array(checklistItem).default([]),
       afterChecklist: z.array(afterItem).optional(), // after return to the hospital; unset = built-in defaults

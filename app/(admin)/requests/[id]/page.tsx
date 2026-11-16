@@ -286,7 +286,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
     { key: 'timeline', label: 'Timeline', href: `${base}?tab=timeline` },
     { key: 'assignment', label: 'Assignment', href: `${base}?tab=assignment` },
     { key: 'visit', label: 'Visit data', href: `${base}?tab=visit` },
-    ...(['NEW', 'VERIFIED', 'CANCELLED'].includes(status) && !(r.billing?.invoices ?? []).length ? [] : [{ key: 'invoice', label: `Invoice · ${(r.billing?.invoices ?? []).length}`, href: `${base}?tab=invoice` }]),
+    ...(status === 'CANCELLED' && !(r.billing?.invoices ?? []).length ? [] : [{ key: 'invoice', label: `Invoice · ${(r.billing?.invoices ?? []).length}`, href: `${base}?tab=invoice` }]),
     { key: 'messages', label: `Messages · ${msgCount}`, href: `${base}?tab=messages` },
     { key: 'attachments', label: `Attachments · ${attCount}`, href: `${base}?tab=attachments` },
     { key: 'audit', label: `Audit · ${auditCount}`, href: `${base}?tab=audit` },
