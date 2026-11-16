@@ -165,6 +165,9 @@ export function InvoiceTab({
 
       {h360 && <H360Bills requestId={requestId} canEdit={canEdit} hasNumbered={billing.invoices.some((i) => /^\d{4,7}$/.test(i.invoiceNo ?? ''))} />}
 
+      {/* bill and request differ: suggest the fix */}
+      <BillMatch requestId={requestId} canEdit={canEdit} stamp={billing.invoices.map((i) => `${i._id}:${(i.items ?? []).length}`).join(',')} />
+
       {/* invoices */}
       <section className="rounded-card bg-white shadow-card">
         <div className="flex items-center justify-between px-5 pt-4">
@@ -986,5 +989,99 @@ function PaymentForm({ requestId, inv, full: fullStart, onClose }: { requestId: 
         </div>
       </div>
     </Drawer>
+  )
+}
+
+type BillMatchResult = { lines: number; billedOnly: { name: string; rate?: number; invoiceNo?: string }[]; requestedOnly: string[]; ok: boolean }
+
+/** Invoice lines the request does not list (and tests nobody billed): add / take off in one click; the WhatsApp
+ *  messages still waiting for this request are rewritten with the new tests. */
+function BillMatch({ requestId, canEdit, stamp }: { requestId: string; canEdit: boolean; stamp: string }) {
+  const router = useRouter()
+  const toast = useToast()
+  const [m, setM] = useState<BillMatchResult | null>(null)
+  const [add, setAdd] = useState<string[]>([])
+  const [remove, setRemove] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    let live = true
+    api<BillMatchResult>(`/requests/${requestId}/bills/match`)
+      .then((x) => {
+        if (!live) return
+        setM(x)
+        setAdd(x.billedOnly.map((l) => l.name))
+        setRemove([])
+      })
+      .catch(() => {})
+    return () => {
+      live = false
+    }
+  }, [requestId, stamp])
+  if (!m || m.ok || !m.lines) return null
+  const toggle = (list: string[], set: (v: string[]) => void, n: string) => set(list.includes(n) ? list.filter((x) => x !== n) : [...list, n])
+  async function apply() {
+    setBusy(true)
+    try {
+      const r = await api<{ added: string[]; removed: string[]; refreshed: number; match: BillMatchResult }>(`/requests/${requestId}/bills/match`, { body: { add, remove } })
+      toast(
+        [r.added.length ? `Added ${r.added.length} to the request` : '', r.removed.length ? `took off ${r.removed.length}` : '', r.refreshed ? `${r.refreshed} waiting WhatsApp message${r.refreshed === 1 ? '' : 's'} updated` : '']
+          .filter(Boolean)
+          .join(' · ') || 'Nothing to change',
+        'ok',
+      )
+      setM(r.match)
+      router.refresh()
+    } catch (e: any) {
+      toast(e?.message ?? 'Could not update the request', 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <section className="rounded-card border border-[#FCD34D] bg-[#FFFBEB] p-5 shadow-card">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-base font-bold text-[#92400E]">The bill and the request differ</h2>
+        <span className="text-[12px] text-[#B45309]">Fixing it updates Overview and the WhatsApp messages still waiting</span>
+      </div>
+      {m.billedOnly.length > 0 && (
+        <div className="mt-3">
+          <div className="text-[12px] font-semibold uppercase tracking-[.06em] text-[#B45309]">Billed, not in the request</div>
+          <ul className="mt-1.5 space-y-1">
+            {m.billedOnly.map((l) => (
+              <li key={l.name}>
+                <label className="flex cursor-pointer items-center gap-2.5 text-[14px]">
+                  <input type="checkbox" disabled={!canEdit} checked={add.includes(l.name)} onChange={() => toggle(add, setAdd, l.name)} />
+                  <span className="flex-1">{l.name}</span>
+                  {l.rate != null && <span className="text-slate-500">{taka(l.rate)}</span>}
+                  {l.invoiceNo && <span className="text-[12px] text-slate-400">#{l.invoiceNo}</span>}
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {m.requestedOnly.length > 0 && (
+        <div className="mt-3">
+          <div className="text-[12px] font-semibold uppercase tracking-[.06em] text-[#B45309]">In the request, not billed · tick to take off</div>
+          <ul className="mt-1.5 space-y-1">
+            {m.requestedOnly.map((t) => (
+              <li key={t}>
+                <label className="flex cursor-pointer items-center gap-2.5 text-[14px]">
+                  <input type="checkbox" disabled={!canEdit} checked={remove.includes(t)} onChange={() => toggle(remove, setRemove, t)} />
+                  <span className="flex-1">{t}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {canEdit && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button type="button" disabled={busy || (!add.length && !remove.length)} onClick={apply} className={btnClass('p')}>
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />} Fix the request
+          </button>
+        </div>
+      )}
+    </section>
   )
 }
