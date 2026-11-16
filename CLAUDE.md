@@ -54,7 +54,7 @@ app/api/v1/...       REST endpoints (see below)
 
 ## API (all JSON; errors are `{ error: { code, message, fields? } }`)
 - `POST /auth/login {identifier,password,client}` · `POST /auth/logout` · `GET /auth/me`
-- `GET/POST /requests` (filters: status, priority, service, zone, date, staff, q, mine) · `GET/PATCH /requests/:id`
+- `GET/POST /requests` (filters: status, priority, service, zone, date, staff, q, mine; POST takes `repeat {pattern, end, time?}` = a repeating schedule made in the same call, answer `schedule {id, made}` or `scheduleError`) · `GET/PATCH /requests/:id` · `GET/POST /schedules`
 - `POST /requests/:id/:action` — verify · confirm · assign · reschedule · cancel · close · invoice · petty-cash-decide · transport · transport-leg · accept · decline · en-route · check-in · checklist-add · vitals · notes · medication · confirmation · check-out · complete · petty-cash · change-request (schemas in lib/services/requests.ts)
 - `PATCH /requests/:id/checklist/:key {done, note?, reason?}` · `GET /requests/:id/candidates?role=`
 - `GET/POST /patients` · `GET/PATCH /patients/:id` · `GET/POST /users` · `GET/PATCH /users/:id` · `GET/PATCH /users/me`

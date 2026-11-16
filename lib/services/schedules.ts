@@ -30,6 +30,8 @@ const End = z
   .refine((e) => e.kind !== 'UNTIL' || !!e.until, 'Until which date?')
 
 export const ScheduleInput = z.object({ fromRequestId: z.string().refine(isOid, 'Invalid request'), pattern: Pattern, end: End, time: hhmm.optional(), title: z.string().trim().max(80).optional() })
+/** "repeat" on POST /requests: the same as a schedule, made from the request in the same call (web + app) */
+export const RepeatInput = ScheduleInput.omit({ fromRequestId: true })
 export const ScheduleEdit = z.object({ pattern: Pattern.optional(), end: End.optional(), time: hhmm.optional(), title: z.string().trim().max(80).optional() })
 export const ScheduleAction = z.object({ action: z.enum(['pause', 'resume', 'stop', 'skip']), date: ymd.optional(), reason: z.string().trim().max(160).optional() })
 

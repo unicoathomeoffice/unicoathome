@@ -319,19 +319,18 @@ export function RequestForm({
         toast(plan, 'err')
         return
       }
-      const r = await api<{ id: string; requestNo: string }>('/requests', { body })
+      // repeating: this request is visit #1 and the schedule (next visits, confirmed, same team once assigned) is made
+      // in the same call — the request is never saved without it
+      const r = await api<{ id: string; requestNo: string; schedule?: { id: string; made: number } | null; scheduleError?: string | null }>('/requests', {
+        body: { ...body, ...(plan ? { repeat: { ...plan, time: f.timeMode === 'time' && f.time ? f.time : undefined } } : {}) },
+      })
       try {
         localStorage.removeItem(DRAFT_KEY)
       } catch {}
       if (kind === 'confirm') await openConfirmLink(tab, r.id)
       if (plan) {
-        // repeating: this request is visit #1; the schedule makes the next ones (confirmed, same team once assigned)
-        try {
-          const sch = await api<{ id: string; made: number }>('/schedules', { body: { fromRequestId: r.id, ...plan, time: f.timeMode === 'time' && f.time ? f.time : undefined } })
-          toast(`${r.requestNo} created · schedule made with ${sch.made} more visit${sch.made === 1 ? '' : 's'} in the next 2 weeks`, 'ok')
-        } catch (e: any) {
-          toast(`${r.requestNo} created, but the schedule could not be made: ${e?.message ?? 'error'} — use “Repeat on a schedule” on the request`, 'err')
-        }
+        if (r.schedule) toast(`${r.requestNo} created · schedule made with ${r.schedule.made} more visit${r.schedule.made === 1 ? '' : 's'} in the next 2 weeks`, 'ok')
+        else toast(`${r.requestNo} created, but the schedule could not be made: ${r.scheduleError ?? 'error'} — use “Repeat on a schedule” on the request`, 'err')
         // assign the team next — "use this team for every visit" fills the whole schedule
         router.push(`/requests/${r.id}${kind !== 'assign' && canAssign ? '?assign=1' : ''}`)
         return

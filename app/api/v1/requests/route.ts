@@ -1,10 +1,13 @@
-import { route, body, clientMeta, qp } from '@/lib/api'
+import { route, body, clientMeta, qp, forbidden } from '@/lib/api'
 import { HomecareRequest } from '@/lib/models'
 import { can, STATUSES, hasRole } from '@/lib/constants'
 import { createAndAssign, CreateRequestInput, withPeople, slaInfo } from '@/lib/services/requests'
 import { dayRange } from '@/lib/format'
 import { getSettings } from '@/lib/settings'
 import { plain } from '@/lib/db'
+import { createSchedule, RepeatInput } from '@/lib/services/schedules'
+
+export const maxDuration = 60 // a repeating request also makes its first two weeks of visits
 
 /** GET /api/v1/requests?status=NEW,CONFIRMED&date=2026-09-24&staff=<id>&priority=URGENT&q=&mine=1&limit=100 */
 export const GET = route(async ({ req, user }) => {
@@ -40,12 +43,26 @@ export const GET = route(async ({ req, user }) => {
   return { items: plain(rows) }
 })
 
+// repeat: { pattern, end, time? } — this request is visit 1 and the schedule makes the next ones (Schedules page)
+const CreateWithRepeat = CreateRequestInput.extend({ repeat: RepeatInput.optional() })
+
 export const POST = route(
   async ({ req, user }) => {
-    const input = await body(req, CreateRequestInput)
+    const { repeat, ...input } = await body(req, CreateWithRepeat)
+    if (repeat && !can(user, 'requests.manage')) throw forbidden('Only coordinators can make repeating schedules')
+    const meta = clientMeta(req, user)
     // then: 'confirm' | 'assign' — confirmed (and the care team assigned) in the same call
-    const r = await createAndAssign(input, user, clientMeta(req, user))
-    return { id: String(r._id), requestNo: r.requestNo, status: r.status }
+    const r = await createAndAssign(input, user, meta)
+    let schedule: { id: string; made: number } | null = null
+    let scheduleError: string | null = null
+    if (repeat) {
+      try {
+        schedule = await createSchedule({ fromRequestId: String(r._id), ...repeat }, user, meta)
+      } catch (e: any) {
+        scheduleError = e?.message ?? 'The schedule could not be made' // the request stays; "Repeat on a schedule" on it
+      }
+    }
+    return { id: String(r._id), requestNo: r.requestNo, status: r.status, ...(repeat ? { schedule, scheduleError } : {}) }
   },
   { perm: 'requests.create' },
 )
