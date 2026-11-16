@@ -20,6 +20,7 @@ const SHORT: Record<Role, string> = {
   ALLIED: 'ALLIED',
   DRIVER: 'DRIVER',
   TRANSPORT_SUPERVISOR: 'TRANSPORT_SUP.',
+  PGR: 'PGR',
   VIEWER: 'VIEWER',
 }
 /** Permissions that only apply to the user's own / assigned records for these roles */

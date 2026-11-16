@@ -97,7 +97,7 @@ export async function listDepartments() {
   }))
 }
 
-export const DepartmentSetup = z.object({ headIds: z.array(z.string().refine(isOid)).max(10).optional(), serviceCodes: z.array(z.string().max(40)).max(80).optional() })
+export const DepartmentSetup = z.object({ name: z.string().trim().min(2).max(80).optional(), headIds: z.array(z.string().refine(isOid)).max(10).optional(), serviceCodes: z.array(z.string().max(40)).max(80).optional() })
 
 export async function setDepartment(id: string, input: z.infer<typeof DepartmentSetup>, user: SessionUser, meta: Meta) {
   if (!can(user, 'master.manage')) throw forbidden()
@@ -105,11 +105,33 @@ export async function setDepartment(id: string, input: z.infer<typeof Department
   const d = await Department.findById(id)
   if (!d) throw notFound('Department')
   const before = { heads: (d.headIds ?? []).map(String), services: d.serviceCodes ?? [] }
+  if (input.name) d.set('name', input.name)
   if (input.headIds) d.set('headIds', input.headIds)
   if (input.serviceCodes) d.set('serviceCodes', input.serviceCodes)
   await d.save()
+  ;(await import('../cached')).forgetMaster()
   await audit(user, 'department.heads', 'department', d._id, { before, after: { heads: input.headIds, services: input.serviceCodes }, label: d.name }, meta)
   return { ok: true }
+}
+
+export const DepartmentNew = z.object({
+  name: z.string().trim().min(2).max(80),
+  code: z.string().trim().max(20).optional(),
+  headIds: z.array(z.string().refine(isOid)).max(10).default([]),
+  serviceCodes: z.array(z.string().max(40)).max(80).default([]),
+})
+
+/** A super admin adds a department (e.g. PGR, Security) with its heads and services. */
+export async function createDepartment(input: z.infer<typeof DepartmentNew>, user: SessionUser, meta: Meta) {
+  if (!can(user, 'master.manage')) throw forbidden()
+  const name = input.name.replace(/\s+/g, ' ')
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  if (await Department.exists({ name: new RegExp(`^${esc}$`, 'i'), isActive: { $ne: false } })) throw bad(`${name} already exists`)
+  const code = input.code?.toUpperCase() || name.replace(/[^A-Za-z0-9]+/g, '').slice(0, 6).toUpperCase() || undefined
+  const d = await Department.create({ name, code, headIds: input.headIds, serviceCodes: input.serviceCodes, isActive: true })
+  ;(await import('../cached')).forgetMaster()
+  await audit(user, 'department.create', 'department', d._id, { after: { name, code, heads: input.headIds, services: input.serviceCodes }, label: name }, meta)
+  return { id: String(d._id) }
 }
 
 /** A request for a department's services was confirmed: its heads hear about it, to assign their staff. */

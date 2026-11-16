@@ -9,6 +9,7 @@ export const ROLES = [
   'ALLIED',
   'DRIVER',
   'TRANSPORT_SUPERVISOR',
+  'PGR',
   'VIEWER',
 ] as const
 export type Role = (typeof ROLES)[number]
@@ -22,6 +23,7 @@ export const ROLE_LABEL: Record<Role, string> = {
   ALLIED: 'Allied health',
   DRIVER: 'Driver',
   TRANSPORT_SUPERVISOR: 'Car supervisor',
+  PGR: 'PGR (Patient & Guest Relations)',
   VIEWER: 'Management (read-only)',
 }
 
@@ -31,7 +33,7 @@ export const FIELD_ROLES: Role[] = ['DOCTOR', 'NURSE', 'ALLIED']
 export const WEB_DEFAULT_ROLES: Role[] = ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER']
 
 /** Roles a person may ask for on the Google sign-up page (/join) — the admin can change it when approving. Never SUPER_ADMIN. */
-export const SIGNUP_ROLES = ['DOCTOR', 'NURSE', 'ALLIED', 'FRONT_DESK', 'HC_ADMIN', 'DRIVER', 'TRANSPORT_SUPERVISOR', 'VIEWER'] as const satisfies readonly Role[]
+export const SIGNUP_ROLES = ['DOCTOR', 'NURSE', 'ALLIED', 'FRONT_DESK', 'HC_ADMIN', 'DRIVER', 'TRANSPORT_SUPERVISOR', 'PGR', 'VIEWER'] as const satisfies readonly Role[]
 
 export function defaultPlatformAccess(role: Role): ('web' | 'app')[] {
   if (role === 'VIEWER') return ['web']
@@ -48,8 +50,8 @@ export const PERMISSIONS = {
   // announcements on everyone's home screen + push; grant it to others with a custom role (Settings → Roles)
   'announcements.manage': ['SUPER_ADMIN', 'HC_ADMIN'],
   // every staff member can ask for home care for someone (the coordinator verifies it)
-  'requests.create': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'DOCTOR', 'NURSE', 'ALLIED', 'DRIVER', 'TRANSPORT_SUPERVISOR', 'VIEWER'],
-  'requests.readAll': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER'],
+  'requests.create': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'DOCTOR', 'NURSE', 'ALLIED', 'DRIVER', 'TRANSPORT_SUPERVISOR', 'PGR', 'VIEWER'],
+  'requests.readAll': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'PGR', 'VIEWER'],
   'patients.edit': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK'],
   'requests.manage': ['SUPER_ADMIN', 'HC_ADMIN'], // verify / confirm / reschedule / cancel / close
   'requests.assign': ['SUPER_ADMIN', 'HC_ADMIN'],
@@ -57,11 +59,11 @@ export const PERMISSIONS = {
   // force-assign (accept for staff), do visit steps for the team, complete directly, car + any driver
   'requests.override': ['SUPER_ADMIN'],
   'visit.execute': ['DOCTOR', 'NURSE', 'ALLIED'],
-  'billing.invoice': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK'],
+  'billing.invoice': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'PGR'], // PGR: the bill copy
   'transport.manage': ['SUPER_ADMIN', 'HC_ADMIN', 'TRANSPORT_SUPERVISOR'],
   'transport.drive': ['DRIVER'],
   // car papers: resend the requisition / gate pass and upload a signed copy of either (e.g. given to one PGR person)
-  'papers.update': ['SUPER_ADMIN', 'HC_ADMIN', 'TRANSPORT_SUPERVISOR'],
+  'papers.update': ['SUPER_ADMIN', 'HC_ADMIN', 'TRANSPORT_SUPERVISOR', 'PGR'],
   'messages.send': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'DOCTOR', 'NURSE', 'ALLIED'],
   // the hospital WhatsApp (inbox, outbox, sending from the hospital number): super admins, and whoever a super admin
   // gives it to on their staff page (user.grants)

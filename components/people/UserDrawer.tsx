@@ -53,12 +53,13 @@ const ROLE_HINT: Record<Role, string> = {
   ALLIED: 'Phlebotomist, physio, lab, technician',
   DRIVER: 'Drives the Unico car',
   TRANSPORT_SUPERVISOR: 'Allots cars and drivers',
+  PGR: 'Patient & guest relations: bill and gate pass copies',
   HC_ADMIN: 'Takes requests, assigns staff',
   FRONT_DESK: 'Registers patients and requests',
   VIEWER: 'Reports and dashboards only',
   SUPER_ADMIN: 'Everything, incl. users and settings',
 }
-const ROLE_ORDER: Role[] = ['DOCTOR', 'NURSE', 'ALLIED', 'DRIVER', 'TRANSPORT_SUPERVISOR', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER', 'SUPER_ADMIN']
+const ROLE_ORDER: Role[] = ['DOCTOR', 'NURSE', 'ALLIED', 'DRIVER', 'TRANSPORT_SUPERVISOR', 'PGR', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER', 'SUPER_ADMIN']
 
 /** Best guess of the role from the designation title (then the department name). */
 export function suggestRole(designation?: string, department?: string): Role | null {
