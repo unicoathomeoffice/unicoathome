@@ -46,6 +46,13 @@ export const PATCH = route<{ id: string }>(
     if (email != null) p.email = email || undefined
     if (consent) p.set('consent', { ...consent, at: new Date(), by: user.id })
     await p.save()
+    // a new address: the patient's visits not yet done carry it too (cards, messages, the team's map)
+    if (address && (address.full !== before.address?.full || address.area !== before.address?.area)) {
+      await HomecareRequest.updateMany(
+        { patientId: p._id, deletedAt: null, status: { $nin: ['COMPLETED', 'CLOSED', 'CANCELLED'] } },
+        { $set: { 'patientSnapshot.address': p.address?.full, 'patientSnapshot.area': p.address?.area } },
+      )
+    }
     const pick = (o: any) => ({ name: o.name, phone: o.phone, uhid: o.uhid, address: o.address?.full, area: o.address?.area, consent: o.consent && { whatsapp: o.consent.whatsapp, email: o.consent.email }, allergies: o.allergies })
     await audit(user, 'patient.update', 'patient', p._id, { ...diff(pick(before), pick(p.toObject())), label: p.name }, clientMeta(req, user))
     return { ok: true }
