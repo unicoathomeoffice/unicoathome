@@ -60,6 +60,8 @@ export const PERMISSIONS = {
   'billing.invoice': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK'],
   'transport.manage': ['SUPER_ADMIN', 'HC_ADMIN', 'TRANSPORT_SUPERVISOR'],
   'transport.drive': ['DRIVER'],
+  // car papers: resend the requisition / gate pass and upload a signed copy of either (e.g. given to one PGR person)
+  'papers.update': ['SUPER_ADMIN', 'HC_ADMIN', 'TRANSPORT_SUPERVISOR'],
   'messages.send': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'DOCTOR', 'NURSE', 'ALLIED'],
   // the hospital WhatsApp (inbox, outbox, sending from the hospital number): super admins, and whoever a super admin
   // gives it to on their staff page (user.grants)

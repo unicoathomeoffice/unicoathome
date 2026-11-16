@@ -3,6 +3,7 @@ import { Attachment, Types, isOid } from '@/lib/models'
 import { loadRequest } from '@/lib/services/requests'
 import { audit } from '@/lib/audit'
 import { ATTACHMENT_KINDS } from '@/lib/files'
+import { can } from '@/lib/constants'
 import { blobEnabled, blobPath, storeBlob, MAX_UPLOAD_BYTES } from '@/lib/storage'
 
 const KINDS: string[] = [...ATTACHMENT_KINDS].filter((k) => !['REQUISITION', 'GATE_PASS', 'CLAIM', 'AVATAR', 'EQUIPMENT'].includes(k)) // generated on the server; profile + equipment photos via their own routes
@@ -19,7 +20,9 @@ export const POST = route(async ({ req, user }) => {
   if (file.size > MAX_UPLOAD_BYTES) throw bad(`File is larger than ${MAX_UPLOAD_BYTES / 1024 / 1024} MB`)
   if (!/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(file.type)) throw bad('Only JPG, PNG, WEBP or PDF files')
   const kind = String(form.get('kind') ?? 'OTHER')
-  if (!KINDS.includes(kind)) throw bad('Unknown attachment kind')
+  // a signed / updated copy of the car papers: those allowed to update them (papers.update)
+  const paper = (kind === 'GATE_PASS' || kind === 'REQUISITION') && can(user, 'papers.update')
+  if (!KINDS.includes(kind) && !paper) throw bad('Unknown attachment kind')
   const requestId = String(form.get('requestId') ?? '')
   const patientId = String(form.get('patientId') ?? '')
   let r: any = null

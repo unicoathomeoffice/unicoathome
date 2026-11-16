@@ -8,6 +8,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   'settings.manage': 'Settings & integrations',
   'templates.manage': 'Message templates',
   'announcements.manage': 'Announcements on the home screen + push',
+  'papers.update': 'Car papers: resend and upload gate pass / requisition copies',
   'requests.create': 'Create request',
   'requests.readAll': 'View all requests & patient board',
   'patients.edit': 'Edit patient registry',

@@ -8,7 +8,7 @@ export const maxDuration = 60
 
 /** POST /api/v1/requests/:id/transport-docs — rebuild and resend the car requisition (+ gate pass once a car is allotted). */
 export const POST = route<{ id: string }>(async ({ req, user, params }) => {
-  if (!can(user, 'requests.manage') && !can(user, 'transport.manage')) throw forbidden()
+  if (!can(user, 'requests.manage') && !can(user, 'transport.manage') && !can(user, 'papers.update')) throw forbidden()
   const r = await loadRequest(params.id, user)
   if (!r.transport?.needed) throw bad('This visit does not need a Unico car')
   if (!r.assignment?.primaryStaffId) throw bad('Assign the care team first: the requisition names who travels')
