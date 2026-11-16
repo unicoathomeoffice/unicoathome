@@ -12,6 +12,8 @@ import { lifecycleSteps } from '@/components/request-detail/lib'
 import { MapEmbed } from '@/components/ui'
 import { PortalShell } from '@/components/patient/PortalShell'
 import { HelpBar, SectionTitle, StatusPill, Timeline, type TimelineStep } from '@/components/patient/RequestCards'
+import { VisitRecordsView } from '@/components/patient/ModuleViews'
+import { visitRecords } from '@/lib/services/patient-module'
 
 export const metadata: Metadata = { title: 'Visit progress' }
 
@@ -22,6 +24,9 @@ export default async function MyRequest({ params }: { params: Promise<{ id: stri
   if (!isOid(id)) notFound()
   const [s, r] = await Promise.all([getSettings(), patientRequest(patient, id)])
   if (!r) notFound()
+  // this visit's vitals, medicines, bills and documents (view only; no staff contacts, no tracking)
+  const records = await visitRecords(r)
+  const due = records.bills.reduce((a, b) => a + b.due, 0)
   const steps: TimelineStep[] = lifecycleSteps(r, s.sla)
     .filter((st) => st.key !== 'verified' && st.key !== 'closed')
     .map((st) => ({ key: st.key, at: st.at ? dateTime(st.at) : undefined, sub: st.state === 'current' ? undefined : st.sub, state: st.state }))
@@ -29,8 +34,8 @@ export default async function MyRequest({ params }: { params: Promise<{ id: stri
   const when = r.scheduledAt ? `${relDay(r.scheduledAt)} · ${time(r.scheduledAt)}` : r.preferred?.date ? `${relDay(r.preferred.date)}${r.preferred.slot ? ` · ${clock(r.preferred.slot)}` : ''}` : '—'
 
   return (
-    <PortalShell patient={{ name: patient.name, initials: patient.initials, photoUrl: patient.photoUrl }} hotline={s.general.hospitalPhone}>
-      <Link href="/my" className="inline-flex h-10 items-center gap-1 text-[14px] font-semibold text-slate-600">
+    <PortalShell patient={{ name: patient.name, initials: patient.initials, photoUrl: patient.photoUrl, uhid: patient.uhid }} hotline={s.general.hospitalPhone}>
+      <Link href="/my/visits" className="inline-flex h-10 items-center gap-1 text-[14px] font-semibold text-slate-600 hover:text-primary-700">
         <ChevronLeft size={18} /> {patient.name.split(' ')[0]}
       </Link>
       <div className="mt-1 grid gap-4 md:grid-cols-[1fr_320px] md:items-start">
@@ -78,6 +83,7 @@ export default async function MyRequest({ params }: { params: Promise<{ id: stri
             <SectionTitle k="timeline" />
             <Timeline steps={steps} />
           </section>
+          <VisitRecordsView v={records} due={due} />
         </div>
         <div className="flex flex-col gap-4">
           <HelpBar hotline={s.general.hospitalPhone} />

@@ -32,7 +32,7 @@ export default async function MyProfile() {
     lng: a.lng ?? null,
   }
   return (
-    <PortalShell patient={{ name: p.name, initials: p.initials, photoUrl: p.photoUrl }} hotline={s.general.hospitalPhone}>
+    <PortalShell patient={{ name: p.name, initials: p.initials, photoUrl: p.photoUrl, uhid: p.uhid }} hotline={s.general.hospitalPhone}>
       <SectionTitle k="myProfile" />
       <div className="mb-4 flex items-center gap-4 rounded-2xl bg-white p-4 shadow-[0_6px_24px_rgba(31,56,100,0.07)] ring-1 ring-slate-100">
         <PhotoPicker endpoint="/patient/me/photo" photo={p.photoUrl} name={p.name} size={72} />
