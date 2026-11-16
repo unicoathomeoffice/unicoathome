@@ -23,7 +23,19 @@ function model(name: string, schema: Schema<any>, collection: string): Model<any
 }
 
 // ---------------------------------------------------------------- master data
-const DepartmentSchema = new Schema<any>({ code: String, name: { type: String, required: true }, isActive: { type: Boolean, default: true }, sortOrder: { type: Number, default: 0 } }, opts)
+const DepartmentSchema = new Schema<any>(
+  {
+    code: String,
+    name: { type: String, required: true },
+    isActive: { type: Boolean, default: true },
+    sortOrder: { type: Number, default: 0 },
+    /** heads of department: they assign this department's staff to its services' requests */
+    headIds: [{ type: ObjectId, ref: 'User' }],
+    /** ServiceType codes this department covers */
+    serviceCodes: [String],
+  },
+  opts,
+)
 export const Department = model('Department', DepartmentSchema, 'departments')
 
 const DesignationSchema = new Schema<any>(

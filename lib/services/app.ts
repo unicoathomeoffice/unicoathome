@@ -1,6 +1,6 @@
 import 'server-only'
 import { db } from '../db'
-import { Approval, Equipment, HomecareRequest, StoreLoan } from '../models'
+import { Approval, Department, Equipment, HomecareRequest, StoreLoan } from '../models'
 import { unreadCount } from '../unread'
 import { pendingCount } from '../wa/outbox'
 import { linkState } from '../wa/status'
@@ -95,6 +95,8 @@ export async function appConfig(user: SessionUser, appBuild?: number) {
   const settings = await getSettings()
   const app = settings.app
   const modules = modulesFor(user, app.hiddenModules)
+  // a head of department gets their department's board
+  if (await Department.exists({ headIds: user.id, isActive: { $ne: false } })) modules.push({ key: 'hod', label: 'My department', group: 'People', icon: 'groups' } as any)
   const [badges, wa] = await Promise.all([badgesFor(user), can(user, 'messages.approve') || can(user, 'messages.send') || canOpenSettings(user) ? linkState().catch(() => null) : null])
   return {
     user,

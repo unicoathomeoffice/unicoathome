@@ -595,6 +595,8 @@ export async function confirm(r: any, input: z.infer<typeof ConfirmInput>, user:
   if (!r.scheduledAt) throw bad('Set the date and time of service before confirming')
   await r.save()
   const only = notifySet(input.notify)
+  // the heads of the departments for these services assign their staff
+  background(async () => { await (await import('./department-heads')).tellHeads(r).catch(() => null) })
   await audit(user, 'request.confirm', 'request', r._id, { before, after: { status: 'CONFIRMED', scheduledAt: r.scheduledAt, tests: r.tests, uhid: input.uhid, ...(only && { whatsappTo: [...only] }) }, label: r.requestNo }, meta)
   // household: the others at this address are confirmed for the same time (quietly — this confirmation speaks for all)
   if (!opts.household && r.household?.key) await (await household()).follow(r, ['NEW', 'VERIFIED'], (m) => confirm(m, { date: isoDay(r.scheduledAt), time: hm24(r.scheduledAt), slot: r.slot, notify: [] } as any, user, meta, { quiet: true, household: true }))
@@ -1109,6 +1111,8 @@ export async function completeVisit(r: any, user: SessionUser, meta: Meta) {
   if (r.transport?.status && r.transport.status !== 'OWN') r.set('transport.status', 'DONE')
   await r.save()
   await audit(user, 'visit.complete', 'request', r._id, { after: { status: 'COMPLETED', durationMin: r.visit.durationMin }, label: r.requestNo }, meta)
+  // a repeating visit done: the schedule's next visits are made now (not at the next hourly roll)
+  if (r.carePlanId) background(async () => { await (await import('./schedules')).generate(r.carePlanId).catch(() => 0) })
   background(async () => {
     await visitAlertLazy('COMPLETED', r._id, { by: user.name, onBehalf: onBehalf(user, r) })
     await notifyRoles(['HC_ADMIN'], { type: 'COMPLETED', title: `${r.requestNo} completed`, body: `${user.name} · ${r.patientSnapshot.name} · ${r.visit.durationMin} min · report ready`, requestId: r._id, url: url(r._id) })
@@ -1188,6 +1192,8 @@ export async function completeNow(r: any, input: z.infer<typeof CompleteNowInput
   if (input.note) r.set('visit.remarks', [r.visit?.remarks, input.note].filter(Boolean).join(' · '))
   const staff = await User.findById(r.assignment.primaryStaffId).select('name').lean<any>()
   await audit(user, 'visit.complete_override', 'request', r._id, { before: { status: from }, after: { for: staff?.name, start, end, ticked, note: input.note }, label: r.requestNo }, meta)
+  // a repeating visit done: the schedule's next visits are made now (not at the next hourly roll)
+  if (r.carePlanId) background(async () => { await (await import('./schedules')).generate(r.carePlanId).catch(() => 0) })
   await completeVisit(r, user, meta)
 }
 
