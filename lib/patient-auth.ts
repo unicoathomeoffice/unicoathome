@@ -27,6 +27,10 @@ export type PatientSession = {
   photoUrl?: string
   hasPassword: boolean
   google: boolean
+  /** hospital UHID (visits under it show too) */
+  uhid?: string
+  /** signs in with UHID + registered mobile (hospital patient portal) */
+  h360Login: boolean
 }
 
 export async function issuePatientToken(patientId: string, passwordVersion: number) {
@@ -53,9 +57,9 @@ export const getPatient = cache(async function getPatient(): Promise<PatientSess
   }
   if (!sub) return null
   await db()
-  const p = await Patient.findOne({ _id: sub, deletedAt: null, $or: [{ passwordHash: { $exists: true } }, { googleSub: { $exists: true } }] }).select('name phone whatsapp email ageYears gender address photoUrl passwordVersion passwordHash googleSub').lean<any>()
+  const p = await Patient.findOne({ _id: sub, deletedAt: null, $or: [{ passwordHash: { $exists: true } }, { googleSub: { $exists: true } }, { 'account.h360LoginAt': { $exists: true } }] }).select('name phone whatsapp email ageYears gender address photoUrl passwordVersion passwordHash googleSub uhid account.h360LoginAt').lean<any>()
   if (!p || Number(p.passwordVersion ?? 0) !== pv) return null
-  return { id: String(p._id), name: p.name, phone: p.phone, whatsapp: p.whatsapp ?? p.phone, email: p.email, ageYears: p.ageYears, gender: p.gender, address: p.address, initials: initials(p.name), photoUrl: p.photoUrl, hasPassword: !!p.passwordHash, google: !!p.googleSub }
+  return { id: String(p._id), name: p.name, phone: p.phone, whatsapp: p.whatsapp ?? p.phone, email: p.email, ageYears: p.ageYears, gender: p.gender, address: p.address, initials: initials(p.name), photoUrl: p.photoUrl, hasPassword: !!p.passwordHash, google: !!p.googleSub, uhid: p.uhid || undefined, h360Login: !!p.account?.h360LoginAt }
 })
 
 /** For server components under /my: signed-in patient or redirect to the patient login. */

@@ -366,7 +366,8 @@ const PatientSchema = new Schema<any>(
     passwordHash: { type: String, select: false },
     passwordVersion: Number,
     googleSub: { type: String, index: { sparse: true } }, // "Continue with Google" accounts (may have no password)
-    account: { createdAt: Date, lastLoginAt: Date },
+    // h360LoginAt: signed in with UHID + registered mobile, as on the hospital patient portal (no password needed)
+    account: { createdAt: Date, lastLoginAt: Date, h360LoginAt: Date },
     tags: [String],
     notes: String,
     balance: { type: Number, default: 0 },

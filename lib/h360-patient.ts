@@ -77,6 +77,30 @@ async function findByUhid(uhid: string, retry = true): Promise<any | null> {
   return rows.find((x) => String(x.patient_code ?? '').trim() === uhid) ?? null
 }
 
+/** H360's patient-search row for a UHID (read-only; null = not registered). Cached 60 s. Used by the patient portal's
+ *  "UHID + registered mobile" sign-in — the same pair H360's own patient portal asks for. */
+export async function h360PatientByUhid(uhid: string): Promise<{ uhid: string; name?: string; phone?: string; gender?: 'M' | 'F' | 'O'; ageYears?: number; category?: string; company?: string } | null> {
+  const u = uhid?.trim()
+  if (!u) return null
+  if (!(await getH360Config())) throw new H360Error('NOT_CONFIGURED', 'H360 is not connected')
+  return memo(`h360p:uhid:${u}`, 60_000, async () => {
+    const hit = await findByUhid(u)
+    if (!hit) return null
+    const s = (v: unknown) => (v == null ? '' : String(v).trim()) || undefined
+    const g = String(hit.gender ?? '').toLowerCase()
+    const yy = Number(hit.age_yy)
+    return {
+      uhid: u,
+      name: s(hit.patient_name),
+      phone: s(hit.phone_mobile)?.replace(/[^\d+]/g, ''),
+      gender: g.startsWith('f') ? 'F' : g.startsWith('m') ? 'M' : g ? 'O' : undefined,
+      ageYears: Number.isFinite(yy) && String(hit.age_yy ?? '') !== '' ? yy : undefined,
+      category: s(hit.patient_type_code),
+      company: s(hit.ccm_client_name),
+    }
+  })
+}
+
 /** H360's present address ("Baridhara,Vatara,Dhaka,Dhaka,Bangladesh" = address, thana, district, division, country)
  *  → our address box ("Baridhara, Vatara, Dhaka") and area / thana ("Vatara"). Null when there is nothing usable. */
 export function h360Address(s?: string | null): { full: string; area?: string } | null {

@@ -48,7 +48,10 @@ export function PatientLoginForm({ hotline }: { hotline: string }) {
   const { t } = useLang()
   const params = useSearchParams()
   const next = params.get('next')
+  // UHID + registered mobile (as on the hospital patient portal) first; the HomeCare password is the other way in
+  const [how, setHow] = useState<'uhid' | 'password'>(params.get('with') === 'password' ? 'password' : 'uhid')
   const [v, setV] = useState({ phone: '', password: '' })
+  const [u, setU] = useState({ uhid: '', mobile: '' })
   const [err, setErr] = useState(params.get('error') ?? '')
   const [busy, setBusy] = useState(false)
   async function submit(e: React.FormEvent) {
@@ -56,26 +59,50 @@ export function PatientLoginForm({ hotline }: { hotline: string }) {
     setErr('')
     setBusy(true)
     try {
-      await api('/patient/login', { body: v })
+      if (how === 'uhid') await api('/patient/login-uhid', { body: { uhid: u.uhid.trim(), mobile: u.mobile } })
+      else await api('/patient/login', { body: v })
       window.location.href = safeNext(next)
     } catch (e: any) {
       setErr(e.message)
       setBusy(false)
     }
   }
+  const tab = (k: 'uhid' | 'password', label: string) => (
+    <button type="button" role="tab" aria-selected={how === k} onClick={() => (setHow(k), setErr(''))} className={cx('h-10 flex-1 rounded-[10px] text-[14px] font-semibold transition', how === k ? 'bg-white text-navy shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700')}>
+      {label}
+    </button>
+  )
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       <div>
         <h1 className="text-[24px] font-bold leading-tight text-navy">{t.loginTitle}</h1>
         <p className="mt-1 text-[14.5px] text-slate-600">{t.loginSub}</p>
       </div>
+      <div role="tablist" className="flex gap-1 rounded-xl bg-slate-100 p-1">
+        {tab('uhid', t.uhidLogin)}
+        {tab('password', t.withPassword)}
+      </div>
       {err && <ErrBox>{err}</ErrBox>}
-      <Field label={t.phone}>
-        <input className={input} value={v.phone} onChange={(e) => setV({ ...v, phone: e.target.value })} type="tel" inputMode="tel" autoComplete="username" placeholder="01XXXXXXXXX" required autoFocus />
-      </Field>
-      <Field label={t.password}>
-        <PasswordInput value={v.password} onChange={(password) => setV({ ...v, password })} autoComplete="current-password" />
-      </Field>
+      {how === 'uhid' ? (
+        <>
+          <p className="-mt-1 rounded-lg bg-primary-50 px-3 py-2.5 text-[13px] leading-[19px] text-primary-700">{t.samePortal}</p>
+          <Field label={t.uhid}>
+            <input className={input} value={u.uhid} onChange={(e) => setU({ ...u, uhid: e.target.value.replace(/\s+/g, '') })} inputMode="numeric" autoComplete="username" placeholder={t.uhidPh} required autoFocus />
+          </Field>
+          <Field label={t.regMobile} hint={t.regMobileHint}>
+            <input className={input} value={u.mobile} onChange={(e) => setU({ ...u, mobile: e.target.value })} type="tel" inputMode="tel" autoComplete="tel" placeholder="01XXXXXXXXX" required />
+          </Field>
+        </>
+      ) : (
+        <>
+          <Field label={t.phone}>
+            <input className={input} value={v.phone} onChange={(e) => setV({ ...v, phone: e.target.value })} type="tel" inputMode="tel" autoComplete="username" placeholder="01XXXXXXXXX" required autoFocus />
+          </Field>
+          <Field label={t.password}>
+            <PasswordInput value={v.password} onChange={(password) => setV({ ...v, password })} autoComplete="current-password" />
+          </Field>
+        </>
+      )}
       <button type="submit" disabled={busy} className={btnClass('p', 'xl', 'w-full')}>
         {busy && <Loader2 size={18} className="animate-spin" />} {t.signIn}
       </button>

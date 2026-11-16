@@ -25,6 +25,8 @@ export const RegisterInput = z.object({
   email: z.string().trim().email('Enter a valid email or leave it empty').max(120).optional().or(z.literal('')),
 })
 export const LoginInput = z.object({ phone: Phone, password: z.string().min(1, 'Enter your password') })
+/** the hospital patient portal's pair: UHID + the mobile number registered in H360 */
+export const LoginUhidInput = z.object({ uhid: z.string().trim().regex(/^[\w-]{3,30}$/, 'Enter your UHID'), mobile: Phone })
 export const ProfileInput = z.object({
   name: z.string().trim().min(2).max(80).optional(),
   phone: Phone.optional(),
@@ -91,6 +93,57 @@ export async function loginPatient(input: z.infer<typeof LoginInput>, meta: Meta
   return p
 }
 
+/**
+ * Sign in with UHID + registered mobile, exactly as on the hospital patient portal. Checked against H360's own record
+ * (read-only search: the UHID's registered mobile) — nothing is sent to or written in H360. The HomeCare profile is the
+ * patient record with this UHID; one is made from H360 on first sign-in.
+ */
+export async function loginWithUhid(input: z.infer<typeof LoginUhidInput>, meta: Meta) {
+  const uhid = input.uhid.trim()
+  const mobile = bdMobile(input.mobile)!
+  const last10 = (x?: string | null) => String(x ?? '').replace(/\D/g, '').slice(-10)
+  const wrong = async (why: string, id?: unknown) => {
+    await audit(PORTAL, 'patient.login_failed', 'patient', id, { after: { uhid, how: 'uhid', why } }, meta) // never the number typed
+    return new ApiError(401, 'INVALID_CREDENTIALS', 'UHID or mobile number is incorrect')
+  }
+  const { h360PatientByUhid, h360Profile, h360Address } = await import('../h360-patient')
+  const { H360Error } = await import('../h360')
+  let h: Awaited<ReturnType<typeof h360PatientByUhid>> = null
+  let down = false
+  try {
+    h = await h360PatientByUhid(uhid)
+  } catch (e) {
+    if (!(e instanceof H360Error)) throw e
+    down = true
+  }
+  const ours = await Patient.findOne({ uhid, deletedAt: null }).sort({ updatedAt: -1 })
+  if (down) {
+    // H360 not answering: only someone we already know with exactly this UHID and phone
+    if (!ours || last10(ours.phone) !== last10(mobile)) throw new ApiError(503, 'H360_DOWN', 'The hospital system is not answering right now. Try again in a minute, or sign in with your mobile number and password.')
+  } else {
+    if (!h) throw await wrong('uhid not in H360')
+    if (!h.phone || last10(h.phone) !== last10(mobile)) throw await wrong('mobile does not match', ours?._id)
+  }
+
+  // a record with this phone and no UHID yet (booked by phone) becomes theirs; phones are stored as 01… or +880…
+  let p = ours ?? (await Patient.findOne({ phone: new RegExp(`${last10(mobile)}$`), deletedAt: null, $or: [{ uhid: null }, { uhid: '' }, { uhid: { $exists: false } }] }).sort({ updatedAt: -1 }))
+  const now = new Date()
+  if (!p) {
+    let address: { full: string; area?: string } | null = null
+    try {
+      address = h360Address((await h360Profile(uhid))?.presentAddress)
+    } catch {}
+    p = new Patient({ uhid, name: h?.name || 'Patient', phone: mobile, whatsapp: mobile, gender: h?.gender, ageYears: h?.ageYears, category: h?.category, company: h?.company, ...(address ? { address: { full: address.full, area: address.area } } : {}), source: 'H360_PORTAL', account: { createdAt: now } })
+  } else if (!p.uhid) p.uhid = uhid
+  p.set('account.h360LoginAt', now)
+  p.set('account.lastLoginAt', now)
+  if (!p.account?.createdAt) p.set('account.createdAt', now)
+  if (p.passwordVersion == null) p.passwordVersion = 0
+  await p.save()
+  await audit(PORTAL, 'patient.login_uhid', 'patient', p._id, { after: { uhid, created: !ours, checkedWith: down ? 'homecare record (H360 down)' : 'H360' }, label: p.name }, meta)
+  return p
+}
+
 export async function updatePatientProfile(session: PatientSession, input: z.infer<typeof ProfileInput>, meta: Meta) {
   const p = await Patient.findById(session.id).select('+passwordHash')
   if (!p) throw bad('Account not found')
@@ -145,9 +198,12 @@ export function toCard(r: any): RequestCard {
   }
 }
 
-/** The patient's requests: everything linked to any patient record with their phone (older records too). */
+/** Every patient record that is this person: their phone, or their hospital UHID (UHID sign-in). */
+const mine = (session: PatientSession) => Patient.find({ deletedAt: null, $or: [{ phone: session.phone }, ...(session.uhid ? [{ uhid: session.uhid }] : [])] }).select('_id').lean<any[]>()
+
+/** The patient's requests: everything linked to any patient record with their phone or UHID (older records too). */
 export async function patientRequests(session: PatientSession, limit = 100) {
-  const ids = await Patient.find({ phone: session.phone, deletedAt: null }).select('_id').lean<any[]>()
+  const ids = await mine(session)
   const rows = await HomecareRequest.find({ patientId: { $in: ids.map((p) => p._id) }, deletedAt: null })
     .select('requestNo status priority scheduledAt slot preferred services assignment timeline visit.checkIn visit.checkOut billing cancellation expectedDurationMin createdAt')
     .sort({ createdAt: -1 })
@@ -158,7 +214,7 @@ export async function patientRequests(session: PatientSession, limit = 100) {
 }
 
 export async function patientRequest(session: PatientSession, id: string) {
-  const ids = await Patient.find({ phone: session.phone, deletedAt: null }).select('_id').lean<any[]>()
+  const ids = await mine(session)
   const r = await HomecareRequest.findOne({ _id: id, patientId: { $in: ids.map((p) => p._id) }, deletedAt: null })
     .select('-visit.notes -deviceStamps -clinical.notes -pettyCash')
     .lean<any>()
