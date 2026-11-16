@@ -28,6 +28,8 @@ export type SessionUser = {
   roles: Role[]
   /** set when the user has a custom role (A2): the exact permission list that replaces the base role matrix */
   permissions?: string[] | null
+  /** permissions given to this person on top of their role / custom role (super admin sets them) */
+  grants?: string[]
   customRole?: string
   designation?: string
   phone: string
@@ -123,6 +125,7 @@ export const getUser = cache(async function getUser(): Promise<SessionUser | nul
     role: user.role,
     roles: [user.role, ...((user.roles ?? []) as Role[]).filter((r: Role) => r !== user.role)],
     permissions: custom ? custom.permissions ?? [] : null,
+    grants: (user.grants ?? []) as string[],
     customRole: custom?.name,
     designation: designation?.title,
     phone: user.phone,

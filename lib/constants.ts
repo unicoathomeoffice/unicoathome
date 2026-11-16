@@ -61,7 +61,9 @@ export const PERMISSIONS = {
   'transport.manage': ['SUPER_ADMIN', 'HC_ADMIN', 'TRANSPORT_SUPERVISOR'],
   'transport.drive': ['DRIVER'],
   'messages.send': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'DOCTOR', 'NURSE', 'ALLIED'],
-  'messages.approve': ['SUPER_ADMIN', 'HC_ADMIN'],
+  // the hospital WhatsApp (inbox, outbox, sending from the hospital number): super admins, and whoever a super admin
+  // gives it to on their staff page (user.grants)
+  'messages.approve': ['SUPER_ADMIN'],
   'store.manage': ['SUPER_ADMIN', 'HC_ADMIN'], // the Family Medicine store: receive, count, consume by hand, match with H360 // WhatsApp Outbox: preview, edit and send what waits for approval
   'reports.view': ['SUPER_ADMIN', 'HC_ADMIN', 'VIEWER'],
   'audit.view': ['SUPER_ADMIN', 'HC_ADMIN'],
@@ -74,7 +76,7 @@ export type Permission = keyof typeof PERMISSIONS
  * (`roles` = primary role + "also acts as" roles, e.g. a nurse who is also a coordinator) and an optional
  * custom role whose permission list replaces the role matrix entirely.
  */
-export type Actor = Role | string | undefined | null | { role: string; roles?: string[] | null; permissions?: string[] | null }
+export type Actor = Role | string | undefined | null | { role: string; roles?: string[] | null; permissions?: string[] | null; grants?: string[] | null }
 
 /** Every role the actor holds (primary first). */
 export function rolesOf(who: Actor): string[] {
@@ -91,6 +93,8 @@ export const hasAnyRole = (who: Actor, roles: readonly (Role | string)[]) => rol
  */
 export function can(who: Actor, perm: Permission): boolean {
   if (!who) return false
+  // given to this one person by a super admin
+  if (typeof who === 'object' && Array.isArray(who.grants) && who.grants.includes(perm)) return true
   if (typeof who === 'object' && Array.isArray(who.permissions)) return who.permissions.includes(perm)
   const allowed = PERMISSIONS[perm] as readonly string[]
   return rolesOf(who).some((r) => allowed.includes(r))

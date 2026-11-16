@@ -234,6 +234,7 @@ const UserSchema = new Schema<any>(
     role: { type: String, enum: ROLES, required: true },
     roles: [{ type: String, enum: ROLES }], // extra roles the person also acts as (e.g. NURSE + HC_ADMIN); permissions are the union
     customRoleId: { type: ObjectId, ref: 'CustomRole' }, // optional A2 custom role: overrides the base role's permissions
+    grants: [String], // permissions given to this one person on top of their role (e.g. hospital WhatsApp); super admin only
     departmentId: { type: ObjectId, ref: 'Department' },
     designationId: { type: ObjectId, ref: 'Designation' },
     // e-signature (Account page): stamped on forms only for actions this person performs

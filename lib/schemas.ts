@@ -47,6 +47,7 @@ export const UserInput = z.object({
   role: z.enum(ROLES),
   roles: z.array(z.enum(ROLES)).max(8).default([]), // additional roles ("also acts as")
   customRoleId: z.string().optional().or(z.literal('')), // A2 custom role; '' clears it
+  grants: z.array(z.string().max(40)).max(20).optional(), // extra permissions for this person (super admin)
   departmentId: z.string().optional().or(z.literal('')),
   designationId: z.string().optional().or(z.literal('')),
   skills: z.array(z.string()).default([]),
