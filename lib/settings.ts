@@ -133,6 +133,8 @@ export const DEFAULT_SETTINGS = {
     toPatient: false, // a friendlier summary for the patient
   },
   quietHours: { from: '22:00', to: '07:00' },
+  /** bKash by QR: the hospital's own printed Bangla QR picture (uploaded as is, never re-generated) and its merchant number */
+  payments: { bkash: { enabled: false, merchantNumber: '01805955105', qrAttachmentId: '' as string } },
   /** Native Android app control (Settings → App control, GET /api/v1/app/config) */
   app: {
     /** newest released build: the app offers the update when its own build number is lower */
