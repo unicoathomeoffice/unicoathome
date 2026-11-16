@@ -13,6 +13,7 @@ import { PatientCategoryTags } from '@/components/people/PatientInfoCard'
 import { StaffLinks } from './StaffLinks'
 import { Expander, EmailPreview, ResendButton, AttachmentUploader, DeleteAttachment } from './widgets'
 import { PettyTag } from './actions'
+import { AddressChange } from './AddressChange'
 import { ComposeButton } from '@/components/comms/Compose'
 
 const card = 'min-w-0 rounded-card bg-white shadow-card'
@@ -85,7 +86,10 @@ export function OverviewTab({
                   : 'Self'
                 : `${r.requester.name}${r.requester.relation ? ` (${r.requester.relation})` : ''}${r.requester.phone ? ` · ${phone(r.requester.phone)}` : ''}`}
             </Field>
-            <Field k="Address">{p.address?.full ? [p.address.full, p.address.area].filter(Boolean).join(', ') : r.patientSnapshot?.address || '—'}</Field>
+            <Field k="Address">
+              {p.address?.full ? [p.address.full, p.address.area].filter((x, i, a) => x && (i === 0 || !String(a[0]).toLowerCase().includes(String(x).toLowerCase()))).join(', ') : r.patientSnapshot?.address || '—'}
+              <AddressChange requestId={String(r._id)} canEdit={!!edit} />
+            </Field>
             <Field k="Landmark">{p.address?.landmark || '—'}</Field>
             <Field k="Allergies">
               {(r.clinical?.allergies?.length ? r.clinical.allergies : p.allergies)?.length ? <span className="font-bold text-[#B91C1C]">{(r.clinical?.allergies?.length ? r.clinical.allergies : p.allergies).join(', ')}</span> : 'None known'}
