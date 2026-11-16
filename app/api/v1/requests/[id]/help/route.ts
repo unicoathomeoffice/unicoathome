@@ -25,7 +25,15 @@ async function contacts(r: any): Promise<{ coordinators: Person[]; security: Per
     .sort((a, b) => (first.includes(String(b._id)) ? 1 : 0) - (first.includes(String(a._id)) ? 1 : 0))
     .slice(0, 6)
     .map((u) => ({ id: String(u._id), name: u.name, phone: u.whatsapp || u.phone, role: 'Coordinator' }))
-  const security = (await onCallSupervisors()).map((x) => ({ name: x.name, phone: x.phone, role: 'Security supervisor (on call)' }))
+  // every active security supervisor (on call first), and staff with the car-supervisor role
+  const onCall = await onCallSupervisors()
+  const all = s.transportDocs.supervisors.filter((x) => x.active && waNumber(x.phone))
+  const supUsers = await User.find({ status: 'ACTIVE', deletedAt: null, $or: [{ role: 'TRANSPORT_SUPERVISOR' }, { roles: 'TRANSPORT_SUPERVISOR' }] }).select('name phone whatsapp').lean<any[]>()
+  const security = [
+    ...onCall.map((x) => ({ name: x.name, phone: x.phone, role: 'Security supervisor (on call)' })),
+    ...all.filter((x) => !onCall.some((o) => waNumber(o.phone) === waNumber(x.phone))).map((x) => ({ name: x.name, phone: x.phone, role: 'Security supervisor' })),
+    ...supUsers.filter((u) => waNumber(u.whatsapp || u.phone)).map((u) => ({ id: String(u._id), name: u.name, phone: u.whatsapp || u.phone, role: 'Security supervisor' })),
+  ].filter((x, i, arr) => arr.findIndex((y) => waNumber(y.phone) === waNumber(x.phone)) === i)
   return { coordinators, security, hospital: s.general.hospitalPhone || null, emergency: '999' }
 }
 
@@ -84,9 +92,16 @@ export const POST = route<{ id: string }>(async ({ req, user, params }) => {
   if (ids.length) await MessageLog.updateMany({ _id: { $in: ids } }, { $set: { force: true, priority: 100 } })
   const sent = ids.length ? await pumpWhenFree(25_000).catch(() => ({ sent: 0, failed: 0 })) : { sent: 0, failed: 0 }
 
-  if (input.to.includes('coordinator')) {
-    await notifyUsers(c.coordinators.map((x) => x.id), { type: 'EMERGENCY', title: `🚨 Help needed · ${me?.name ?? user.name}`, body: `${r.requestNo} · ${p.name ?? ''}${map ? ' · location attached' : ''}`, requestId: r._id, url: `/requests/${r._id}`, priority: 'high' })
-  }
+  // everyone on the staff sees it in the app at once (no approval, no rules): coordinators, security and all staff
+  const everyone = await User.find({ status: 'ACTIVE', deletedAt: null, _id: { $ne: user.id } }).select('_id').lean<any[]>()
+  await notifyUsers(everyone.map((u) => u._id), {
+    type: 'EMERGENCY',
+    title: `🚨 Help needed · ${me?.name ?? user.name}`,
+    body: [`${r.requestNo} · ${p.name ?? ''}`, input.note, map ? `Location: ${map}` : null].filter(Boolean).join(' · '),
+    requestId: r._id,
+    url: `/requests/${r._id}`,
+    priority: 'high',
+  })
   await audit(user, 'request.help', 'request', r._id, { after: { to: targets.map((t) => t.name), location: map }, label: r.requestNo }, clientMeta(req, user))
   return {
     ok: true,
