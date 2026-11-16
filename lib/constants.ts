@@ -45,6 +45,8 @@ export const PERMISSIONS = {
   'master.manage': ['SUPER_ADMIN'],
   'settings.manage': ['SUPER_ADMIN'],
   'templates.manage': ['SUPER_ADMIN', 'HC_ADMIN'],
+  // announcements on everyone's home screen + push; grant it to others with a custom role (Settings → Roles)
+  'announcements.manage': ['SUPER_ADMIN', 'HC_ADMIN'],
   // every staff member can ask for home care for someone (the coordinator verifies it)
   'requests.create': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'DOCTOR', 'NURSE', 'ALLIED', 'DRIVER', 'TRANSPORT_SUPERVISOR', 'VIEWER'],
   'requests.readAll': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER'],

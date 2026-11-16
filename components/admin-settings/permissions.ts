@@ -7,6 +7,7 @@ export const PERMISSION_LABEL: Record<Permission, string> = {
   'master.manage': 'Designations, departments, zones, service types',
   'settings.manage': 'Settings & integrations',
   'templates.manage': 'Message templates',
+  'announcements.manage': 'Announcements on the home screen + push',
   'requests.create': 'Create request',
   'requests.readAll': 'View all requests & patient board',
   'patients.edit': 'Edit patient registry',

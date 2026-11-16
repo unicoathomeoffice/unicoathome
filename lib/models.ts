@@ -733,6 +733,35 @@ const NotificationSchema = new Schema<any>(
 NotificationSchema.index({ userId: 1, readAt: 1, createdAt: -1 })
 export const Notification = model('Notification', NotificationSchema, 'notifications')
 
+/** An announcement on everyone's home screen (or some roles' / people's), until it ends; also sent as a notification. */
+const AnnouncementSchema = new Schema<any>(
+  {
+    title: { type: String, required: true },
+    body: String,
+    /** INFO · SUCCESS · WARNING · URGENT — the card's colour and how loud the notification is */
+    style: { type: String, enum: ['INFO', 'SUCCESS', 'WARNING', 'URGENT'], default: 'INFO' },
+    /** the card's look in the app: BANNER (wide strip), CARD (with picture), TICKER (one moving line) */
+    view: { type: String, enum: ['BANNER', 'CARD', 'TICKER'], default: 'CARD' },
+    emoji: String,
+    imageAttachmentId: { type: ObjectId, ref: 'Attachment' },
+    link: String,
+    /** empty = everyone */
+    roles: [String],
+    userIds: [{ type: ObjectId, ref: 'User' }],
+    pinned: { type: Boolean, default: false },
+    startAt: Date,
+    endAt: Date,
+    active: { type: Boolean, default: true },
+    createdBy: { type: ObjectId, ref: 'User' },
+    createdByName: String,
+    seenBy: [{ type: ObjectId, ref: 'User' }],
+    deletedAt: Date,
+  },
+  opts,
+)
+AnnouncementSchema.index({ active: 1, endAt: 1, createdAt: -1 })
+export const Announcement = model('Announcement', AnnouncementSchema, 'announcements')
+
 const MessageLogSchema = new Schema<any>(
   {
     channel: { type: String, enum: ['EMAIL', 'WHATSAPP', 'PUSH', 'SMS'], required: true },
