@@ -77,6 +77,18 @@ async function findByUhid(uhid: string, retry = true): Promise<any | null> {
   return rows.find((x) => String(x.patient_code ?? '').trim() === uhid) ?? null
 }
 
+/** H360's present address ("Baridhara,Vatara,Dhaka,Dhaka,Bangladesh" = address, thana, district, division, country)
+ *  → our address box ("Baridhara, Vatara, Dhaka") and area / thana ("Vatara"). Null when there is nothing usable. */
+export function h360Address(s?: string | null): { full: string; area?: string } | null {
+  const parts = (s ?? '').split(',').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean)
+  if (parts.length && /^bangladesh$/i.test(parts[parts.length - 1])) parts.pop()
+  const area = parts.length >= 4 ? parts[parts.length - 3] : undefined
+  const out: string[] = []
+  for (const p of parts) if (!out.length || out[out.length - 1].toLowerCase() !== p.toLowerCase()) out.push(p) // "Dhaka, Dhaka" once
+  if (!out.length || out.every((p) => /^\d+$/.test(p))) return null // ID numbers only
+  return { full: out.join(', '), area }
+}
+
 /** "section|label" → value, from the View Patient Information page. */
 function readView(html: string) {
   const doc = parse(html)
@@ -199,7 +211,11 @@ export async function syncPatientFromH360(patientId: unknown, actor?: SessionUse
   put('guardian.name', h.emergency?.name)
   put('guardian.relation', h.emergency?.relation)
   put('guardian.phone', h.emergency?.phone)
-  if (!p.address?.full && h.presentAddress) put('address.full', h.presentAddress)
+  const present = p.address?.full ? null : h360Address(h.presentAddress)
+  if (present) {
+    put('address.full', present.full)
+    if (!p.address?.area) put('address.area', present.area)
+  }
   for (const [k, on] of Object.entries(h.flags ?? {})) if (on || p.get(`flags.${k}`)) put(`flags.${k}`, on)
   p.set('h360', { ...(p.h360?.toObject?.() ?? p.h360 ?? {}), patientNo: h.patientNo, ageText: h.ageText, remarks: h.remarks, syncedAt: new Date() })
   await p.save()

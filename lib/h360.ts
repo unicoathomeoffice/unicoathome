@@ -274,7 +274,8 @@ function fromAutocomplete(it: any): H360Patient | null {
     email: /@/.test(str(it.email)) ? str(it.email) : undefined,
     company: str(it.ccm_client_name) || undefined,
     guardianName: str(it.spouse_name) || str(it.contact_person) || undefined,
-    address: [str(it.pr_addr_thana), str(it.present_district)].filter(Boolean).join(', ') || undefined,
+    // pr_addr_thana / present_district are H360's ID numbers ("530", "47"), not names: never an address on their own
+    address: [str(it.pr_addr_thana), str(it.present_district)].filter((x) => /[A-Za-z]/.test(x)).join(', ') || undefined,
   }
 }
 

@@ -528,6 +528,23 @@ function StepPatient({ f, set, setIn, zones, errors, initialQuery }: { f: F; set
   const [results, setResults] = useState<FormPatient[] | null>(null)
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // H360's search rows only carry thana / district ID numbers: the readable address comes from the patient's H360
+  // profile, read when a record is used. Typing in the address box meanwhile cancels the fill.
+  const [addrFrom, setAddrFrom] = useState<'loading' | 'h360' | 'none' | null>(null)
+  const addrAsk = useRef(0)
+  const addressFromH360 = async (uhid?: string) => {
+    const ask = ++addrAsk.current
+    if (!uhid?.trim()) return setAddrFrom(null)
+    setAddrFrom('loading')
+    try {
+      const r = await api<{ address: { full: string; area?: string } | null }>(`/h360/patients/${encodeURIComponent(uhid.trim())}`)
+      if (ask !== addrAsk.current) return
+      if (r.address) setIn('addr', { full: r.address.full, area: r.address.area ?? '' })
+      setAddrFrom(r.address ? 'h360' : 'none')
+    } catch {
+      if (ask === addrAsk.current) setAddrFrom('none')
+    }
+  }
 
   useEffect(() => {
     const term = q.trim()
@@ -570,9 +587,11 @@ function StepPatient({ f, set, setIn, zones, errors, initialQuery }: { f: F; set
     set('mode', 'new')
     set('patient', null)
     setIn('np', { name: h.name, phone: h.phone ?? '', ageYears: age != null ? String(age) : '', gender: (h.gender as 'M' | 'F' | 'O' | undefined) ?? '', uhid: h.uhid ?? '', altPhone: h.altPhone ?? '', email: h.email ?? '' })
-    if (h.address) set('addr', { ...f.addr, full: h.address })
+    // a fresh address for this patient (not the previous one's house / flat / pin), filled from H360 below
+    set('addr', { area: '', full: h.address ?? '', house: '', flat: '', landmark: '', lat: null, lng: null })
     if (h.guardianName) setIn('requester', { type: 'RELATIVE', name: h.guardianName })
     setQ('')
+    void addressFromH360(h.uhid)
   }
 
   const choose = (p: FormPatient) => {
@@ -580,6 +599,9 @@ function StepPatient({ f, set, setIn, zones, errors, initialQuery }: { f: F; set
     set('patient', p)
     set('addr', { area: p.address?.area ?? '', full: roadOf(p.address?.full, p.address?.house, p.address?.flat), house: p.address?.house ?? '', flat: p.address?.flat ?? '', landmark: p.address?.landmark ?? '', lat: p.address?.lat ?? null, lng: p.address?.lng ?? null })
     if (!f.allergies && p.allergies?.length) set('allergies', p.allergies.join(', '))
+    // a HomeCare patient with no address yet: take it from H360 when we know the UHID
+    if (!p.address?.full?.trim() && p.uhid) void addressFromH360(p.uhid)
+    else addressFromH360() // cancels a fill still on its way for the previous patient
   }
 
   return (
@@ -725,7 +747,19 @@ function StepPatient({ f, set, setIn, zones, errors, initialQuery }: { f: F; set
 
       <SectionCard
         title="Address for this visit"
-        right={f.mode === 'existing' && f.patient ? <span className="text-[12px] text-slate-400">Changes update the patient’s address</span> : undefined}
+        right={
+          addrFrom === 'loading' ? (
+            <span className="inline-flex items-center gap-1.5 text-[12px] text-slate-500">
+              <Loader2 size={13} className="animate-spin" /> Getting the address from H360…
+            </span>
+          ) : addrFrom === 'h360' ? (
+            <span className="text-[12px] font-semibold text-[#15803D]">Filled from H360 · check it and add house / flat</span>
+          ) : addrFrom === 'none' ? (
+            <span className="text-[12px] text-[#B45309]">No address in H360 · type it below</span>
+          ) : f.mode === 'existing' && f.patient ? (
+            <span className="text-[12px] text-slate-400">Changes update the patient’s address</span>
+          ) : undefined
+        }
       >
         <AddressBlock
           size="md"
@@ -735,6 +769,7 @@ function StepPatient({ f, set, setIn, zones, errors, initialQuery }: { f: F; set
           value={{ road: f.addr.full, house: f.addr.house, flat: f.addr.flat, area: f.addr.area, landmark: f.addr.landmark, lat: f.addr.lat, lng: f.addr.lng }}
           onChange={(patch) => {
             const { road, ...rest } = patch
+            if (addrFrom === 'loading' && (road !== undefined || rest.area !== undefined)) addressFromH360() // typed first: keep theirs
             setIn('addr', { ...rest, ...(road !== undefined ? { full: road } : {}) })
           }}
           errors={{ road: errors.full }}
