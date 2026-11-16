@@ -271,6 +271,10 @@ export async function boardRows(p: BoardFilters, limit = 400): Promise<BoardRow[
     checkInAt: r.status === 'IN_PROGRESS' && r.timeline?.checkInAt ? new Date(r.timeline.checkInAt).toISOString() : null,
     planned: r.expectedDurationMin ?? 45,
     hasSchedule: !!r.scheduledAt,
+    // for the live clocks on the app's cards: waiting since, visit time, on the way since
+    requestedAt: (r.timeline?.requestedAt ?? r.createdAt) ? new Date((r.timeline?.requestedAt ?? r.createdAt)).toISOString() : null,
+    scheduledAt: r.scheduledAt ? new Date(r.scheduledAt).toISOString() : null,
+    enRouteAt: r.timeline?.enRouteAt ? new Date(r.timeline?.enRouteAt).toISOString() : null,
   }))
 }
 
