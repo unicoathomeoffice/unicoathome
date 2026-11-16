@@ -40,6 +40,8 @@ export function OverviewTab({
   const t = r.timeline ?? {}
   const p = patient ?? {}
   const late = minutesBetween(r.scheduledAt, t.checkInAt)
+  // hospital bills on the Invoice tab that still count (a re-billed one is replaced and left out)
+  const bills: any[] = (r.billing?.invoices ?? []).filter((b: any) => !b.replacedBy)
   const vit = vitalRows(r.visit?.vitals)
   const list = r.visit?.checklist ?? []
   const ticked = list.filter((c: any) => c.done && c.doneAt).sort((a: any, b: any) => String(b.doneAt).localeCompare(String(a.doneAt)))
@@ -124,9 +126,11 @@ export function OverviewTab({
             <Field k="Checked in">{t.checkInAt ? `${time(t.checkInAt)} · ${late != null && late > 0 ? `+${late} min` : 'on time'}` : '—'}</Field>
             <Field k="Fee">
               {[
-                taka(r.billing?.billAmount ?? r.billing?.estimatedFee),
+                // the hospital bills on the Invoice tab win over the amount typed at check-out
+                taka(bills.length ? r.billing?.invoiceAmount ?? bills.reduce((a: number, b: any) => a + (b.payable ?? 0), 0) : r.billing?.billAmount ?? r.billing?.estimatedFee),
+                bills.length > 0 && (r.billing?.dueAmount ?? 0) > 0 && `due ${taka(r.billing.dueAmount)}`,
                 r.billing?.method && PAYMENT_METHOD_LABEL[r.billing.method as 'CASH'],
-                r.billing?.status === 'PAID' ? 'paid' : r.billing?.status === 'DUE' ? 'due' : r.billing?.status === 'WAIVED' ? 'waived' : 'pending',
+                r.billing?.status === 'PAID' ? 'paid' : r.billing?.status === 'PARTIAL' ? 'partly paid' : r.billing?.status === 'DUE' ? 'due' : r.billing?.status === 'WAIVED' ? 'waived' : 'pending',
               ]
                 .filter(Boolean)
                 .join(' · ')}
@@ -134,6 +138,29 @@ export function OverviewTab({
             <Field k="Source">
               {[r.source ? r.source.charAt(0) + r.source.slice(1).toLowerCase().replace('_', '-') : null, r.createdByUser ? ROLE_LABEL[r.createdByUser.role as Role] ?? r.createdByUser.name : null].filter(Boolean).join(' · ')}
             </Field>
+            {bills.length > 0 && (
+              <Field k={`Billed services · ${bills.map((b: any) => b.invoiceNo).join(', ')}`} className="col-span-2">
+                {bills.some((b: any) => b.items?.length) ? (
+                  bills.flatMap((b: any) =>
+                    (b.items ?? []).map((it: any, i: number) => {
+                      const net = it.amount ?? (it.rate != null ? it.rate * (it.qty || 1) - (it.discount ?? 0) : null)
+                      return (
+                        <div key={`${b._id}-${i}`} className="flex gap-2">
+                          <span className="min-w-0 flex-1">
+                            {it.name}
+                            {(it.qty ?? 1) > 1 && <span className="text-slate-500"> × {it.qty}</span>}
+                          </span>
+                          {(it.discount ?? 0) > 0 && it.rate != null && <span className="text-[12px] text-slate-400 line-through">{taka(it.rate * (it.qty || 1))}</span>}
+                          <span className="font-semibold">{taka(net)}</span>
+                        </div>
+                      )
+                    }),
+                  )
+                ) : (
+                  <span className="text-slate-500">Bill lines not read yet · see the Invoice tab</span>
+                )}
+              </Field>
+            )}
             {r.tests?.length > 0 && (
               <Field k="Tests / procedures" className="col-span-2">
                 {(r.testItems ?? []).length > 0 ? (
