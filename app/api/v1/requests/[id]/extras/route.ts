@@ -1,5 +1,5 @@
 import { route, qp } from '@/lib/api'
-import { AssignmentLog, Attachment, AuditLog, MessageLog, User } from '@/lib/models'
+import { AssignmentLog, Attachment, AuditLog, MessageLog, User, Designation } from '@/lib/models'
 import { loadRequest, revertPreview, withPeople } from '@/lib/services/requests'
 import { notifyTimeline } from '@/lib/services/notify-log'
 import { kitRows } from '@/lib/services/kit'
@@ -56,7 +56,11 @@ export const GET = route<{ id: string }>(async ({ req, user, params }) => {
   ])
 
   const uniq = [...new Set(ids.filter(Boolean).map(String))]
-  const people = uniq.length ? await User.find({ _id: { $in: uniq } }).select('name photoUrl role').lean<any[]>() : []
-  out.people = Object.fromEntries(people.map((p) => [String(p._id), { name: p.name, photoUrl: p.photoUrl, role: p.role }]))
+  const people = uniq.length ? await User.find({ _id: { $in: uniq } }).select('name photoUrl role employeeId designationId').lean<any[]>() : []
+  // employee ID and designation too (the visit report names the team and the coordinator with them)
+  const desig = await Designation.find({ _id: { $in: people.map((p) => p.designationId).filter(Boolean) } }).select('title').lean<any[]>()
+  out.people = Object.fromEntries(
+    people.map((p) => [String(p._id), { name: p.name, photoUrl: p.photoUrl, role: p.role, employeeId: p.employeeId, designation: desig.find((d) => String(d._id) === String(p.designationId))?.title }]),
+  )
   return plain(out)
 })
