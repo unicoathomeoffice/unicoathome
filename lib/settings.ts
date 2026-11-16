@@ -151,6 +151,8 @@ export const DEFAULT_SETTINGS = {
     apiBase: '',
     /** modules switched off per role: { NURSE: ['store'] } (keys from lib/app-modules.ts) */
     hiddenModules: {} as Record<string, string[]>,
+    /** quick actions per role, in order (empty = automatic: what each person uses most) */
+    quickActions: {} as Record<string, string[]>,
   },
   /** E4 notification matrix: event → recipients → channels */
   notificationRules: {

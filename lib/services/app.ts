@@ -125,6 +125,8 @@ export async function appConfig(user: SessionUser, appBuild?: number) {
       mustUpdate: appBuild != null && app.minBuild > 0 && appBuild < app.minBuild,
       maintenance: app.maintenance || null,
       apiBase: app.apiBase || null,
+      /** the admin's quick actions for this role, in order (null = the app picks by use) */
+      quickActions: app.quickActions?.[user.role]?.length ? app.quickActions[user.role] : null,
     },
     credit: CREDIT,
     serverTime: new Date().toISOString(),
