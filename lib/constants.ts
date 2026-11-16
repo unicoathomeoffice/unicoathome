@@ -45,7 +45,8 @@ export const PERMISSIONS = {
   'master.manage': ['SUPER_ADMIN'],
   'settings.manage': ['SUPER_ADMIN'],
   'templates.manage': ['SUPER_ADMIN', 'HC_ADMIN'],
-  'requests.create': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'DOCTOR', 'NURSE', 'ALLIED'],
+  // every staff member can ask for home care for someone (the coordinator verifies it)
+  'requests.create': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'DOCTOR', 'NURSE', 'ALLIED', 'DRIVER', 'TRANSPORT_SUPERVISOR', 'VIEWER'],
   'requests.readAll': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK', 'VIEWER'],
   'patients.edit': ['SUPER_ADMIN', 'HC_ADMIN', 'FRONT_DESK'],
   'requests.manage': ['SUPER_ADMIN', 'HC_ADMIN'], // verify / confirm / reschedule / cancel / close

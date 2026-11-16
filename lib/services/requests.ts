@@ -314,7 +314,7 @@ export const CreateRequestInput = z.object({
       address: z.object({ area: z.string().optional(), full: z.string().min(3), house: z.string().optional(), flat: z.string().optional(), landmark: z.string().optional(), lat: z.number().optional(), lng: z.number().optional() }),
     })
     .optional(),
-  requester: z.object({ type: z.enum(['SELF', 'RELATIVE', 'STAFF']).default('SELF'), name: z.string().optional(), relation: z.string().optional(), phone: z.string().optional() }).optional(),
+  requester: z.object({ type: z.enum(['SELF', 'RELATIVE', 'STAFF']).default('SELF'), name: z.string().optional(), relation: z.string().optional(), phone: z.string().optional(), place: z.string().max(160).optional() }).optional(),
   serviceCodes: z.array(z.string()).default([]),
   otherService: z.string().optional(),
   tests: z.array(z.string()).default([]),

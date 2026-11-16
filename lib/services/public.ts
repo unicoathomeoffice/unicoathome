@@ -40,6 +40,24 @@ export const PublicRequestInput = z.object({
     .optional(),
   attachments: z.array(z.object({ id: z.string(), token: z.string().min(8).max(64) })).max(5).default([]), // from /public/uploads
   website: z.string().max(500).optional(), // honeypot — real people never fill it (the route fakes success)
+  /** who is asking, when it is not the patient: their name, phone and where they are are required */
+  requester: z
+    .object({
+      type: z.enum(['SELF', 'RELATIVE', 'STAFF', 'OTHER']).default('SELF'),
+      name: z.string().trim().max(80).optional(),
+      phone: z.string().trim().max(20).optional(),
+      relation: z.string().trim().max(60).optional(),
+      place: z.string().trim().max(160).optional(),
+    })
+    .superRefine((v, ctx) => {
+      if (v.type === 'SELF') return
+      if (!v.name || v.name.length < 2) ctx.addIssue({ code: 'custom', path: ['name'], message: 'Enter your name' })
+      if (!bdMobile(v.phone ?? '')) ctx.addIssue({ code: 'custom', path: ['phone'], message: 'Enter your mobile number (01XXXXXXXXX)' })
+      if (!v.place || v.place.length < 2) ctx.addIssue({ code: 'custom', path: ['place'], message: 'Enter where you are' })
+    })
+    .optional(),
+  /** the phone app's no-login form (else the website) */
+  via: z.enum(['website', 'app']).optional(),
 })
 export type PublicRequestInput = z.infer<typeof PublicRequestInput>
 
@@ -92,7 +110,16 @@ export async function createPublicRequest(input: PublicRequestInput, meta: Meta,
     r = await createRequest(
       {
         ...(existing ? { patientId: String(existing._id) } : { patient: { name: input.name, phone, ageYears: input.ageYears, gender: input.gender, email, address } }),
-        requester: { type: 'SELF' },
+        requester:
+          input.requester && input.requester.type !== 'SELF'
+            ? {
+                type: input.requester.type === 'OTHER' ? 'RELATIVE' : input.requester.type,
+                name: input.requester.name,
+                phone: bdMobile(input.requester.phone ?? '') ?? input.requester.phone,
+                relation: [input.requester.relation, input.requester.type === 'OTHER' ? 'other' : null].filter(Boolean).join(', ') || undefined,
+                place: input.requester.place,
+              }
+            : { type: 'SELF' },
         serviceCodes: active.map((t) => t.code),
         tests: [],
         priority: 'ROUTINE',
@@ -100,7 +127,7 @@ export async function createPublicRequest(input: PublicRequestInput, meta: Meta,
         preferredSlot: input.slot,
         preferredTime: startTime,
         complaint: input.notes || undefined,
-        source: 'WEBSITE',
+        source: input.via === 'app' ? 'APP' : 'WEBSITE',
       },
       WEBSITE,
       meta,

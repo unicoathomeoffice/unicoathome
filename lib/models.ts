@@ -371,7 +371,7 @@ const RequestSchema = new Schema<any>(
     requestNo: { type: String, required: true, unique: true },
     patientId: { type: ObjectId, ref: 'Patient', required: true, index: true },
     patientSnapshot: { name: String, phone: String, ageYears: Number, gender: String, uhid: String, area: String, address: String, photoUrl: String },
-    requester: { type: { type: String, enum: ['SELF', 'RELATIVE', 'STAFF'], default: 'SELF' }, name: String, relation: String, phone: String },
+    requester: { type: { type: String, enum: ['SELF', 'RELATIVE', 'STAFF'], default: 'SELF' }, name: String, relation: String, phone: String, place: String }, // place: where the person asking is
     services: [{ _id: false, serviceTypeId: { type: ObjectId, ref: 'ServiceType' }, code: String, name: String }],
     tests: [String], // Test / procedure details (Google Form)
     testItems: [{ _id: false, code: String, name: String, price: Number, dept: String }], // H360 catalog picks (lib/h360-items.ts)
