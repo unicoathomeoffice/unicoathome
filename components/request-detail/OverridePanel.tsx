@@ -137,7 +137,6 @@ function TransportTimes({ requestId, requestNo, transport, visitTime, pickupAuto
   const allotted = !!transport.vehicleId
   async function save() {
     if (!pickup) return toast('Enter the pick-up time', 'err')
-    if (pickupAuto && !ret) return toast('Enter the return time too', 'err')
     if (visitTime && pickup >= visitTime) return toast('Pick-up must be before the visit time', 'err')
     setBusy(true)
     try {
@@ -169,14 +168,14 @@ function TransportTimes({ requestId, requestNo, transport, visitTime, pickupAuto
       }
     >
       <div className="flex flex-col gap-4">
-        {pickupAuto && <div className="rounded-lg bg-[#FFFBEB] px-3 py-2 text-[12.5px] text-[#92400E] ring-1 ring-[#FDE68A]">Not set yet. The vehicle requisition is only sent once you set both times (and the team is assigned).</div>}
+        {pickupAuto && <div className="rounded-lg bg-[#FFFBEB] px-3 py-2 text-[12.5px] text-[#92400E] ring-1 ring-[#FDE68A]">Not set yet. The vehicle requisition is only sent once you set the pick-up time (and the team is assigned). Back at hospital is optional.</div>}
         <div className="grid grid-cols-2 gap-3">
           <label>
             <span className="hc-label">Pick-up at hospital *</span>
             <input type="time" className="hc-input" value={pickup} onChange={(e) => setPickup(e.target.value)} />
           </label>
           <label>
-            <span className="hc-label">Back at hospital{pickupAuto ? ' *' : ' (about)'}</span>
+            <span className="hc-label">Back at hospital (optional)</span>
             <input type="time" className="hc-input" value={ret} onChange={(e) => setRet(e.target.value)} />
           </label>
         </div>
@@ -453,7 +452,7 @@ function CarDriver({ requestId, requestNo, transport, cars, drivers, team = [], 
             <PickupQuickPicks visitTime={visitTime} recent={recentPickups} value={pickup} onChange={setPickup} />
           </label>
           <label>
-            <span className="hc-label">Return</span>
+            <span className="hc-label">Back at hospital (optional)</span>
             <input type="time" className="hc-input" value={ret} onChange={(e) => setRet(e.target.value)} />
           </label>
         </div>

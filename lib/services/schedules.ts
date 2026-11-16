@@ -86,7 +86,7 @@ async function makeVisit(plan: any, date: string, actor: SessionUser, meta: Meta
         secondaryStaffIds: (t.secondaryStaffIds ?? []).map(String),
         supportStaffIds: (t.supportStaffIds ?? []).map(String),
         instructions: plan.instructions ?? undefined,
-        ...(plan.car?.needed && plan.car.pickupTime && plan.car.returnTime ? { pickupTime: plan.car.pickupTime, returnTime: plan.car.returnTime } : {}),
+        ...(plan.car?.needed && plan.car.pickupTime ? { pickupTime: plan.car.pickupTime, returnTime: plan.car.returnTime || undefined } : {}),
         notify: await teamNumbers(teamIds), // assignment + bag link to the team — waits in the WhatsApp Outbox for approval
       } as any,
       actor,
@@ -183,7 +183,7 @@ export async function createSchedule(input: z.infer<typeof ScheduleInput>, user:
     fee: r.billing?.estimatedFee,
     priority: r.priority,
     team: r.assignment?.primaryStaffId ? { primaryStaffId: r.assignment.primaryStaffId, secondaryStaffIds: r.assignment.secondaryStaffIds ?? [], supportStaffIds: r.assignment.supportStaffIds ?? [] } : undefined,
-    car: { needed: !!r.transport?.needed, pickupTime: r.transport?.timesSetAt ? hm(r.transport.pickupAt) : undefined, returnTime: r.transport?.timesSetAt ? hm(r.transport.returnAt) : undefined },
+    car: { needed: !!r.transport?.needed, pickupTime: r.transport?.timesSetAt ? hm(r.transport.pickupAt) : undefined, returnTime: r.transport?.timesSetAt && r.transport.returnAt ? hm(r.transport.returnAt) : undefined },
     status: 'ACTIVE',
     requestIds: [r._id],
     createdBy: user.id,
@@ -200,7 +200,7 @@ export async function applyTeamToSeries(planId: unknown, input: any, user: Sessi
   const plan = await CarePlan.findById(planId)
   if (!plan) return 0
   plan.team = { primaryStaffId: input.primaryStaffId, secondaryStaffIds: input.secondaryStaffIds ?? [], supportStaffIds: input.supportStaffIds ?? [] }
-  if (input.pickupTime && input.returnTime) plan.car = { needed: true, pickupTime: input.pickupTime, returnTime: input.returnTime }
+  if (input.pickupTime) plan.car = { needed: true, pickupTime: input.pickupTime, returnTime: input.returnTime }
   if (input.instructions) plan.instructions = input.instructions
   await plan.save()
   let n = 0

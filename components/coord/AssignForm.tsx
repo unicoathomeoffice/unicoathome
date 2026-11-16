@@ -210,14 +210,14 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
       )}
         {needTimes && (
           <div className="rounded-lg bg-[#FFFBEB] p-3 ring-1 ring-[#FDE68A]">
-            <div className="mb-2 text-[13px] font-semibold text-[#92400E]">Unico car · set the times for the requisition *</div>
+            <div className="mb-2 text-[13px] font-semibold text-[#92400E]">Unico car · set the pick-up time for the requisition</div>
             <div className="grid grid-cols-2 gap-2.5">
               <label>
-                <span className="hc-label">Pick-up at hospital</span>
+                <span className="hc-label">Pick-up at hospital *</span>
                 <input type="time" className="hc-input hc-input-lg bg-white" value={pickup} onChange={(e) => setPickup(e.target.value)} />
               </label>
               <label>
-                <span className="hc-label">Back at hospital</span>
+                <span className="hc-label">Back at hospital (optional)</span>
                 <input type="time" className="hc-input hc-input-lg bg-white" value={ret} onChange={(e) => setRet(e.target.value)} />
               </label>
             </div>
@@ -231,11 +231,11 @@ export function AssignForm({ id, requestNo, candidates, need, initialTeam, initi
       <FixedBottom note={!picked.length ? undefined : !ready ? `Pick ${size - picked.length} more or lower the team number` : transport ? 'The car requisition goes with this assignment' : undefined}>
         <button
           type="button"
-          disabled={busy || !ready || (needTimes && (!pickup || !ret))}
+          disabled={busy || !ready || (needTimes && !pickup)}
           className={bbtn('p', 'flex-1')}
           onClick={() =>
             run(
-              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), supportStaffIds: support.map((s) => s.id).filter((x) => !picked.includes(x)), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: accepting ? true : undefined, ...(needTimes ? { pickupTime: pickup, returnTime: ret } : {}), notify: notify ?? undefined } }),
+              () => api(`/requests/${id}/assign`, { body: { primaryStaffId: picked[0], secondaryStaffIds: picked.slice(1), supportStaffIds: support.map((s) => s.id).filter((x) => !picked.includes(x)), teamSize: size, instructions: instructions.trim() || undefined, acceptNow: accepting ? true : undefined, ...(needTimes ? { pickupTime: pickup, returnTime: ret || undefined } : {}), notify: notify ?? undefined } }),
               `${requestNo} assigned · team notified`,
               { redirect: `/m/admin/requests/${id}` },
             )

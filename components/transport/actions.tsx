@@ -157,7 +157,7 @@ export function AssignCarForm({ id, requestNo, sub, cars, pickup, ret, currentVe
               <PickupQuickPicks visitTime={visitTime} value={p} onChange={setP} />
             </div>
             <div>
-              <div className="mb-1.5 text-[13px] font-semibold text-slate-700">Return</div>
+              <div className="mb-1.5 text-[13px] font-semibold text-slate-700">Back at hospital (optional)</div>
               <input type="time" className="hc-input hc-input-lg" value={r} onChange={(e) => setR(e.target.value)} />
             </div>
           </div>

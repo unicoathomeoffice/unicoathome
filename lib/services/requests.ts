@@ -627,7 +627,7 @@ export const AssignInput = z.object({
   acceptNow: z.boolean().optional(),
   /** part of a repeating schedule: use this team (and car times) for every visit in it */
   applyToSeries: z.boolean().optional(),
-  /** Unico car: pick-up / return time (HH:mm, visit day) — required when a car is needed and no admin set them yet */
+  /** Unico car: pick-up time (HH:mm, visit day) — required when a car is needed and no admin set it yet; return time optional */
   pickupTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   returnTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   notify: NotifyField,
@@ -654,8 +654,8 @@ export async function assign(r: any, input: z.infer<typeof AssignInput>, user: S
   if (input.fee != null) r.set('billing.estimatedFee', input.fee)
   // Unico car: the requisition goes out with this assignment and needs times an admin chose (never automatic)
   if (r.transport?.needed && (!r.transport.mode || r.transport.mode === 'UNICO_CAR')) {
-    if (input.pickupTime && input.returnTime) applyCarTimes(r, input.pickupTime, input.returnTime, user)
-    else if (!r.transport?.timesSetAt) throw bad("Set the car's pick-up and return time — the vehicle requisition needs them", { pickupTime: 'Required' })
+    if (input.pickupTime) applyCarTimes(r, input.pickupTime, input.returnTime, user)
+    else if (!r.transport?.timesSetAt) throw bad("Set the car's pick-up time — the vehicle requisition needs it", { pickupTime: 'Required' })
   }
   r.set('assignment.primaryStaffId', input.primaryStaffId)
   r.set('assignment.secondaryStaffIds', input.secondaryStaffIds)
@@ -1319,13 +1319,14 @@ const hm24 = (v?: Date | string | null) => (v ? new Intl.DateTimeFormat('en-GB',
 /** Household visits (lib/services/household.ts): carry a step to the other patients at the same address. */
 const household = () => import('./household')
 
-/** Car times chosen by an admin (assign drawer): on the visit day; pick-up before the visit, return after it. */
-function applyCarTimes(r: any, pickupTime: string, returnTime: string, user: SessionUser) {
+/** Car times chosen by an admin (assign drawer): on the visit day; pick-up before the visit, the return (optional)
+ *  after it. */
+function applyCarTimes(r: any, pickupTime: string, returnTime: string | undefined, user: SessionUser) {
   const day = isoDay(r.scheduledAt ?? new Date())
   const pickup = dhakaDate(day, pickupTime)
-  const ret = dhakaDate(day, returnTime)
+  const ret = returnTime ? dhakaDate(day, returnTime) : undefined
   if (r.scheduledAt && pickup.getTime() > new Date(r.scheduledAt).getTime()) throw bad('Pick-up must be before the visit time', { pickupTime: 'After the visit' })
-  if (ret.getTime() <= pickup.getTime()) throw bad('Return must be after pick-up', { returnTime: 'Before pick-up' })
+  if (ret && ret.getTime() <= pickup.getTime()) throw bad('Return must be after pick-up', { returnTime: 'Before pick-up' })
   r.set('transport.pickupAt', pickup)
   r.set('transport.returnAt', ret)
   r.set('transport.timesSetBy', user.id)
@@ -1337,12 +1338,14 @@ export async function setTransportTimes(r: any, input: z.infer<typeof TransportT
   if (!can(user, 'transport.manage') && !can(user, 'requests.manage') && !can(user, 'requests.override')) throw forbidden()
   if (!r.transport?.needed) throw bad('This visit has no car requested')
   if (!input.pickupTime && !input.returnTime) throw bad('Enter a pick-up or return time')
-  if (!r.transport?.timesSetAt && !(input.pickupTime && input.returnTime)) throw bad('Enter both the pick-up and the return time')
+  if (!r.transport?.timesSetAt && !input.pickupTime) throw bad('Enter the pick-up time', { pickupTime: 'Required' })
   const day = isoDay(r.scheduledAt ?? new Date())
   const before = { pickupAt: r.transport?.pickupAt ?? null, returnAt: r.transport?.returnAt ?? null }
   const pickup = input.pickupTime ? dhakaDate(day, input.pickupTime) : null
   const ret = input.returnTime ? dhakaDate(day, input.returnTime) : null
   if (pickup && r.scheduledAt && pickup.getTime() > new Date(r.scheduledAt).getTime()) throw bad('Pick-up must be before the visit time', { pickupTime: 'After the visit' })
+  const from = pickup ?? (r.transport?.pickupAt ? new Date(r.transport.pickupAt) : null)
+  if (ret && from && ret.getTime() <= from.getTime()) throw bad('Return must be after pick-up', { returnTime: 'Before pick-up' })
   if (pickup) r.set('transport.pickupAt', pickup)
   if (ret) r.set('transport.returnAt', ret)
   r.set('transport.timesSetBy', user.id)
@@ -1408,7 +1411,7 @@ export async function assignTransport(r: any, input: z.infer<typeof TransportInp
     // times chosen by a person (here, or earlier by the admin) — never "40 min before"
     const pickup = input.pickupTime ? dhakaDate(day, input.pickupTime) : r.transport?.timesSetAt ? r.transport.pickupAt : undefined
     const ret = input.returnTime ? dhakaDate(day, input.returnTime) : r.transport?.timesSetAt ? r.transport.returnAt : undefined
-    if (!pickup || !ret) throw bad('Set the pick-up and return time', { pickupTime: 'Required' })
+    if (!pickup) throw bad('Set the pick-up time', { pickupTime: 'Required' }) // the return time is optional
     r.set('transport.pickupAt', pickup)
     r.set('transport.returnAt', ret)
     if (input.pickupTime || input.returnTime) {

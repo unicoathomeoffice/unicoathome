@@ -97,7 +97,7 @@ export async function carAlert(event: CarEvent, requestId: unknown, extra: { rea
     driverName: driver?.name ?? 'not allotted yet',
     driverPhone: driver?.phone ?? '',
     pickupTime: r.transport.pickupAt ? fmtTime(r.transport.pickupAt) : '—',
-    returnTime: r.transport.returnAt ? fmtTime(r.transport.returnAt) : '—',
+    returnTime: r.transport.returnAt ? fmtTime(r.transport.returnAt) : 'when the visit ends', // back at hospital is optional
     eventTime: fmtTime(extra.at ?? new Date()),
     reason: extra.reason ?? r.cancellation?.reason ?? '',
     transportMode: (TRANSPORT_MODE_LABEL as Record<string, string>)[r.transport.mode] ?? r.transport.mode ?? '',

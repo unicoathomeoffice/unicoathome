@@ -66,7 +66,7 @@ export function AssignDrawer(p: AssignProps) {
   const needTimes = !!CAR?.needed && !CAR.set
   const [pickup, setPickup] = useState(CAR?.pickup ?? '')
   const [ret, setRet] = useState(CAR?.ret ?? '')
-  const timesMissing = needTimes && (!pickup || !ret)
+  const timesMissing = needTimes && !pickup // back at hospital is optional
   const [series, setSeries] = useState(!!p.series)
   const [notify, setNotify] = useState<string[] | null>(null)
   const [paired, setPaired] = useState(true)
@@ -118,7 +118,7 @@ export function AssignDrawer(p: AssignProps) {
             instructions: instructions.trim() || undefined,
             fee: fee === '' ? undefined : Number(fee),
             acceptNow: accepting ? true : undefined,
-            ...(needTimes ? { pickupTime: pickup, returnTime: ret } : {}),
+            ...(needTimes ? { pickupTime: pickup, returnTime: ret || undefined } : {}),
             ...(p.series && series ? { applyToSeries: true } : {}),
             notify: notify ?? undefined,
           },
@@ -174,7 +174,7 @@ export function AssignDrawer(p: AssignProps) {
           <button className={btnClass('o', 'md', 'h-10 px-[18px]')} onClick={p.onClose}>
             Cancel
           </button>
-          <button className={btnClass('p', 'md', 'h-10 px-[18px]')} disabled={busy || !primary || !date || timesMissing} onClick={submit} title={timesMissing ? 'Set the car pick-up and return time' : undefined}>
+          <button className={btnClass('p', 'md', 'h-10 px-[18px]')} disabled={busy || !primary || !date || timesMissing} onClick={submit} title={timesMissing ? 'Set the car pick-up time' : undefined}>
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
             {team.length > 1 ? `${p.reassign ? 'Reassign' : 'Assign'} team of ${team.length}` : `${p.reassign ? 'Reassign to' : 'Assign'} ${primary ? nameOf(primary) : ''}`}
           </button>
@@ -224,14 +224,14 @@ export function AssignDrawer(p: AssignProps) {
 
         {needTimes && (
           <div className="rounded-lg bg-[#FFFBEB] p-3 ring-1 ring-[#FDE68A]">
-            <div className="mb-2 text-[13px] font-semibold text-[#92400E]">Unico car · set the times for the requisition *</div>
+            <div className="mb-2 text-[13px] font-semibold text-[#92400E]">Unico car · set the pick-up time for the requisition</div>
             <div className="grid grid-cols-2 gap-2.5">
               <label>
-                <span className="hc-label">Pick-up at hospital</span>
+                <span className="hc-label">Pick-up at hospital *</span>
                 <input type="time" className="hc-input bg-white" value={pickup} onChange={(e) => setPickup(e.target.value)} />
               </label>
               <label>
-                <span className="hc-label">Back at hospital</span>
+                <span className="hc-label">Back at hospital (optional)</span>
                 <input type="time" className="hc-input bg-white" value={ret} onChange={(e) => setRet(e.target.value)} />
               </label>
             </div>

@@ -254,7 +254,7 @@ export default async function VisitDetail({ params, searchParams }: { params: Pr
                   {r.vehicle.name} · {r.driver?.name ?? 'Driver TBC'}
                 </div>
                 <div className="text-[12px] text-slate-500">
-                  {r.vehicle.plate} · pick-up {time(r.transport.pickupAt)} · return ~{time(r.transport.returnAt)}
+                  {r.vehicle.plate} · pick-up {time(r.transport.pickupAt)}{r.transport.returnAt && <> · return ~{time(r.transport.returnAt)}</>}
                 </div>
               </div>
             </div>
