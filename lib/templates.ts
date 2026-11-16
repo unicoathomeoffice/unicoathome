@@ -53,6 +53,7 @@ export const PLACEHOLDERS = [
   'eventTime',
   'transportMode',
   'amount',
+  'bkashNumber',
   'cashCounter',
   'update',
   'team',
@@ -291,6 +292,14 @@ export const DEFAULT_TEMPLATES: TemplateDef[] = [
     audience: 'Patient',
     subject: 'Your bill · {invoiceNo}',
     body: 'Respected Sir/Madam, here is your bill for your home care visit (invoice {invoiceNo}).\nUHID: {uhid}\nTotal {total} · Paid {paid} · Due {due}\nQuestions? Call {hospitalPhone}.\n— Unico Hospitals',
+  },
+  {
+    key: 'patient_bkash',
+    name: 'Pay with bKash (QR picture)',
+    channel: ['WHATSAPP'],
+    audience: 'Patient',
+    subject: 'Pay with bKash · {due}',
+    body: 'Respected Sir/Madam, you can pay your home care bill with bKash.\nPatient: {patientName}{uhidTag}\nAmount to pay: {due}\nInvoice: {invoiceNo}\nScan the QR in this picture with the bKash app (or any bank app), or use Make Payment to merchant {bkashNumber} (Unico Hospitals PLC). Please write {invoiceNo} as the reference.\nAfter paying, send us the payment screenshot or the TrxID on this WhatsApp.\nQuestions? Call {hospitalPhone}.\n— Unico Hospitals',
   },
   {
     key: 'staff_bill',

@@ -3,7 +3,7 @@
 // (Paid / Partially paid / Due / Waived) and sending the bill files on WhatsApp to the patient and care team.
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Banknote, Building2, Check, CheckCircle2, ClipboardPaste, Download, Eye, FileText, Loader2, MessageCircle, Pencil, Plus, RefreshCw, Replace, Search, Trash2, Upload } from 'lucide-react'
+import { QrCode, Banknote, Building2, Check, CheckCircle2, ClipboardPaste, Download, Eye, FileText, Loader2, MessageCircle, Pencil, Plus, RefreshCw, Replace, Search, Trash2, Upload } from 'lucide-react'
 import { api, Drawer, useToast, compressImage } from '@/components/client'
 import { readBill } from '@/components/client/bill-reader'
 import { useConfirmSend } from '@/components/client/ConfirmSend'
@@ -78,6 +78,7 @@ export function InvoiceTab({
   const toast = useToast()
   const [form, setForm] = useState<null | { edit?: Invoice }>(null)
   const [sending, setSending] = useState(false)
+  const [bkash, setBkash] = useState(false) // send the hospital's bKash QR + amount on WhatsApp
   const [busy, setBusy] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null) // invoice whose items are shown
   const [pay, setPay] = useState<null | { inv: Invoice; full: boolean }>(null) // mark paid / record payment
@@ -158,6 +159,11 @@ export function InvoiceTab({
           {canSend && billing.invoices.length > 0 && (
             <button type="button" className={btnClass('g')} onClick={() => setSending(true)}>
               <MessageCircle size={16} /> Send invoice
+            </button>
+          )}
+          {canSend && (
+            <button type="button" className={btnClass('o', 'md', 'border-[#E2136E] text-[#C2185B] hover:bg-[#FDF2F8]')} onClick={() => setBkash(true)} title="Send the hospital's bKash QR and the amount to pay on WhatsApp">
+              <QrCode size={16} /> bKash QR
             </button>
           )}
         </div>
@@ -328,6 +334,7 @@ export function InvoiceTab({
 
       {form && <InvoiceForm requestId={requestId} edit={form.edit} h360={h360} patientUhid={patientUhid} onClose={() => setForm(null)} />}
       {pay && <PaymentForm requestId={requestId} inv={pay.inv} full={pay.full} onClose={() => setPay(null)} />}
+      {bkash && <BkashDrawer requestId={requestId} invoices={billing.invoices} patient={patient} waPaired={waPaired} onClose={() => setBkash(false)} />}
       {sending && <SendDrawer requestId={requestId} invoices={billing.invoices} team={team} patient={patient} waPaired={waPaired} onClose={() => setSending(false)} />}
     </div>
   )
@@ -909,6 +916,147 @@ function SendDrawer({ requestId, invoices, team, patient, waPaired, onClose }: {
           <span className="hc-label">Send to</span>
           {check(toPatient, () => setToPatient(!toPatient), <span>Patient · {patient.name} {patient.optOut ? '(opted out of WhatsApp)' : patient.phone ? `· ${patient.phone}` : '(no phone)'}</span>, patient.optOut || !patient.phone)}
           {team.map((p) => check(staff.includes(p.id), () => setStaff(toggle(staff, p.id)), <span>{p.name} · {p.role === 'DRIVER' ? 'Driver' : 'Care team'}</span>, !p.phone))}
+        </div>
+      </div>
+    </Drawer>
+  )
+}
+
+/** The hospital's own bKash QR (the printed card, public/pay/bkash-qr.jpg) and the amount to pay, on WhatsApp to the
+ *  patient and / or another number. Nothing is marked paid here: the payment shows once H360 / the counter has it. */
+function BkashDrawer({ requestId, invoices, patient, waPaired, onClose }: { requestId: string; invoices: Invoice[]; patient: { name: string; phone: string; optOut: boolean }; waPaired: boolean; onClose: () => void }) {
+  const router = useRouter()
+  const toast = useToast()
+  const live = invoices.filter((i) => !i.replacedBy)
+  const [ids, setIds] = useState<string[]>(live.filter((i) => (i.due ?? 0) > 0).map((i) => i._id))
+  const dueOf = (list: string[]) => live.filter((i) => list.includes(i._id)).reduce((a, i) => a + (i.due ?? 0), 0)
+  const [amount, setAmount] = useState(String(dueOf(ids) || ''))
+  const [edited, setEdited] = useState(false)
+  const canPatient = !patient.optOut && !!patient.phone
+  const [toPatient, setToPatient] = useState(canPatient)
+  const [toOther, setToOther] = useState(!canPatient)
+  const [other, setOther] = useState({ phone: '', name: '' })
+  const [keep, setKeep] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const { confirmSend, confirmDialog } = useConfirmSend()
+  const due = dueOf(ids)
+  const amt = Math.round(Number(amount) || 0)
+  const otherOk = /^(?:\+?88)?0?1[3-9]\d{8}$/.test(other.phone.replace(/[\s()-]/g, ''))
+  function pick(id: string) {
+    const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]
+    setIds(next)
+    if (!edited) setAmount(String(dueOf(next) || ''))
+  }
+  async function send() {
+    if (!(amt > 0)) return toast('Enter the amount to pay', 'err')
+    if (toOther && !otherOk) return toast('Enter a Bangladesh mobile number (01XXXXXXXXX)', 'err')
+    if (!toPatient && !toOther) return toast('Pick who gets the QR', 'err')
+    const chosen = live.filter((i) => ids.includes(i._id))
+    const ok = await confirmSend({
+      title: `Send the bKash QR · ${taka(amt)}?`,
+      to: [...(toPatient ? [{ name: patient.name, phone: patient.phone, note: 'patient' }] : []), ...(toOther ? [{ name: other.name.trim() || `${patient.name} (family)`, phone: other.phone, note: keep ? 'saved as patient WhatsApp' : 'this time only' }] : [])],
+      files: ['Unico-bKash-QR.jpg · the hospital bKash QR (Unico Hospitals PLC · 01805 955 105)'],
+      linked: waPaired,
+      note: (
+        <>
+          Amount to pay <b>{taka(amt)}</b>
+          {chosen.length ? ` · invoice ${chosen.map((i) => i.invoiceNo).join(', ')}` : ''}
+          {amt !== due && due > 0 ? <span className="text-[#B45309]"> · not the {taka(due)} due on the invoices</span> : null}. Nothing is marked paid now — it shows once the payment reaches H360 or the counter.
+        </>
+      ),
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      const r = await api<{ sent: number }>(`/requests/${requestId}/bills/bkash`, { body: { invoiceIds: ids, amount: amt, patient: toPatient, other: toOther ? { phone: other.phone.trim(), name: other.name.trim() || undefined } : undefined, saveAsWhatsApp: toOther && keep ? true : undefined } })
+      toast(`bKash QR queued for ${r.sent} number${r.sent === 1 ? '' : 's'} — waiting in WhatsApp for approval`, 'ok')
+      router.refresh()
+      onClose()
+    } catch (e: any) {
+      toast(e.message, 'err')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title="Pay with bKash · send the QR"
+      sub="The hospital's bKash QR picture and the amount, on WhatsApp"
+      width={480}
+      footer={
+        <div className="flex justify-end gap-2.5">
+          <button type="button" className={btnClass('o')} onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className={btnClass('g')} disabled={busy || !waPaired || !(amt > 0) || (!toPatient && !toOther) || (toOther && !otherOk)} onClick={send}>
+            {busy ? <Loader2 size={16} className="animate-spin" /> : <MessageCircle size={16} />} Send · {taka(amt)}
+          </button>
+        </div>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        {confirmDialog}
+        {!waPaired && <div className="rounded-lg bg-[#FEF3C7] px-3 py-2.5 text-[13px] text-[#92400E]">WhatsApp is not paired — the picture can only go from the paired hospital number. Pair it in Settings → WhatsApp.</div>}
+        <div className="flex gap-3.5 rounded-xl bg-[#FDF2F8] p-3 ring-1 ring-[#FBCFE8]">
+          <a href="/pay/bkash-qr.jpg" target="_blank" rel="noreferrer" className="flex-none">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/pay/bkash-qr.jpg" alt="Unico Hospitals bKash QR" className="h-[150px] w-auto rounded-lg ring-1 ring-white" />
+          </a>
+          <div className="min-w-0 text-[12.5px] leading-[18px] text-slate-600">
+            <div className="text-[13.5px] font-bold text-[#9D174D]">The hospital&rsquo;s bKash QR</div>
+            Unico Hospitals PLC · merchant <b>01805 955 105</b>
+            <div className="mt-1.5">The patient scans it in the bKash app (or any bank app), pays the amount and sends back the screenshot or TrxID.</div>
+          </div>
+        </div>
+        {live.length > 0 && (
+          <div>
+            <span className="hc-label">For invoice</span>
+            {live.map((i) => (
+              <label key={i._id} className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[14px] hover:bg-slate-50">
+                <input type="checkbox" className="size-4 accent-[#0090CA]" checked={ids.includes(i._id)} onChange={() => pick(i._id)} />
+                <span>
+                  <b>{i.invoiceNo || 'Invoice'}</b> · {taka(i.payable)} {i.due > 0 ? <span className="text-[#B91C1C]">· due {taka(i.due)}</span> : <span className="text-[#15803D]">· paid</span>}
+                </span>
+              </label>
+            ))}
+          </div>
+        )}
+        <label>
+          <span className="hc-label">Amount to pay (৳) *</span>
+          <input className="hc-input" inputMode="numeric" value={amount} onChange={(e) => (setAmount(e.target.value.replace(/[^\d]/g, '')), setEdited(true))} placeholder="e.g. 1756" />
+          <span className={cx('mt-1 block text-[12px]', amt !== due && due > 0 ? 'text-[#B45309]' : 'text-slate-500')}>
+            {due > 0 ? (amt !== due ? `Due on the ticked invoices: ${taka(due)} — check before sending` : 'The amount due on the ticked invoices') : 'No amount due on an invoice — type the amount to pay'}
+          </span>
+        </label>
+        <div>
+          <span className="hc-label">Send to</span>
+          <label className={cx('flex items-center gap-2.5 rounded-lg px-2 py-2 text-[14px]', canPatient ? 'hover:bg-slate-50' : 'opacity-50')}>
+            <input type="checkbox" className="size-4 accent-[#0090CA]" checked={toPatient} disabled={!canPatient} onChange={() => setToPatient(!toPatient)} />
+            <span>Patient · {patient.name} {patient.optOut ? '(opted out of WhatsApp)' : patient.phone ? `· ${patient.phone}` : '(no phone)'}</span>
+          </label>
+          <label className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-[14px] hover:bg-slate-50">
+            <input type="checkbox" className="size-4 accent-[#0090CA]" checked={toOther} onChange={() => setToOther(!toOther)} />
+            <span>Another number <span className="text-slate-500">(no WhatsApp on the patient&rsquo;s number, or a relative pays)</span></span>
+          </label>
+          {toOther && (
+            <div className="ml-8 mt-1 flex flex-col gap-2.5">
+              <div className="grid grid-cols-2 gap-2.5">
+                <label>
+                  <span className="hc-label">WhatsApp number *</span>
+                  <input className={cx('hc-input', other.phone && !otherOk && 'border-[#DC2626]')} inputMode="tel" value={other.phone} onChange={(e) => setOther({ ...other, phone: e.target.value })} placeholder="01XXXXXXXXX" autoFocus />
+                </label>
+                <label>
+                  <span className="hc-label">Name / relation</span>
+                  <input className="hc-input" value={other.name} onChange={(e) => setOther({ ...other, name: e.target.value })} placeholder="e.g. Son · Rahim" />
+                </label>
+              </div>
+              <label className="flex items-center gap-2 text-[13px] text-slate-600">
+                <input type="checkbox" className="size-4 accent-[#0090CA]" checked={keep} onChange={() => setKeep(!keep)} /> Keep this as the patient&rsquo;s WhatsApp number
+              </label>
+            </div>
+          )}
         </div>
       </div>
     </Drawer>

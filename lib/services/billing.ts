@@ -177,6 +177,70 @@ export async function setBillingStatus(r: any, status: 'PAID' | 'PARTIAL' | 'DUE
 }
 
 /** WhatsApp the chosen bill files to the patient and/or care team (as documents, from the paired number). */
+// ---------------------------------------------------------------- bKash QR
+const BKASH_NUMBER = '01805 955 105'
+const BD_MOBILE = /^(?:\+?88)?0?(1[3-9]\d{8})$/
+
+export const SendBkashInput = z.object({
+  /** which invoices the payment is for (empty = every invoice with something due) */
+  invoiceIds: z.array(z.string()).default([]),
+  /** amount to ask for; empty = what is due on those invoices */
+  amount: z.number().positive().max(10_000_000).optional(),
+  /** to the patient's own WhatsApp / phone */
+  patient: z.boolean().default(true),
+  /** another number (a relative, or the patient's WhatsApp when it differs from the phone on file) */
+  other: z.object({ phone: z.string().trim().min(10).max(20), name: z.string().trim().max(80).optional() }).optional(),
+  /** keep the other number as the patient's WhatsApp number from now on */
+  saveAsWhatsApp: z.boolean().optional(),
+})
+
+/** The bKash QR card (picture) and the amount to pay, on WhatsApp to the patient and / or another number. Like every
+ *  WhatsApp it waits in the Outbox for approval. */
+export async function sendBkashQr(r: any, input: z.infer<typeof SendBkashInput>, user: SessionUser, meta: Meta) {
+  if (!can(user, 'billing.invoice') || !can(user, 'messages.send')) throw forbidden()
+  if (!(await canQueue())) throw bad('WhatsApp is not paired — pair it in Settings → WhatsApp to send the QR picture')
+  const live = (r.billing?.invoices ?? []).filter((x: any) => !x.replacedBy)
+  const list = input.invoiceIds.length ? live.filter((x: any) => input.invoiceIds.includes(String(x._id))) : live.filter((x: any) => (x.due ?? 0) > 0)
+  const due = input.amount ?? list.reduce((a: number, x: any) => a + (x.due ?? 0), 0)
+  if (!(due > 0)) throw bad('Nothing is due on these invoices — enter the amount to pay', { amount: 'Required' })
+  let other: { phone: string; name?: string } | null = null
+  if (input.other) {
+    const m = input.other.phone.replace(/[\s()-]/g, '').match(BD_MOBILE)
+    if (!m) throw bad('Enter a Bangladesh mobile number (01XXXXXXXXX)', { otherPhone: 'Not a mobile number' })
+    other = { phone: `+880${m[1]}`, name: input.other.name || undefined }
+  }
+  const patient = await Patient.findById(r.patientId).select('name phone whatsapp consent').lean<any>()
+  const patientTo = input.patient ? patient?.whatsapp || patient?.phone : null
+  if (input.patient && !patientTo) throw bad('The patient has no phone number — send it to another number')
+  if (input.patient && patient?.consent?.whatsapp === false) throw bad('The patient opted out of WhatsApp — send it to another number')
+  if (!patientTo && !other) throw bad('Pick who gets the QR', { otherPhone: 'Required' })
+
+  // the card is stored once per visit and re-used for every send
+  let card = await Attachment.findOne({ requestId: r._id, kind: 'OTHER', filename: 'Unico-bKash-QR.jpg', deletedAt: null }).select('_id').lean<any>()
+  if (!card) {
+    const [{ storeFile }, { BKASH_CARD_JPG_BASE64 }] = await Promise.all([import('../files'), import('../pay/bkash-card')])
+    card = await storeFile({ data: Buffer.from(BKASH_CARD_JPG_BASE64, 'base64'), mime: 'image/jpeg', filename: 'Unico-bKash-QR.jpg', kind: 'OTHER', requestId: r._id, uploadedBy: user.id, caption: 'bKash payment QR' })
+  }
+  const vars = {
+    ...(await templateVars(r)),
+    invoiceNo: list.map((x: any) => x.invoiceNo).filter(Boolean).join(', ') || 'home care visit',
+    total: taka(list.reduce((a: number, x: any) => a + (x.payable ?? 0), 0)),
+    paid: taka(list.reduce((a: number, x: any) => a + (x.paid ?? 0), 0)),
+    due: taka(due),
+    bkashNumber: BKASH_NUMBER,
+  }
+  const { queueWhatsApp } = await import('../wa/service')
+  const { text } = await renderTemplate('patient_bkash', vars)
+  const to = [...(patientTo ? [{ phone: patientTo, name: patient?.name }] : []), ...(other && other.phone.slice(-10) !== String(patientTo ?? '').replace(/\D/g, '').slice(-10) ? [{ phone: other.phone, name: other.name ?? `${patient?.name ?? 'Patient'} (family)` }] : [])]
+  for (const t of to) await queueWhatsApp({ to: t.phone, toName: t.name, text, templateKey: 'patient_bkash', requestId: r._id, patientId: r.patientId, initiatedBy: user.id, attachmentId: card._id, fileName: 'Unico-bKash-QR.jpg' })
+  if (other && input.saveAsWhatsApp && patient && other.phone !== patient.whatsapp) {
+    await Patient.updateOne({ _id: patient._id }, { $set: { whatsapp: other.phone } })
+    await audit(user, 'patient.update', 'patient', patient._id, { before: { whatsapp: patient.whatsapp ?? null }, after: { whatsapp: other.phone }, label: patient.name }, meta)
+  }
+  await audit(user, 'message.whatsapp_send', 'request', r._id, { after: { bkashQr: true, amount: due, invoices: list.map((x: any) => x.invoiceNo), to: to.map((t) => t.phone) }, label: r.requestNo }, meta)
+  return { sent: to.length }
+}
+
 export async function sendInvoices(r: any, input: z.infer<typeof SendInvoicesInput>, user: SessionUser, meta: Meta) {
   if (!can(user, 'billing.invoice') || !can(user, 'messages.send')) throw forbidden()
   if (!(await canQueue())) throw bad('WhatsApp is not paired — pair it in Settings → WhatsApp to send files')
