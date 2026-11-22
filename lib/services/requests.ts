@@ -1387,6 +1387,66 @@ export async function setTransportTimes(r: any, input: z.infer<typeof TransportT
   return { pickupAt: r.transport.pickupAt ?? null, returnAt: r.transport.returnAt ?? null, resent: !!input.resend && hasTeam }
 }
 
+/** Add the Unico car to a visit made without one, or take it off again — any time before the visit is done,
+ *  whoever made the request (staff, the patient online, the app). */
+export const CarNeededInput = z.object({
+  needed: z.boolean(),
+  pickupTime: z.string().regex(/^\d{2}:\d{2}$/).optional(), // HH:mm on the visit day — required once the team is assigned
+  returnTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  reason: z.string().trim().max(200).optional(),
+  notify: NotifyField,
+})
+export async function setCarNeeded(r: any, input: z.infer<typeof CarNeededInput>, user: SessionUser, meta: Meta) {
+  if (!can(user, 'patients.edit') && !can(user, 'transport.manage') && !can(user, 'requests.override')) throw forbidden()
+  if (['COMPLETED', 'CLOSED', 'CANCELLED'].includes(r.status)) throw bad('This visit is finished — the car can no longer change')
+  const before = { needed: !!r.transport?.needed, mode: r.transport?.mode ?? null, vehicleId: r.transport?.vehicleId ? String(r.transport.vehicleId) : null }
+  const isCar = wantsUnicoCar(r)
+  const hasTeam = !!r.assignment?.primaryStaffId
+  const only = notifySet(input.notify)
+  const open = ['NEW', 'VERIFIED', 'CONFIRMED', 'RESCHEDULED', 'ASSIGNED', 'ACCEPTED', 'EN_ROUTE', 'IN_PROGRESS']
+  if (input.needed) {
+    if (isCar) throw bad('A Unico car is already on this visit')
+    // the requisition names the team: with the team on the visit it goes now, so it needs the pick-up time now
+    if (hasTeam && !input.pickupTime) throw bad("Set the car's pick-up time — the vehicle requisition goes now", { pickupTime: 'Required' })
+    r.set('transport.needed', true)
+    r.set('transport.status', 'REQUESTED')
+    r.set('transport.mode', undefined) // a Unico car (was: own transport / none)
+    r.set('transport.requisitionSentAt', undefined)
+    if (input.pickupTime) applyCarTimes(r, input.pickupTime, input.returnTime, user)
+    r.version = (r.version ?? 0) + 1
+    await r.save()
+    await audit(user, 'transport.needed', 'request', r._id, { before, after: { needed: true, pickupAt: r.transport.pickupAt ?? null, returnAt: r.transport.returnAt ?? null, ...(only && { whatsappTo: [...only] }) }, label: r.requestNo }, meta)
+    // household: one car for everyone at this address
+    if (r.household?.key)
+      await HomecareRequest.updateMany(
+        { 'household.key': r.household.key, _id: { $ne: r._id }, deletedAt: null, status: { $in: open } },
+        { $set: { 'transport.needed': true, 'transport.status': 'REQUESTED', ...(input.pickupTime && { 'transport.pickupAt': r.transport.pickupAt, 'transport.returnAt': r.transport.returnAt, 'transport.timesSetBy': user.id, 'transport.timesSetAt': new Date() }) }, $unset: { 'transport.mode': 1 } },
+      )
+    // no team yet: the requisition goes out with the assignment (assign asks for the pick-up time)
+    if (hasTeam) background(() => carRequestedLazy(r._id, user.id, { only }))
+    return { needed: true, sent: hasTeam }
+  }
+  if (!r.transport?.needed && !r.transport?.mode) throw bad('No car on this visit')
+  if (r.transport?.legs?.some((l: any) => l.key === 'pickup' && l.at)) throw bad('The car is already on the trip — it can no longer be taken off')
+  const told = isCar && !!(r.transport?.requisitionSentAt || r.transport?.vehicleId)
+  const driverId = r.transport?.driverId
+  const vehicleId = r.transport?.vehicleId
+  const reason = input.reason || 'Car no longer needed'
+  // Security / Transport hear "trip cancelled" (read from the visit while it still has the car)
+  if (told) await carAlertLazy('CAR_CANCELLED', r._id, { reason }, only)
+  const clear = { 'transport.needed': false }
+  const drop = { 'transport.mode': 1, 'transport.status': 1, 'transport.vehicleId': 1, 'transport.driverId': 1, 'transport.legs': 1, 'transport.pickupAt': 1, 'transport.returnAt': 1, 'transport.timesSetBy': 1, 'transport.timesSetAt': 1, 'transport.requisitionSentAt': 1, 'transport.assignedBy': 1, 'transport.assignedAt': 1 }
+  r.set('transport.needed', false)
+  for (const k of Object.keys(drop)) r.set(k, undefined)
+  r.version = (r.version ?? 0) + 1
+  await r.save()
+  if (r.household?.key) await HomecareRequest.updateMany({ 'household.key': r.household.key, _id: { $ne: r._id }, deletedAt: null, status: { $in: open } }, { $set: clear, $unset: drop })
+  if (vehicleId) await Vehicle.updateOne({ _id: vehicleId, status: 'ON_TRIP' }, { status: 'FREE' }).catch(() => null)
+  await audit(user, 'transport.needed', 'request', r._id, { before, after: { needed: false, reason, cancelledToSecurity: told, ...(only && { whatsappTo: [...only] }) }, label: r.requestNo }, meta)
+  if (driverId) background(() => notifyUsers([driverId], { type: 'TRANSPORT', title: `Trip cancelled · ${r.requestNo}`, body: reason, requestId: r._id, as: 'DRIVER', url: '/m/trips' }))
+  return { needed: false, told }
+}
+
 export const TransportInput = z.object({
   mode: z.enum(['UNICO_CAR', 'UBER', 'PATHAO', 'CNG', 'RICKSHAW', 'OTHER']),
   vehicleId: z.string().optional(),

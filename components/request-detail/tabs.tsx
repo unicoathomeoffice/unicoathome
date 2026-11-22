@@ -534,6 +534,7 @@ export function VisitTab({
   labs,
   canDecide,
   reportHref,
+  carToggle,
 }: {
   r: any
   people: People
@@ -543,6 +544,8 @@ export function VisitTab({
   labs: any[]
   canDecide: boolean
   reportHref: string | null
+  /** "Add Unico car" / "Remove car" (shown to those who may change it, before the visit is done) */
+  carToggle?: ReactNode
 }) {
   const v = r.visit ?? {}
   const list = v.checklist ?? []
@@ -691,7 +694,17 @@ export function VisitTab({
             </div>
           )}
         </Panel>
-        <Panel title="Transport" right={r.transport?.status && <Tag tone={r.transport.status === 'DONE' ? 'green' : r.transport.status === 'IN_TRIP' ? 'blue' : 'slate'}>{r.transport.status.replace('_', ' ')}</Tag>}>
+        <Panel
+          title="Transport"
+          right={
+            (r.transport?.status || carToggle) && (
+              <span className="flex items-center gap-3">
+                {carToggle}
+                {r.transport?.status && <Tag tone={r.transport.status === 'DONE' ? 'green' : r.transport.status === 'IN_TRIP' ? 'blue' : 'slate'}>{r.transport.status.replace('_', ' ')}</Tag>}
+              </span>
+            )
+          }
+        >
           {!r.transport?.needed && !r.transport?.mode ? (
             <div className="text-[13px] text-slate-400">No transport requested · team travels on their own</div>
           ) : (

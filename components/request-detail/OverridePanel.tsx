@@ -10,6 +10,7 @@ import { api, Drawer, useToast } from '@/components/client'
 import { NotifyPicker } from '@/components/client/NotifyPicker'
 import { btnClass } from '@/components/ui'
 import { cx, taka } from '@/lib/format'
+import { CarNeededButton, type CarNeededProps } from './CarNeeded'
 
 export type CarLite = { id: string; name: string; plate: string; driverId?: string; status?: string }
 export type DriverLite = { id: string; name: string; phone?: string }
@@ -44,6 +45,8 @@ type Props = {
   area?: string
   defaultAmount?: number
   cashGiven?: { amount: number; mode?: string } | null
+  /** no car on the visit: "Add Unico car" (null = not allowed / not shown) */
+  carToggle?: CarNeededProps | null
 }
 
 const OWN_MODES = [
@@ -74,7 +77,8 @@ export function OverridePanel(p: Props) {
   const own = !!p.transport.mode && p.transport.mode !== 'UNICO_CAR'
   // the car's pick-up time by hand (+ re-send the requisition) — until the car has left
   const showTimes = !!p.canTimes && p.transport.needed && !own && ['NEW', 'VERIFIED', 'CONFIRMED', 'RESCHEDULED', 'ASSIGNED', 'ACCEPTED'].includes(p.status)
-  if (!(p.canOverride && active) && !showCar && !showTimes) return null
+  const addCar = !!p.carToggle && !p.transport.needed && !p.transport.mode
+  if (!(p.canOverride && active) && !showCar && !showTimes && !addCar) return null
 
   async function doStep() {
     if (!step) return
@@ -95,7 +99,7 @@ export function OverridePanel(p: Props) {
     <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#FFFBEB] px-3.5 py-2.5 ring-1 ring-[#FDE68A]">
       <ShieldAlert size={16} className="flex-none text-[#B45309]" />
       <span className="text-[13px] font-semibold text-[#92400E]">{p.canOverride && active ? `Act for ${who}` : 'Transport'}</span>
-      <span className="hidden text-[12px] text-[#92400E]/80 sm:inline">{p.canOverride && active ? (p.external ? '· outside staff (no app), recorded as done on their behalf' : '· override, recorded as done on their behalf') : '· put a car and driver on this trip'}</span>
+      <span className="hidden text-[12px] text-[#92400E]/80 sm:inline">{p.canOverride && active ? (p.external ? '· outside staff (no app), recorded as done on their behalf' : '· override, recorded as done on their behalf') : addCar ? '· no car on this visit — the team travels on their own' : '· put a car and driver on this trip'}</span>
       <div className="ml-auto flex flex-wrap gap-2">
         {p.canOverride && step && (
           <button type="button" disabled={!!busy} onClick={doStep} className={btnClass('o', 'sm', 'bg-white')}>
@@ -112,6 +116,7 @@ export function OverridePanel(p: Props) {
             <Clock3 size={14} /> {p.pickupAuto ? <span className="text-[#B45309]">Set car times</span> : <>Pick-up {ampm(p.transport.pickup)}</>}
           </button>
         )}
+        {addCar && <CarNeededButton {...p.carToggle!} look="button" />}
         {showCar && (
           <button type="button" disabled={!!busy} onClick={() => setDlg('car')} className={btnClass('o', 'sm', 'bg-white')}>
             <Car size={14} /> {own ? `Transport · ${MODE_LABEL[p.transport.mode!] ?? 'own'}${p.cashGiven ? ` · ${taka(p.cashGiven.amount)} given` : ''}` : p.transport.vehicleId ? 'Change car & driver' : 'Car & driver'}

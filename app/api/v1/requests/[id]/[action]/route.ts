@@ -33,6 +33,8 @@ const ACTIONS: Record<string, Action> = {
   transport: { schema: svc.TransportInput, run: ({ r, user, meta }, i) => svc.assignTransport(r, i, user, meta) },
   'accept-wait': { perm: 'requests.assign', run: ({ r, user, meta }) => svc.keepWaiting(r, user, meta) },
   'complete-now': { perm: 'requests.override', schema: svc.CompleteNowInput, run: ({ r, user, meta }, i) => svc.completeNow(r, i, user, meta) },
+  // add the Unico car to a visit made without one, or take it off — permission checked in the service
+  car: { schema: svc.CarNeededInput, run: ({ r, user, meta }, i) => svc.setCarNeeded(r, i, user, meta) },
   // the car's pick-up / return time by hand (+ re-send the requisition) — permission checked in the service
   'transport-times': { schema: svc.TransportTimesInput, run: ({ r, user, meta }, i) => svc.setTransportTimes(r, i, user, meta) },
   // undo the last step (clicked by mistake) — coordinators / admins

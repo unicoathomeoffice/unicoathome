@@ -3,8 +3,7 @@ import { TestItemInput, testNames } from '@/lib/schemas'
 import { route, body, clientMeta, conflict, forbidden } from '@/lib/api'
 import { Patient } from '@/lib/models'
 import { can } from '@/lib/constants'
-import { carRequestedLazy, changeServices, loadRequest, withPeople, slaInfo } from '@/lib/services/requests'
-import { background } from '@/lib/messaging'
+import { changeServices, loadRequest, setCarNeeded, withPeople, slaInfo } from '@/lib/services/requests'
 import { audit, diff } from '@/lib/audit'
 import { getSettings } from '@/lib/settings'
 import { plain } from '@/lib/db'
@@ -59,15 +58,11 @@ export const PATCH = route<{ id: string }>(async ({ req, user, params }) => {
   if (input.remarks != null) r.remarks = input.remarks
   if (input.estimatedFee != null) r.set('billing.estimatedFee', input.estimatedFee)
   if (input.paymentMethod) r.set('billing.method', input.paymentMethod)
-  if (input.transportNeeded != null) {
-    r.set('transport.needed', input.transportNeeded)
-    if (input.transportNeeded && !r.transport?.status) r.set('transport.status', 'REQUESTED')
-  }
-  const carAsked = input.transportNeeded === true && !before.transport
+  // the car on / off goes through the same service as "Add Unico car" / "Remove car" (times, Security told, audit)
+  const carChange = input.transportNeeded != null && input.transportNeeded !== before.transport
+  if (carChange) await setCarNeeded(r, { needed: input.transportNeeded! }, user, clientMeta(req, user))
   r.version = (r.version ?? 0) + 1
   await r.save()
-  // requisition → on-call security supervisor, but only once the care team is assigned (assign sends it otherwise)
-  if (carAsked && r.assignment?.primaryStaffId) background(() => carRequestedLazy(r._id, user.id))
   const after = { services: (r.services ?? []).map((x: any) => x.name), priority: r.priority, tests: r.tests, expectedDurationMin: r.expectedDurationMin, clinical: r.clinical?.complaint, instructions: r.assignment?.instructions, remarks: r.remarks, fee: r.billing?.estimatedFee }
   await audit(user, 'request.update', 'request', r._id, { ...diff(before, after), label: r.requestNo }, clientMeta(req, user))
   return { ok: true, version: r.version }

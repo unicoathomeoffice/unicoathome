@@ -36,6 +36,7 @@ import { notifyTimeline, type NotifyStep } from '@/lib/services/notify-log'
 import { RidesCard } from '@/components/request-detail/RidesCard'
 import { liveView } from '@/lib/services/tracking'
 import { OverridePanel } from '@/components/request-detail/OverridePanel'
+import { CarNeededButton, type CarNeededProps } from '@/components/request-detail/CarNeeded'
 import { H360BillingSheet } from '@/components/request-detail/H360BillingSheet'
 import { TimeoutBanner } from '@/components/request-detail/TimeoutBanner'
 
@@ -212,6 +213,21 @@ export default async function RequestDetailPage({ params, searchParams }: { para
   const actForTeam = canOverride || (!!r.assignment?.hasExternal && perms.assign)
   const hhmm = (d?: Date | null) => (d ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Dhaka', hour: '2-digit', minute: '2-digit', hour12: false }).format(d) : '')
   const visitAt = r.scheduledAt ? new Date(r.scheduledAt) : null
+  // "Add Unico car" / "Remove car" — any time before the visit is done, whoever made the request
+  const carOn = !!r.transport?.needed || !!r.transport?.mode
+  const carToggle: CarNeededProps | null =
+    (perms.edit || canCar) && !['COMPLETED', 'CLOSED', 'CANCELLED'].includes(status)
+      ? {
+          requestId: id,
+          requestNo: r.requestNo,
+          carOn,
+          hasTeam: !!r.assignment?.primaryStaffId,
+          told: !!r.transport?.needed && (!r.transport.mode || r.transport.mode === 'UNICO_CAR') && !!(r.transport.requisitionSentAt || r.transport.vehicleId),
+          onTrip: (r.transport?.legs ?? []).some((l: any) => l.key === 'pickup' && l.at),
+          visitTime: visitAt ? hhmm(visitAt) : '',
+          recentPickups: [...new Set(recentPickupDocs.map((d: any) => hhmm(new Date(d.transport.pickupAt))))].slice(0, 6),
+        }
+      : null
 
   // ---- compact request for client dialogs
   const team = [r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean).map((s: any) => s.name)
@@ -353,6 +369,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
           cars={carList.map((c: any) => ({ id: String(c._id), name: c.name, plate: c.plate, driverId: c.driverId ? String(c.driverId) : undefined, status: c.status }))}
           drivers={driverList.map((d: any) => ({ id: String(d._id), name: d.name, phone: d.phone }))}
           openChecklist={(r.visit?.checklist ?? []).filter((c: any) => c.mandatory && !c.done).length}
+          carToggle={carToggle && !carOn ? carToggle : null}
           team={[r.primaryStaff, ...(r.secondaryStaff ?? [])].filter(Boolean).map((t: any) => ({ id: String(t.id), name: t.name }))}
           area={r.patientSnapshot?.area}
           defaultAmount={(settings.transportDocs as any)?.pettyCash?.defaultAmount}
@@ -437,7 +454,7 @@ export default async function RequestDetailPage({ params, searchParams }: { para
         )}
         {tab === 'timeline' && <TimelineTab r={R} people={people} sla={sla} />}
         {tab === 'assignment' && <AssignmentTab r={R} people={people} logs={plain(logs)} />}
-        {tab === 'visit' && <VisitTab r={R} people={people} photos={plain(photos)} signature={plain(signature)} prescriptions={plain(prescriptions)} labs={plain(labs)} canDecide={perms.decide} reportHref={reportHref} />}
+        {tab === 'visit' && <VisitTab r={R} people={people} photos={plain(photos)} signature={plain(signature)} prescriptions={plain(prescriptions)} labs={plain(labs)} canDecide={perms.decide} reportHref={reportHref} carToggle={carToggle ? <CarNeededButton {...carToggle} look="link" /> : undefined} />}
         {tab === 'messages' && (
           <MessagesTab
             msgs={plain(msgs)}
